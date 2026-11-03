@@ -4,8 +4,9 @@
 Build a fast, Linux-first desktop editor that replaces only the VS Code features I use: project file management, opening and editing source files, and two persistent shell work areas.
 
 ## Main window
-- A clickable project tree on the left. Users can open files, create files/folders, rename, move, and delete entries.
-- The center editor opens a file on double-click, supports editing and saving, and colors source text based on common file extensions.
+- A left sidebar with **Explorer** and **Search** modes. Explorer shows a clickable project tree; users can open files, create files/folders, rename, move, and delete entries. Search replaces the tree with a text field and a Search button.
+- Project search scans files in the current workspace and groups matches by filename. Each matching line appears below its filename; clicking a line opens that file in the center editor, scrolls to the line with nearby preceding context visible, and places the text cursor on that line.
+- The center editor opens files on double-click, supports editing and saving, and colors source text based on common file extensions.
 - A shell panel across the bottom of the workspace and a shell panel on the right. Both are interactive terminal emulators connected to PTYs. The right panel defaults to `codex --resume`; its command is configurable.
 - An optional directory argument at startup opens that directory in the explorer, for example `focus-editor ~/projects/my-app`.
 - All panels can be resized, and their dimensions and positions are restored on the next launch.
@@ -17,3 +18,5 @@ Build a fast, Linux-first desktop editor that replaces only the VS Code features
 
 ## Initial scope
 Include common Rust, C/C++, Python, JavaScript/TypeScript, HTML/CSS, JSON, YAML, TOML, Markdown, shell, and SQL extensions. Keep the app focused: no extensions marketplace, debugger, or source-control UI in this first version.
+
+Project search is limited to readable text files under the selected workspace. Search results show one entry per matching line, grouped by file, with line numbers and a short line preview. Directories and files that cannot be read as text are skipped; search reports errors or skipped files through the status area where practical.
