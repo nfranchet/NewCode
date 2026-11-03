@@ -143,9 +143,7 @@ pub(crate) struct EditorApp {
     buffer: String,
     dirty: bool,
     top: Option<Terminal>,
-    right: Option<Terminal>,
     codex_ui: CodexUi,
-    right_tab_terminal: bool,
     rename_target: Option<PathBuf>,
     rename_text: String,
     status: String,
@@ -189,7 +187,6 @@ impl EditorApp {
         }
         let cwd = settings.workspace.as_deref();
         let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
-        let right = Terminal::spawn(&settings.right_command, cwd, cc.egui_ctx.clone()).ok();
         let mut codex_ui = CodexUi::default();
         if settings.codex_app_server && !no_codex {
             codex_ui.start(cwd, cc.egui_ctx.clone());
@@ -237,9 +234,7 @@ impl EditorApp {
             buffer: String::new(),
             dirty: false,
             top,
-            right,
             codex_ui,
-            right_tab_terminal: false,
             rename_target: None,
             rename_text: String::new(),
             status: "Ready".into(),
@@ -932,53 +927,7 @@ impl eframe::App for EditorApp {
             .default_width(right_width)
             .width_range(260.0..=700.0)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(!self.right_tab_terminal, "✦ Codex")
-                        .clicked()
-                    {
-                        self.right_tab_terminal = false;
-                    }
-                    if ui
-                        .selectable_label(self.right_tab_terminal, "▸ Terminal")
-                        .clicked()
-                    {
-                        self.right_tab_terminal = true;
-                    }
-                    ui.separator();
-                    let mut enabled = self.settings.codex_app_server;
-                    if ui.checkbox(&mut enabled, "Start Codex server").changed() {
-                        self.settings.codex_app_server = enabled;
-                        if enabled {
-                            self.codex_ui.start(cwd.as_deref(), ctx.clone());
-                        } else {
-                            self.codex_ui.stop();
-                        }
-                        self.save_settings();
-                    }
-                });
-                ui.separator();
-                if self.right_tab_terminal {
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.settings.right_command)
-                                .hint_text("Shell command")
-                                .desired_width(f32::INFINITY),
-                        );
-                        if ui.button("Run").clicked() {
-                            self.right = Terminal::spawn(
-                                &self.settings.right_command,
-                                cwd.as_deref(),
-                                ctx.clone(),
-                            )
-                            .ok();
-                            self.save_settings();
-                        }
-                    });
-                    Self::terminal_ui(ctx, ui, "Terminal", &mut self.right, cwd.as_deref());
-                } else {
-                    self.codex_ui.show(ui, cwd.as_deref(), ctx);
-                }
+                self.codex_ui.show(ui, cwd.as_deref(), ctx);
             });
         self.settings.right_width = right_response.response.rect.width().max(260.0);
         egui::CentralPanel::default().show(ctx, |ui| {

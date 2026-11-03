@@ -1,7 +1,11 @@
 use crate::app_server::AppServer;
 use eframe::egui;
 use serde_json::{Value, json};
-use std::path::Path;
+use std::{
+    collections::HashMap,
+    path::Path,
+    time::{Duration, Instant},
+};
 
 struct PendingRequest {
     id: Value,
@@ -10,15 +14,47 @@ struct PendingRequest {
     answer_key: Option<String>,
 }
 
+struct Message {
+    id: String,
+    kind: String,
+    text: String,
+    output: String,
+    complete: bool,
+}
+
+impl Message {
+    fn new(kind: &str, text: String) -> Self {
+        Self {
+            id: String::new(),
+            kind: kind.into(),
+            text,
+            output: String::new(),
+            complete: true,
+        }
+    }
+}
+
 pub(crate) struct CodexUi {
     server: Option<AppServer>,
     input: String,
     thread_id: Option<String>,
+    turn_id: Option<String>,
     initializing_id: Option<u64>,
-    starting_thread: bool,
+    requests: HashMap<u64, String>,
+    sessions: Vec<Value>,
+    sessions_cursor: Option<String>,
+    resume_latest: bool,
+    models: Vec<Value>,
+    modes: Vec<Value>,
+    model: String,
+    mode: Option<Value>,
+    usage: Value,
+    token_usage: Value,
+    usage_error: String,
+    last_usage: Option<Instant>,
     busy: bool,
     status: String,
-    messages: Vec<String>,
+    messages: Vec<Message>,
     pending: Vec<PendingRequest>,
     answer: String,
 }
@@ -29,10 +65,22 @@ impl Default for CodexUi {
             server: None,
             input: String::new(),
             thread_id: None,
+            turn_id: None,
             initializing_id: None,
-            starting_thread: false,
+            requests: HashMap::new(),
+            sessions: Vec::new(),
+            sessions_cursor: None,
+            resume_latest: false,
+            models: Vec::new(),
+            modes: Vec::new(),
+            model: String::new(),
+            mode: None,
+            usage: Value::Null,
+            token_usage: Value::Null,
+            usage_error: String::new(),
+            last_usage: None,
             busy: false,
-            status: "App Server is stopped".into(),
+            status: "Codex is offline".into(),
             messages: Vec::new(),
             pending: Vec::new(),
             answer: String::new(),
@@ -49,8 +97,15 @@ impl CodexUi {
             Ok(mut server) => {
                 self.initializing_id = match server.request("initialize", json!({
                     "clientInfo":{"name":"focus_editor","title":"Focus Editor","version":env!("CARGO_PKG_VERSION")},
-                    "capabilities":{"experimentalApi":false}
+                    "capabilities":{"experimentalApi":true}
                 })) { Ok(id) => Some(id), Err(e) => { self.status=e; return; } };
+                self.requests.clear();
+                self.sessions.clear();
+                self.sessions_cursor = None;
+                self.resume_latest = true;
+                self.models.clear();
+                self.modes.clear();
+                self.last_usage = None;
                 self.server = Some(server);
                 self.status = "Connecting to Codex…".into();
                 self.thread_id = None;
@@ -64,24 +119,38 @@ impl CodexUi {
         self.server = None;
         self.thread_id = None;
         self.busy = false;
-        self.status = "App Server is stopped".into();
+        self.turn_id = None;
+        self.pending.clear();
+        self.initializing_id = None;
+        self.requests.clear();
+        self.status = "Codex is offline".into();
     }
 
     fn send(&mut self, method: &str, params: Value) -> Result<u64, String> {
-        self.server
+        let id = self
+            .server
             .as_mut()
-            .ok_or("App Server is stopped".to_string())?
-            .request(method, params)
+            .ok_or("Codex is offline".to_string())?
+            .request(method, params)?;
+        self.requests.insert(id, method.into());
+        Ok(id)
     }
 
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, cwd: Option<&Path>, ctx: &egui::Context) {
         self.process_events(cwd);
         ui.horizontal(|ui| {
             ui.strong("Codex");
+            if self.busy {
+                ui.spinner();
+            }
             ui.label(
-                egui::RichText::new(&self.status)
-                    .small()
-                    .color(egui::Color32::GRAY),
+                egui::RichText::new(if !self.pending.is_empty() {
+                    "Waiting for you"
+                } else {
+                    &self.status
+                })
+                .small()
+                .color(egui::Color32::GRAY),
             );
             if self.server.is_some() {
                 if ui.small_button("Stop").clicked() {
@@ -91,15 +160,211 @@ impl CodexUi {
                 self.start(cwd, ctx.clone());
             }
         });
+        ui.add_enabled_ui(
+            self.server.is_some()
+                && self.initializing_id.is_none()
+                && !self.busy
+                && self.pending.is_empty()
+                && !self.requests.values().any(|m| {
+                    matches!(m.as_str(), "thread/list" | "thread/start" | "thread/resume")
+                }),
+            |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("New session").clicked() {
+                        self.open_thread(cwd, None);
+                    }
+                    let selected = self.sessions.iter().find(|session| {
+                        session.get("id").and_then(Value::as_str) == self.thread_id.as_deref()
+                    });
+                    let label = selected
+                        .map(session_label)
+                        .unwrap_or_else(|| "Choose session…".into());
+                    let mut chosen = None;
+                    egui::ComboBox::from_id_salt("codex_session")
+                        .selected_text(label)
+                        .width(230.0)
+                        .show_ui(ui, |ui| {
+                            ui.weak("Recent sessions in this workspace");
+                            if self.sessions.is_empty() {
+                                ui.label("No saved sessions");
+                            }
+                            for session in &self.sessions {
+                                if let Some(id) = session.get("id").and_then(Value::as_str) {
+                                    if ui
+                                        .selectable_label(
+                                            self.thread_id.as_deref() == Some(id),
+                                            session_label(session),
+                                        )
+                                        .on_hover_text(id)
+                                        .clicked()
+                                        && self.thread_id.as_deref() != Some(id)
+                                    {
+                                        chosen = Some(id.to_string());
+                                    }
+                                }
+                            }
+                        });
+                    if let Some(id) = chosen {
+                        self.open_thread(cwd, Some(&id));
+                    }
+                    if ui.small_button("Refresh sessions").clicked() {
+                        self.list_sessions(cwd, None);
+                    }
+                    if let Some(cursor) = self.sessions_cursor.clone() {
+                        if ui.small_button("More sessions").clicked() {
+                            self.list_sessions(cwd, Some(&cursor));
+                        }
+                    }
+                    egui::ComboBox::from_id_salt("codex_model")
+                        .selected_text(if self.model.is_empty() {
+                            "Default model"
+                        } else {
+                            &self.model
+                        })
+                        .show_ui(ui, |ui| {
+                            for model in &self.models {
+                                if let Some(id) = model.get("model").and_then(Value::as_str) {
+                                    ui.selectable_value(
+                                        &mut self.model,
+                                        id.to_string(),
+                                        model
+                                            .get("displayName")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or(id),
+                                    );
+                                }
+                            }
+                        });
+                    egui::ComboBox::from_id_salt("codex_mode")
+                        .selected_text(
+                            self.mode
+                                .as_ref()
+                                .and_then(|v| v.get("name"))
+                                .and_then(Value::as_str)
+                                .unwrap_or("Codex default"),
+                        )
+                        .show_ui(ui, |ui| {
+                            for mode in &self.modes {
+                                ui.selectable_value(
+                                    &mut self.mode,
+                                    Some(mode.clone()),
+                                    mode.get("name").and_then(Value::as_str).unwrap_or("Mode"),
+                                );
+                            }
+                        });
+                });
+            },
+        );
+        if self.server.is_some() && self.initializing_id.is_none() {
+            ctx.request_repaint_after(Duration::from_secs(1));
+            if self
+                .last_usage
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
+                && !self
+                    .requests
+                    .values()
+                    .any(|m| m == "account/rateLimits/read")
+            {
+                self.refresh_usage();
+            }
+        }
+        egui::CollapsingHeader::new(usage_title(&self.usage)).show(ui, |ui| {
+            if let Some(id) = &self.thread_id {
+                ui.small(format!("Session: {id}"));
+            }
+            ui.small(format!("Model: {}", self.model));
+            if !self.usage_error.is_empty() {
+                ui.small(&self.usage_error);
+            }
+            if self.usage.is_null() {
+                ui.small("Account usage unavailable");
+            } else {
+                show_limits(ui, &self.usage);
+            }
+            if let Some(total) = self
+                .token_usage
+                .pointer("/total/totalTokens")
+                .and_then(Value::as_i64)
+            {
+                ui.small(format!("Session tokens: {total}"));
+            }
+            if let (Some(tokens), Some(window)) = (
+                self.token_usage
+                    .pointer("/last/totalTokens")
+                    .and_then(Value::as_f64),
+                self.token_usage
+                    .get("modelContextWindow")
+                    .and_then(Value::as_f64),
+            ) {
+                ui.small(format!(
+                    "Context: {:.0}% used",
+                    tokens / window.max(1.0) * 100.0
+                ));
+            }
+            if ui
+                .add_enabled(self.server.is_some(), egui::Button::new("Refresh usage"))
+                .clicked()
+            {
+                self.refresh_usage();
+            }
+        });
         ui.separator();
+        // Reserve the composer before laying out the scrollable conversation.
+        let composer_height = 112.0;
         egui::ScrollArea::vertical()
+            .id_salt("codex_conversation")
+            .max_height((ui.available_height() - composer_height).max(0.0))
+            .auto_shrink([false, false])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for message in &self.messages {
-                    ui.add(egui::Label::new(message).wrap());
-                    ui.add_space(6.0);
+                if self.messages.is_empty() {
+                    ui.add_space(16.0);
+                    ui.strong("What would you like to work on?");
+                    ui.label("Ask Codex to explain code, make changes, or fix a problem.");
                 }
-                for index in 0..self.pending.len() {
+                for (index, message) in self.messages.iter().enumerate() {
+                    ui.push_id(index, |ui| match message.kind.as_str() {
+                        "Command" | "Reasoning" | "Files" => {
+                            let title = if message.kind == "Command" {
+                                format!(
+                                    "{} · {}",
+                                    if message.complete {
+                                        "Executed"
+                                    } else {
+                                        "Running"
+                                    },
+                                    message.text.lines().next().unwrap_or("Command")
+                                )
+                            } else {
+                                message.kind.clone()
+                            };
+                            egui::CollapsingHeader::new(title).show(ui, |ui| {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&message.text).monospace(),
+                                    )
+                                    .wrap(),
+                                );
+                                if !message.output.is_empty() {
+                                    ui.separator();
+                                    ui.label("Output");
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&message.output).monospace(),
+                                        )
+                                        .wrap(),
+                                    );
+                                }
+                            });
+                        }
+                        _ => {
+                            ui.strong(&message.kind);
+                            ui.add(egui::Label::new(&message.text).wrap());
+                        }
+                    });
+                    ui.add_space(10.0);
+                }
+                for index in (0..self.pending.len()).rev() {
                     let pending_id = self.pending[index].id.clone();
                     let pending_method = self.pending[index].method.clone();
                     let pending_prompt = self.pending[index].prompt.clone();
@@ -134,30 +399,92 @@ impl CodexUi {
                     });
                 }
             });
+        ui.add_space((ui.available_height() - composer_height).max(0.0));
         ui.separator();
-        ui.add_enabled_ui(
-            self.thread_id.is_some() && !self.busy && self.server.is_some(),
-            |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.input)
-                        .hint_text("Message Codex… (Ctrl+Enter to send)")
-                        .desired_rows(3),
-                );
-                ui.horizontal(|ui| {
-                    if ui.button("Send").clicked() {
-                        self.send_turn();
-                    }
-                    if ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Enter)) {
-                        self.send_turn();
-                    }
-                    if self.busy && ui.button("Interrupt").clicked() {
-                        if let Some(thread_id) = &self.thread_id {
-                            let _ = self.send("turn/interrupt", json!({"threadId":thread_id}));
-                        }
-                    }
-                });
-            },
+        let connected = self.thread_id.is_some()
+            && self.server.is_some()
+            && !self
+                .requests
+                .values()
+                .any(|m| matches!(m.as_str(), "thread/start" | "thread/resume"));
+        let composer_id = ui.make_persistent_id("codex_composer");
+        if connected && ui.memory(|m| m.has_focus(composer_id)) {
+            let direction = ui.input_mut(|input| {
+                if input.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab) {
+                    Some(true)
+                } else if input.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
+                    Some(false)
+                } else {
+                    None
+                }
+            });
+            if let Some(backward) = direction {
+                if !self.busy && self.pending.is_empty() && !self.modes.is_empty() {
+                    let current = self
+                        .modes
+                        .iter()
+                        .position(|mode| self.mode.as_ref() == Some(mode))
+                        .or_else(|| {
+                            self.modes.iter().position(|mode| {
+                                mode.get("mode").and_then(Value::as_str) == Some("default")
+                            })
+                        })
+                        .unwrap_or(0);
+                    let next = if backward {
+                        (current + self.modes.len() - 1) % self.modes.len()
+                    } else {
+                        (current + 1) % self.modes.len()
+                    };
+                    self.mode = Some(self.modes[next].clone());
+                }
+            }
+        }
+        let composer = ui.add_enabled(
+            connected,
+            egui::TextEdit::multiline(&mut self.input)
+                .id(composer_id)
+                .lock_focus(true)
+                .hint_text("Message Codex…")
+                .desired_width(f32::INFINITY)
+                .desired_rows(3),
         );
+        ui.horizontal(|ui| {
+            let can_send = connected && !self.busy && !self.input.trim().is_empty();
+            if ui
+                .add_enabled(can_send, egui::Button::new("Send"))
+                .clicked()
+                || (can_send
+                    && composer.has_focus()
+                    && ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter)))
+            {
+                self.send_turn();
+            }
+            if self.busy {
+                if ui.button("Interrupt").clicked() {
+                    if let (Some(thread_id), Some(turn_id)) = (&self.thread_id, &self.turn_id) {
+                        let _ = self.send(
+                            "turn/interrupt",
+                            json!({"threadId":thread_id,"turnId":turn_id}),
+                        );
+                    }
+                }
+            }
+            ui.weak("Ctrl+Enter to send");
+            let mode = self
+                .mode
+                .as_ref()
+                .or_else(|| {
+                    self.modes
+                        .iter()
+                        .find(|mode| mode.get("mode").and_then(Value::as_str) == Some("default"))
+                })
+                .and_then(|mode| mode.get("name"))
+                .and_then(Value::as_str)
+                .unwrap_or("Codex default");
+            ui.label(mode).on_hover_text(
+                "Tab: next mode · Shift+Tab: previous mode (in the message box, while idle)",
+            );
+        });
     }
 
     fn process_events(&mut self, cwd: Option<&Path>) {
@@ -172,13 +499,17 @@ impl CodexUi {
                 continue;
             }
             if let Some(log) = event.get("_log").and_then(Value::as_str) {
-                self.status = log.into();
+                let _ = log; // Diagnostic logs should not replace the user-facing activity.
                 continue;
             }
             if event.get("_closed").is_some() {
                 self.status = "Codex App Server stopped".into();
                 self.busy = false;
                 self.server = None;
+                self.thread_id = None;
+                self.turn_id = None;
+                self.pending.clear();
+                self.requests.clear();
                 continue;
             }
             if let Some(id) = event.get("id") {
@@ -225,33 +556,126 @@ impl CodexUi {
                     if let Some(server) = self.server.as_mut() {
                         let _ = server.notify("initialized", json!({}));
                     }
-                    self.starting_thread = true;
-                    match self.send(
-                        "thread/start",
-                        json!({"cwd":cwd.map(|p|p.to_string_lossy().to_string())}),
-                    ) {
-                        Ok(_) => self.status = "Starting conversation…".into(),
-                        Err(e) => self.status = e,
-                    }
-                } else if self.starting_thread {
-                    self.starting_thread = false;
+                    let _ = self.send("model/list", json!({}));
+                    let _ = self.send("collaborationMode/list", json!({}));
+                    self.refresh_usage();
+                    self.list_sessions(cwd, None);
+                    self.status = "Finding previous session…".into();
+                } else if let Some(method) = id.as_u64().and_then(|id| self.requests.remove(&id)) {
                     if let Some(error) = error {
-                        self.status = format!("Could not start conversation: {error}");
+                        if method == "account/rateLimits/read" {
+                            self.usage_error = error;
+                        } else {
+                            self.messages
+                                .push(Message::new("Error", format!("{method}: {error}")));
+                            self.status = "Request failed".into();
+                        }
+                        if method == "turn/start" {
+                            self.busy = false;
+                        }
                         continue;
                     }
-                    self.thread_id = result
-                        .pointer("/thread/id")
-                        .or_else(|| result.get("id"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                    self.status = if self.thread_id.is_some() {
-                        "Ready".into()
-                    } else {
-                        "No thread returned by Codex".into()
-                    };
-                } else if let Some(error) = error {
-                    self.messages.push(format!("Codex error: {error}"));
-                    self.busy = false;
+                    match method.as_str() {
+                        "thread/list" => {
+                            if let Some(sessions) = result.get("data").and_then(Value::as_array) {
+                                for session in sessions {
+                                    if let Some(existing) = self
+                                        .sessions
+                                        .iter_mut()
+                                        .find(|s| s.get("id") == session.get("id"))
+                                    {
+                                        *existing = session.clone();
+                                    } else {
+                                        self.sessions.push(session.clone());
+                                    }
+                                }
+                            }
+                            self.sessions_cursor = result
+                                .get("nextCursor")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                            if self.resume_latest {
+                                self.resume_latest = false;
+                                let previous = self
+                                    .sessions
+                                    .first()
+                                    .and_then(|s| s.get("id"))
+                                    .and_then(Value::as_str)
+                                    .map(str::to_string);
+                                self.open_thread(cwd, previous.as_deref());
+                            }
+                        }
+                        "thread/start" | "thread/resume" => {
+                            self.thread_id = result
+                                .pointer("/thread/id")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
+                            if let Some(model) = result.get("model").and_then(Value::as_str) {
+                                self.model = model.into();
+                            }
+                            if let Some(thread) = result.get("thread") {
+                                self.sessions.retain(|s| s.get("id") != thread.get("id"));
+                                self.sessions.insert(0, thread.clone());
+                            }
+                            self.busy = false;
+                            self.turn_id = None;
+                            self.messages.clear();
+                            self.token_usage = Value::Null;
+                            if let Some(turns) =
+                                result.pointer("/thread/turns").and_then(Value::as_array)
+                            {
+                                for turn in turns {
+                                    if let Some(items) = turn.get("items").and_then(Value::as_array)
+                                    {
+                                        for item in items {
+                                            if let Some(message) = history_message(item) {
+                                                self.messages.push(message);
+                                            }
+                                        }
+                                    }
+                                    if turn.get("status").and_then(Value::as_str)
+                                        == Some("inProgress")
+                                    {
+                                        self.busy = true;
+                                        self.turn_id = turn
+                                            .get("id")
+                                            .and_then(Value::as_str)
+                                            .map(str::to_string);
+                                    }
+                                }
+                            }
+                            self.status = if self.busy {
+                                "Codex is running…"
+                            } else {
+                                "Ready"
+                            }
+                            .into();
+                        }
+                        "model/list" => {
+                            self.models.extend(
+                                result
+                                    .get("data")
+                                    .and_then(Value::as_array)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            );
+                            if let Some(cursor) = result.get("nextCursor").and_then(Value::as_str) {
+                                let _ = self.send("model/list", json!({"cursor":cursor}));
+                            }
+                        }
+                        "collaborationMode/list" => {
+                            self.modes = result
+                                .get("data")
+                                .and_then(Value::as_array)
+                                .cloned()
+                                .unwrap_or_default();
+                        }
+                        "account/rateLimits/read" => {
+                            self.usage = result;
+                            self.usage_error.clear();
+                        }
+                        _ => {}
+                    }
                 }
                 continue;
             }
@@ -260,27 +684,69 @@ impl CodexUi {
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             let params = event.get("params").cloned().unwrap_or(Value::Null);
+            if let Some(thread) = params.get("threadId").and_then(Value::as_str) {
+                if Some(thread) != self.thread_id.as_deref() {
+                    continue;
+                }
+            }
             match method {
-                "item/agentMessage/delta" => {
+                "account/rateLimits/updated" => {
+                    self.usage = params;
+                    self.usage_error.clear();
+                }
+                "thread/tokenUsage/updated" => {
+                    if params.get("threadId").and_then(Value::as_str) == self.thread_id.as_deref() {
+                        self.token_usage = params.get("tokenUsage").cloned().unwrap_or(Value::Null);
+                    }
+                }
+                "item/agentMessage/delta"
+                | "item/reasoning/summaryTextDelta"
+                | "item/reasoning/textDelta"
+                | "item/commandExecution/outputDelta" => {
                     if let Some(delta) = params.get("delta").and_then(Value::as_str) {
-                        if let Some(last) = self
-                            .messages
-                            .last_mut()
-                            .filter(|m| m.starts_with("Codex: "))
-                        {
-                            last.push_str(delta);
+                        let id = params.get("itemId").and_then(Value::as_str).unwrap_or("");
+                        let kind = if method.contains("reasoning") {
+                            "Reasoning"
+                        } else if method.contains("commandExecution") {
+                            "Command"
                         } else {
-                            self.messages.push(format!("Codex: {delta}"));
+                            "Codex"
+                        };
+                        let index = self
+                            .messages
+                            .iter()
+                            .rposition(|m| m.id == id && m.kind == kind);
+                        let index = index.unwrap_or_else(|| {
+                            let mut message = Message::new(kind, String::new());
+                            message.id = id.into();
+                            self.messages.push(message);
+                            self.messages.len() - 1
+                        });
+                        if kind == "Command" {
+                            self.messages[index].output.push_str(delta);
+                        } else {
+                            self.messages[index].text.push_str(delta);
                         }
                     }
                 }
                 "turn/started" => {
+                    self.turn_id = params
+                        .pointer("/turn/id")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
                     self.busy = true;
-                    self.status = "Codex is working…".into();
+                    self.status = "Codex is running…".into();
                 }
                 "turn/completed" => {
                     self.busy = false;
+                    self.turn_id = None;
                     self.status = "Ready".into();
+                    if let Some(error) = params
+                        .pointer("/turn/error/message")
+                        .and_then(Value::as_str)
+                    {
+                        self.messages.push(Message::new("Error", error.into()));
+                    }
                 }
                 "item/started" | "item/completed" => {
                     let item = params.get("item").cloned().unwrap_or(Value::Null);
@@ -288,13 +754,53 @@ impl CodexUi {
                         .get("type")
                         .and_then(Value::as_str)
                         .unwrap_or("activity");
-                    if kind != "agentMessage" {
-                        let detail = item
-                            .get("command")
-                            .and_then(Value::as_str)
-                            .or_else(|| item.get("text").and_then(Value::as_str))
-                            .unwrap_or("");
-                        self.messages.push(format!("{kind}: {detail}"));
+                    let label = match kind {
+                        "agentMessage" => "Codex",
+                        "reasoning" => "Reasoning",
+                        "commandExecution" => "Command",
+                        "fileChange" => "Files",
+                        _ => continue,
+                    };
+                    let id = item.get("id").and_then(Value::as_str).unwrap_or("");
+                    let index = self
+                        .messages
+                        .iter()
+                        .rposition(|m| m.id == id && m.kind == label);
+                    let index = index.unwrap_or_else(|| {
+                        let mut message = Message::new(label, String::new());
+                        message.id = id.into();
+                        self.messages.push(message);
+                        self.messages.len() - 1
+                    });
+                    let message = &mut self.messages[index];
+                    message.complete = method == "item/completed";
+                    if let Some(text) = item
+                        .get("command")
+                        .or_else(|| item.get("text"))
+                        .and_then(Value::as_str)
+                    {
+                        message.text = text.into();
+                    }
+                    if let Some(output) = item.get("aggregatedOutput").and_then(Value::as_str) {
+                        message.output = output.into();
+                    }
+                    if kind == "reasoning" {
+                        if let Some(summary) = item.get("summary").and_then(Value::as_array) {
+                            message.text = summary
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                        }
+                    }
+                    if kind == "fileChange" {
+                        if let Some(changes) = item.get("changes").and_then(Value::as_array) {
+                            message.text = changes
+                                .iter()
+                                .filter_map(|c| c.get("path").and_then(Value::as_str))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                        }
                     }
                 }
                 _ => {}
@@ -310,17 +816,67 @@ impl CodexUi {
         if text.is_empty() {
             return;
         }
-        self.messages.push(format!("You: {text}"));
+        self.messages.push(Message::new("You", text.clone()));
         self.input.clear();
-        match self.send(
-            "turn/start",
-            json!({"threadId":thread_id,"input":[{"type":"text","text":text}]}),
-        ) {
+        let mut params = json!({"threadId":thread_id,"input":[{"type":"text","text":text}]});
+        if !self.model.is_empty() {
+            params["model"] = json!(self.model);
+        }
+        if let Some(mode) = &self.mode {
+            if !self.model.is_empty() {
+                params["collaborationMode"] = json!({"mode":mode["mode"],"settings":{"model":self.model,"reasoning_effort":mode["reasoning_effort"],"developer_instructions":null}});
+            }
+        }
+        match self.send("turn/start", params) {
             Ok(_) => {
                 self.busy = true;
-                self.status = "Sending…".into();
+                self.status = "Codex is running…".into();
             }
             Err(e) => self.status = e,
+        }
+    }
+
+    fn list_sessions(&mut self, cwd: Option<&Path>, cursor: Option<&str>) {
+        let directory = cwd
+            .map(|p| p.to_path_buf())
+            .or_else(|| std::env::current_dir().ok());
+        match self.send(
+            "thread/list",
+            json!({"cwd":directory,"limit":30,"sortKey":"updated_at","cursor":cursor}),
+        ) {
+            Ok(_) => {
+                if cursor.is_none() {
+                    self.sessions.clear();
+                    self.sessions_cursor = None;
+                }
+            }
+            Err(error) => self.status = error,
+        }
+    }
+
+    fn open_thread(&mut self, cwd: Option<&Path>, previous: Option<&str>) {
+        let mut params = json!({"cwd":cwd});
+        if !self.model.is_empty() {
+            params["model"] = json!(self.model);
+        }
+        let method = if let Some(id) = previous {
+            params["threadId"] = json!(id);
+            "thread/resume"
+        } else {
+            "thread/start"
+        };
+        match self.send(method, params) {
+            Ok(_) => {
+                self.status = "Opening session…".into();
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
+    fn refresh_usage(&mut self) {
+        self.last_usage = Some(Instant::now());
+        if let Err(e) = self.send("account/rateLimits/read", json!({})) {
+            self.usage_error = e;
         }
     }
 
@@ -347,4 +903,164 @@ impl CodexUi {
             }
         }
     }
+}
+
+fn history_message(item: &Value) -> Option<Message> {
+    let kind = item.get("type")?.as_str()?;
+    let (label, text) = match kind {
+        "userMessage" => (
+            "You",
+            item.get("content")?
+                .as_array()?
+                .iter()
+                .filter_map(|c| c.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        "agentMessage" => ("Codex", item.get("text")?.as_str()?.into()),
+        "commandExecution" => ("Command", item.get("command")?.as_str()?.into()),
+        "reasoning" => (
+            "Reasoning",
+            item.get("summary")?
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        "fileChange" => (
+            "Files",
+            item.get("changes")?
+                .as_array()?
+                .iter()
+                .filter_map(|c| c.get("path").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+        _ => return None,
+    };
+    let mut message = Message::new(label, text);
+    message.id = item
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .into();
+    message.output = item
+        .get("aggregatedOutput")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .into();
+    Some(message)
+}
+
+fn show_limits(ui: &mut egui::Ui, usage: &Value) {
+    let snapshots: Vec<&Value> = usage
+        .get("rateLimitsByLimitId")
+        .and_then(Value::as_object)
+        .map(|m| m.values().collect())
+        .unwrap_or_else(|| usage.get("rateLimits").into_iter().collect());
+    for snapshot in snapshots {
+        ui.small(
+            snapshot
+                .get("limitName")
+                .and_then(Value::as_str)
+                .unwrap_or("Account limits"),
+        );
+        for key in ["primary", "secondary"] {
+            if let Some(window) = snapshot.get(key).filter(|v| !v.is_null()) {
+                let used = window
+                    .get("usedPercent")
+                    .and_then(Value::as_f64)
+                    .unwrap_or_default();
+                let minutes = window.get("windowDurationMins").and_then(Value::as_i64);
+                ui.small(format!(
+                    "{}: {:.0}% remaining",
+                    minutes
+                        .map(|m| format!("{m} min window"))
+                        .unwrap_or(key.into()),
+                    (100.0 - used).max(0.0)
+                ));
+                if let Some(reset) = window.get("resetsAt").and_then(Value::as_u64) {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    ui.small(format!(
+                        "Resets in {} min",
+                        reset.saturating_sub(now).div_ceil(60)
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn usage_title(usage: &Value) -> String {
+    let snapshot = usage.get("rateLimits");
+    if let Some(used) = snapshot
+        .and_then(|v| v.pointer("/primary/usedPercent"))
+        .and_then(Value::as_f64)
+    {
+        format!("Usage / status · {:.0}% remaining", (100.0 - used).max(0.0))
+    } else {
+        "Usage / status".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restores_user_and_command_history() {
+        let user = history_message(&json!({"type":"userMessage","id":"u1","content":[{"type":"text","text":"Fix this"},{"type":"text","text":"Keep tests"}]})).unwrap();
+        assert_eq!(user.text, "Fix this\nKeep tests");
+        assert_eq!(user.kind, "You");
+        let command = history_message(&json!({"type":"commandExecution","id":"c1","command":"cargo test","aggregatedOutput":"passed"})).unwrap();
+        assert_eq!(command.id, "c1");
+        assert_eq!(command.output, "passed");
+        assert!(history_message(&json!({"type":"unknown"})).is_none());
+    }
+
+    #[test]
+    fn usage_title_reports_remaining_quota_without_inventing_limits() {
+        assert_eq!(
+            usage_title(&json!({"rateLimits":{"primary":{"usedPercent":35}}})),
+            "Usage / status · 65% remaining"
+        );
+        assert_eq!(usage_title(&Value::Null), "Usage / status");
+    }
+}
+
+fn session_label(session: &Value) -> String {
+    let title = session
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| {
+            session
+                .get("preview")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+        })
+        .unwrap_or("Untitled session");
+    let title = title.split_whitespace().collect::<Vec<_>>().join(" ");
+    let short: String = title.chars().take(60).collect();
+    let suffix = if title.chars().count() > 60 {
+        "…"
+    } else {
+        ""
+    };
+    let id: String = session
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .chars()
+        .rev()
+        .take(8)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!("{short}{suffix} · {id}")
 }
