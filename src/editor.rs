@@ -6,7 +6,6 @@ use eframe::egui::{
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -167,8 +166,8 @@ impl EditorApp {
             settings.workspace = Some(directory);
         }
         let cwd = settings.workspace.as_deref();
-        let top = Terminal::spawn("", cwd).ok();
-        let right = Terminal::spawn(&settings.right_command, cwd).ok();
+        let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
+        let right = Terminal::spawn(&settings.right_command, cwd, cc.egui_ctx.clone()).ok();
         let mut style = (*cc.egui_ctx.style()).clone();
         style
             .text_styles
@@ -517,6 +516,7 @@ impl EditorApp {
             .unwrap_or_else(|e| format!("Create failed: {e}"));
     }
     fn terminal_ui(
+        ctx: &egui::Context,
         ui: &mut egui::Ui,
         title: &str,
         term: &mut Option<Terminal>,
@@ -526,7 +526,7 @@ impl EditorApp {
             ui.strong(format!("▸ {title}"));
             if ui.button("↻ Restart").clicked() {
                 let cmd = term.as_ref().map(|t| t.command.clone()).unwrap_or_default();
-                *term = Terminal::spawn(&cmd, cwd).ok();
+                *term = Terminal::spawn(&cmd, cwd, ctx.clone()).ok();
             }
         });
         if let Some(t) = term {
@@ -636,13 +636,6 @@ impl eframe::App for EditorApp {
         self.save_settings();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.request_repaint_after(Duration::from_millis(100));
-        if let Some(t) = &mut self.top {
-            t.poll();
-        }
-        if let Some(t) = &mut self.right {
-            t.poll();
-        }
         let opened_find = ctx
             .input(|input| input.modifiers.command && input.key_pressed(egui::Key::F))
             && self.active_file.is_some();
@@ -745,7 +738,7 @@ impl eframe::App for EditorApp {
             .default_height(top_height)
             .min_height(80.0)
             .show(ctx, |ui| {
-                Self::terminal_ui(ui, "Shell", &mut self.top, cwd.as_deref());
+                Self::terminal_ui(ctx, ui, "Shell", &mut self.top, cwd.as_deref());
             });
         self.settings.top_height = top_response.response.rect.height().max(80.0);
         egui::SidePanel::left("activity_bar")
@@ -898,13 +891,17 @@ impl eframe::App for EditorApp {
                             .desired_width(f32::INFINITY),
                     );
                     if ui.button("▶  Run").clicked() {
-                        self.right =
-                            Terminal::spawn(&self.settings.right_command, cwd.as_deref()).ok();
+                        self.right = Terminal::spawn(
+                            &self.settings.right_command,
+                            cwd.as_deref(),
+                            ctx.clone(),
+                        )
+                        .ok();
                         self.save_settings();
                     }
                 });
                 ui.separator();
-                Self::terminal_ui(ui, "", &mut self.right, cwd.as_deref());
+                Self::terminal_ui(ctx, ui, "", &mut self.right, cwd.as_deref());
             });
         self.settings.right_width = right_response.response.rect.width().max(260.0);
         egui::CentralPanel::default().show(ctx, |ui| {

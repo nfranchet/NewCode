@@ -1,6 +1,12 @@
 use eframe::egui::Color32;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
-use std::{collections::VecDeque, io::{Read, Write}, path::{Path, PathBuf}, sync::mpsc::{self, Receiver}, thread};
+use std::{
+    collections::VecDeque,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::mpsc::{self, Receiver},
+    thread,
+};
 
 pub(crate) struct Terminal {
     pub(crate) input: Box<dyn Write + Send>,
@@ -39,7 +45,11 @@ impl Default for Cell {
     }
 }
 impl Terminal {
-    pub(crate) fn spawn(command: &str, cwd: Option<&Path>) -> Result<Self, String> {
+    pub(crate) fn spawn(
+        command: &str,
+        cwd: Option<&Path>,
+        repaint_ctx: eframe::egui::Context,
+    ) -> Result<Self, String> {
         let pty = native_pty_system();
         let pair = pty
             .openpty(PtySize {
@@ -79,7 +89,14 @@ impl Terminal {
                 match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(n) => {
-                        let _ = tx.send(String::from_utf8_lossy(&buf[..n]).as_bytes().to_vec());
+                        if tx
+                            .send(String::from_utf8_lossy(&buf[..n]).as_bytes().to_vec())
+                            .is_ok()
+                        {
+                            repaint_ctx.request_repaint();
+                        } else {
+                            break;
+                        }
                     }
                 }
             }
