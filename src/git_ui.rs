@@ -344,7 +344,6 @@ impl GitUi {
             match reply.snapshot {
                 Ok(s) => self.snapshot = Some(s),
                 Err(e) => {
-                    self.snapshot = None;
                     self.message = e;
                 }
             }
@@ -377,15 +376,19 @@ impl GitUi {
             action = Some(Action::Refresh);
         }
         ui.ctx().request_repaint_after(Duration::from_secs(3));
-        if ui
-            .add_enabled(!busy, egui::Button::new("Refresh"))
-            .clicked()
-        {
-            action = Some(Action::Refresh);
-        }
-        if busy {
-            ui.spinner();
-        }
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(!busy, egui::Button::new("Refresh"))
+                .clicked()
+            {
+                action = Some(Action::Refresh);
+            }
+            ui.allocate_ui(egui::vec2(20.0, 20.0), |ui| {
+                if busy {
+                    ui.spinner();
+                }
+            });
+        });
         let mut open = None;
         if let Some(s) = &self.snapshot {
             ui.label(egui::RichText::new(&s.branch).strong());
@@ -406,7 +409,8 @@ impl GitUi {
             }
             egui::ScrollArea::vertical()
                 .id_salt("git_changes")
-                .max_height((ui.available_height() - 210.0).max(80.0))
+                .max_height((ui.available_height() - 210.0).max(0.0))
+                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for (group, staged) in [(0, false), (1, false), (2, true), (3, false)] {
                         ui.separator();
@@ -529,6 +533,7 @@ impl GitUi {
             ui.separator();
             ui.add(
                 egui::TextEdit::multiline(&mut self.commit)
+                    .id(egui::Id::new(("git_commit_message", &self.workspace)))
                     .hint_text("Commit message…")
                     .desired_rows(2)
                     .desired_width(f32::INFINITY),
@@ -558,6 +563,88 @@ impl GitUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn commit_focus_survives_refresh_and_failure() {
+        let ctx = egui::Context::default();
+        let workspace = PathBuf::from("/tmp/focus-git-focus-test");
+        let make_snapshot = || Snapshot {
+            root: workspace.clone(),
+            branch: "main".into(),
+            files: Vec::new(),
+            staged: String::new(),
+            unstaged: String::new(),
+            counts: [HashMap::new(), HashMap::new()],
+        };
+        let mut git_ui = GitUi {
+            workspace: Some(workspace.clone()),
+            snapshot: Some(make_snapshot()),
+            refreshed: Some(Instant::now()),
+            ..GitUi::default()
+        };
+        let id = egui::Id::new(("git_commit_message", &git_ui.workspace));
+        let frame = |git_ui: &mut GitUi, events: Vec<egui::Event>| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(350.0, 750.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        git_ui.ui(ui, Some(&workspace));
+                    });
+                },
+            );
+        };
+        frame(&mut git_ui, vec![]);
+        ctx.memory_mut(|memory| memory.request_focus(id));
+        frame(&mut git_ui, vec![egui::Event::Text("Draft".into())]);
+        let initial_rect = ctx.read_response(id).unwrap().rect;
+        let (tx, rx) = mpsc::channel();
+        git_ui.pending = Some(rx);
+        frame(
+            &mut git_ui,
+            vec![egui::Event::Text(" during refresh".into())],
+        );
+        assert!(ctx.memory(|memory| memory.has_focus(id)));
+        assert_eq!(ctx.read_response(id).unwrap().rect, initial_rect);
+        tx.send(Reply {
+            snapshot: Ok(make_snapshot()),
+            message: None,
+            committed: false,
+            diff: None,
+        })
+        .unwrap();
+        frame(
+            &mut git_ui,
+            vec![egui::Event::Text(" after refresh".into())],
+        );
+        assert!(ctx.memory(|memory| memory.has_focus(id)));
+        assert_eq!(ctx.read_response(id).unwrap().rect, initial_rect);
+        let (tx, rx) = mpsc::channel();
+        git_ui.pending = Some(rx);
+        tx.send(Reply {
+            snapshot: Err("Temporary error".into()),
+            message: None,
+            committed: false,
+            diff: None,
+        })
+        .unwrap();
+        frame(
+            &mut git_ui,
+            vec![egui::Event::Text(" after failure".into())],
+        );
+        assert!(ctx.memory(|memory| memory.has_focus(id)));
+        assert_eq!(
+            git_ui.commit,
+            "Draft during refresh after refresh after failure"
+        );
+        assert!(git_ui.snapshot.is_some());
+    }
+
     #[test]
     fn parses_partial_changes_renames_and_unusual_names() {
         let files =
