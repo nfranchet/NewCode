@@ -1222,7 +1222,12 @@ impl eframe::App for EditorApp {
                 let response = egui::ScrollArea::both()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        let line_count = self.buffer.split('\n').count().max(1);
+                        let line_count = self
+                            .buffer
+                            .split('\n')
+                            .count()
+                            .saturating_sub(usize::from(self.buffer.ends_with('\n')))
+                            .max(1);
                         let row_height = ui.fonts(|f| f.row_height(&FontId::monospace(14.0)));
                         let digit_width = ui.fonts(|f| {
                             f.layout_no_wrap("0".into(), FontId::monospace(14.0), Color32::WHITE)
@@ -1231,31 +1236,12 @@ impl eframe::App for EditorApp {
                         });
                         let gutter_width = digit_width * line_count.to_string().len() as f32 + 16.0;
                         let text_width = (ui.available_width() - gutter_width - 8.0).max(60.0);
+                        let editor_galley = layouter(ui, &self.buffer, text_width);
                         ui.horizontal_top(|ui| {
                             let (gutter_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(gutter_width, row_height * line_count as f32),
+                                egui::vec2(gutter_width, editor_galley.size().y + row_height),
                                 egui::Sense::hover(),
                             );
-                            let visible = ui.clip_rect().intersect(gutter_rect);
-                            let first_line = (((visible.top() - gutter_rect.top()) / row_height)
-                                .floor() as usize)
-                                .min(line_count);
-                            let end_line = (((visible.bottom() - gutter_rect.top()) / row_height)
-                                .ceil() as usize)
-                                .min(line_count);
-                            let number_width = line_count.to_string().len();
-                            for index in first_line..end_line {
-                                ui.painter().text(
-                                    egui::pos2(
-                                        gutter_rect.right() - 8.0,
-                                        gutter_rect.top() + index as f32 * row_height,
-                                    ),
-                                    egui::Align2::RIGHT_TOP,
-                                    format!("{:>number_width$}", index + 1),
-                                    FontId::monospace(14.0),
-                                    Color32::from_gray(115),
-                                );
-                            }
                             let edit = egui::TextEdit::multiline(&mut self.buffer)
                                 .id(editor_id)
                                 .font(TextStyle::Monospace)
@@ -1264,6 +1250,29 @@ impl eframe::App for EditorApp {
                                 .code_editor()
                                 .layouter(&mut layouter)
                                 .show(ui);
+                            let visible = ui.clip_rect().intersect(gutter_rect);
+                            let row_top = edit.galley_pos.y;
+                            let number_width = line_count.to_string().len();
+                            let mut char_offset = 0;
+                            for (index, line) in
+                                self.buffer.split('\n').take(line_count).enumerate()
+                            {
+                                let line_rect =
+                                    edit.galley.pos_from_cursor(CCursor::new(char_offset));
+                                let line_y = row_top + line_rect.top();
+                                if line_y + line_rect.height() >= visible.top()
+                                    && line_y <= visible.bottom()
+                                {
+                                    ui.painter().text(
+                                        egui::pos2(gutter_rect.right() - 8.0, line_y),
+                                        egui::Align2::RIGHT_TOP,
+                                        format!("{:>number_width$}", index + 1),
+                                        FontId::monospace(14.0),
+                                        Color32::from_gray(115),
+                                    );
+                                }
+                                char_offset += line.chars().count() + 1;
+                            }
                             if let Some(cursor) = jump_cursor {
                                 if !self.find_open {
                                     edit.response.request_focus();
