@@ -373,6 +373,21 @@ impl EditorApp {
         ctx.copy_text(copied);
         self.status = "Copied selection".into();
     }
+    fn paste_from_clipboard(&mut self, ctx: &egui::Context) {
+        ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("main_editor_text")));
+        ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+        self.status = "Paste requested".into();
+    }
+    fn select_all(&mut self, ctx: &egui::Context) {
+        let id = egui::Id::new("main_editor_text");
+        let mut state = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+        state.cursor.set_char_range(Some(CCursorRange::two(
+            CCursor::new(0),
+            CCursor::new(self.buffer.chars().count()),
+        )));
+        egui::TextEdit::store_state(ctx, id, state);
+        ctx.memory_mut(|memory| memory.request_focus(id));
+    }
     fn navigate_find(&mut self, ctx: &egui::Context, reverse: bool) {
         let matches = find_ranges(&self.buffer, &self.find_query);
         if matches.is_empty() {
@@ -508,7 +523,7 @@ impl EditorApp {
         cwd: Option<&Path>,
     ) {
         ui.horizontal(|ui| {
-            ui.strong(title);
+            ui.strong(format!("▸ {title}"));
             if ui.button("↻ Restart").clicked() {
                 let cmd = term.as_ref().map(|t| t.command.clone()).unwrap_or_default();
                 *term = Terminal::spawn(&cmd, cwd).ok();
@@ -647,7 +662,7 @@ impl eframe::App for EditorApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("⌂  Workspace").clicked() {
+                    if ui.button("📁  Workspace").clicked() {
                         self.choose_workspace();
                     }
                     if let Some(root) = self.settings.workspace.as_ref() {
@@ -659,31 +674,62 @@ impl eframe::App for EditorApp {
                         );
                     }
                     ui.separator();
-                    if ui.button("＋  File").clicked() {
-                        self.create_entry(false);
-                    }
-                    if ui.button("＋  Folder").clicked() {
-                        self.create_entry(true);
-                    }
-                    if ui.button("Save  ·  Ctrl+S").clicked() {
-                        self.save_file();
-                    }
-                    if ui
-                        .add_enabled(self.active_file.is_some(), egui::Button::new("Copy"))
-                        .clicked()
-                    {
-                        self.copy_selection(ctx);
-                    }
-                    if ui
-                        .add_enabled(self.active_file.is_some(), egui::Button::new("Paste"))
-                        .clicked()
-                    {
-                        ctx.memory_mut(|memory| {
-                            memory.request_focus(egui::Id::new("main_editor_text"))
-                        });
-                        ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
-                        self.status = "Paste requested".into();
-                    }
+                    ui.menu_button("Edit", |ui| {
+                        if ui
+                            .add_enabled(
+                                self.active_file.is_some(),
+                                egui::Button::new("💾  Save   Ctrl+S"),
+                            )
+                            .clicked()
+                        {
+                            self.save_file();
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.active_file.is_some(),
+                                egui::Button::new("⧉  Copy   Ctrl+C"),
+                            )
+                            .clicked()
+                        {
+                            self.copy_selection(ctx);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.active_file.is_some(),
+                                egui::Button::new("📋  Paste   Ctrl+V"),
+                            )
+                            .clicked()
+                        {
+                            self.paste_from_clipboard(ctx);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled(
+                                self.active_file.is_some(),
+                                egui::Button::new("🔎  Find in File   Ctrl+F"),
+                            )
+                            .clicked()
+                        {
+                            self.find_open = true;
+                            ctx.memory_mut(|memory| {
+                                memory.request_focus(egui::Id::new("find_in_file_query"))
+                            });
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.active_file.is_some(),
+                                egui::Button::new("Select All   Ctrl+A"),
+                            )
+                            .clicked()
+                        {
+                            self.select_all(ctx);
+                            ui.close();
+                        }
+                    });
                     ui.separator();
                     ui.label(
                         egui::RichText::new(&self.status)
@@ -716,7 +762,7 @@ impl eframe::App for EditorApp {
                         [34.0, 40.0],
                         egui::Button::selectable(
                             self.sidebar_mode == SidebarMode::Explorer,
-                            egui::RichText::new("▣").size(20.0),
+                            egui::RichText::new("🗂").size(18.0),
                         ),
                     );
                     let explorer = explorer.on_hover_text("Explorer");
@@ -727,7 +773,7 @@ impl eframe::App for EditorApp {
                         [34.0, 40.0],
                         egui::Button::selectable(
                             self.sidebar_mode == SidebarMode::Search,
-                            egui::RichText::new("⌕").size(23.0),
+                            egui::RichText::new("🔍").size(18.0),
                         ),
                     );
                     let search = search.on_hover_text("Search");
@@ -742,10 +788,22 @@ impl eframe::App for EditorApp {
             .default_width(left_width)
             .width_range(150.0..=500.0)
             .show(ctx, |ui| {
-                ui.heading(match self.sidebar_mode {
-                    SidebarMode::Explorer => "Explorer",
-                    SidebarMode::Search => "Search",
-                });
+                if self.sidebar_mode == SidebarMode::Explorer {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.heading("🗂 Explorer");
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.small_button("📁").on_hover_text("New folder").clicked() {
+                                self.create_entry(true);
+                            }
+                            if ui.small_button("📄").on_hover_text("New file").clicked() {
+                                self.create_entry(false);
+                            }
+                        });
+                    });
+                } else {
+                    ui.heading("🔎 Search");
+                }
                 ui.separator();
                 match self.sidebar_mode {
                     SidebarMode::Explorer => {
@@ -766,7 +824,7 @@ impl eframe::App for EditorApp {
                         ui.horizontal(|ui| {
                             let response = ui.add(
                                 egui::TextEdit::singleline(&mut self.search_query)
-                                    .hint_text("Search in project…")
+                                    .hint_text("🔎 Search in project…")
                                     .desired_width(f32::INFINITY),
                             );
                             if response.lost_focus()
@@ -774,7 +832,7 @@ impl eframe::App for EditorApp {
                             {
                                 run_search = true;
                             }
-                            if ui.button("Search").clicked() {
+                            if ui.button("🔎 Search").clicked() {
                                 run_search = true;
                             }
                         });
@@ -832,14 +890,14 @@ impl eframe::App for EditorApp {
             .width_range(260.0..=700.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.strong("Codex command");
+                    ui.strong("▸_  Codex command");
                 });
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.settings.right_command)
                             .desired_width(f32::INFINITY),
                     );
-                    if ui.button("Run").clicked() {
+                    if ui.button("▶  Run").clicked() {
                         self.right =
                             Terminal::spawn(&self.settings.right_command, cwd.as_deref()).ok();
                         self.save_settings();
