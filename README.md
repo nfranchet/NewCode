@@ -22,7 +22,11 @@ The first build downloads crates from crates.io. The app stores settings in the 
 
 - Choose a workspace folder from the toolbar.
 - Double-click a file in Explorer to open it. Edit in the center pane and save with **Ctrl+S** or the toolbar button.
+- Close a file with the **×** on its tab or press **Ctrl+W**. If the file has unsaved changes, choose **Save**, **Discard**, or **Cancel**.
+- Open file tabs stay on one horizontally scrollable row. Use the **⌄** open-files menu to search and jump directly to any open file; its tab scrolls into view when selected.
 - Use **Search** in the left sidebar to search file contents in the current workspace. Results are grouped by file; click a matching line to open the file at that line with nearby context visible.
+- Press **Ctrl+F** to find text in the active file. Use **Enter** or the arrow buttons to move between matches; **Shift+Enter** goes to the previous match. Matching is case-insensitive.
+- Select editor text and use **Ctrl+C**/**Ctrl+V**, or the **Copy** and **Paste** toolbar buttons, to use the system clipboard.
 - Use **New file** and **New folder**, or right-click entries to rename, move, or delete them.
 - The bottom pane is an interactive Bash terminal. The right pane starts with `codex --resume`; edit its command and press **Run** to use another command.
 - Drag the dividers to resize panes. The last workspace, command, and pane dimensions are saved with app settings.

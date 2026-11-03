@@ -6,7 +6,10 @@ Build a fast, Linux-first desktop editor that replaces only the VS Code features
 ## Main window
 - A left sidebar with **Explorer** and **Search** modes. Explorer shows a clickable project tree; users can open files, create files/folders, rename, move, and delete entries. Search replaces the tree with a text field and a Search button.
 - Project search scans files in the current workspace and groups matches by filename. Each matching line appears below its filename; clicking a line opens that file in the center editor, scrolls to the line with nearby preceding context visible, and places the text cursor on that line.
-- The center editor opens files on double-click, supports editing and saving, and colors source text based on common file extensions.
+- The editor has an in-file Find bar, opened with **Ctrl+F**, with previous/next match navigation and a match counter. Search is case-insensitive and highlights the active match.
+- Text selections in the editor can be copied and pasted with **Ctrl+C** and **Ctrl+V**, or with the Copy and Paste toolbar actions.
+- The center editor opens files on double-click, supports editing and saving, and colors source text based on common file extensions. Open file tabs have a close button, and **Ctrl+W** closes the active file. Closing a modified file asks whether to save, discard, or cancel.
+- Open files use a single horizontally scrollable tab row. A searchable open-files menu provides direct access to any tab, including those outside the visible row, and brings the selected tab into view.
 - A shell panel across the bottom of the workspace and a shell panel on the right. Both are interactive terminal emulators connected to PTYs. The right panel defaults to `codex --resume`; its command is configurable.
 - An optional directory argument at startup opens that directory in the explorer, for example `focus-editor ~/projects/my-app`.
 - All panels can be resized, and their dimensions and positions are restored on the next launch.
