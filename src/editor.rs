@@ -1,7 +1,7 @@
 use crate::{settings::Settings, syntax::colored_job, terminal::Terminal};
 use eframe::egui::{
     self, Color32, FontId, TextFormat, TextStyle,
-    text::{CCursor, CCursorRange, LayoutJob},
+    text::{CCursor, CCursorRange, LayoutJob, LayoutSection},
 };
 use std::{
     fs,
@@ -64,6 +64,67 @@ fn find_ranges(text: &str, query: &str) -> Vec<(usize, usize)> {
         .collect()
 }
 
+fn highlight_find_matches(
+    job: &mut LayoutJob,
+    text: &str,
+    query: &str,
+    active_match: Option<usize>,
+) {
+    let matches = find_ranges(text, query);
+    if matches.is_empty() {
+        return;
+    }
+    let char_bytes: Vec<usize> = text
+        .char_indices()
+        .map(|(byte, _)| byte)
+        .chain(std::iter::once(text.len()))
+        .collect();
+    let byte_matches: Vec<(usize, usize)> = matches
+        .iter()
+        .filter_map(|(start, end)| Some((*char_bytes.get(*start)?, *char_bytes.get(*end)?)))
+        .collect();
+    let active_bytes = active_match.and_then(|index| byte_matches.get(index).copied());
+    let original_sections = std::mem::take(&mut job.sections);
+    for section in original_sections {
+        let section_start = section.byte_range.start;
+        let section_end = section.byte_range.end;
+        let mut boundaries = vec![section_start, section_end];
+        for (start, end) in &byte_matches {
+            if *start < section_end && *end > section_start {
+                boundaries.push((*start).max(section_start));
+                boundaries.push((*end).min(section_end));
+            }
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        for pair in boundaries.windows(2) {
+            let start = pair[0];
+            let end = pair[1];
+            if start == end {
+                continue;
+            }
+            let mut part = section.clone();
+            part.byte_range = start..end;
+            if let Some((active_start, active_end)) = active_bytes
+                && start >= active_start
+                && end <= active_end
+            {
+                part.format.background = Color32::from_rgb(255, 190, 100);
+            } else if byte_matches
+                .iter()
+                .any(|(match_start, match_end)| start >= *match_start && end <= *match_end)
+            {
+                part.format.background = Color32::from_rgb(255, 239, 166);
+            }
+            job.sections.push(LayoutSection {
+                leading_space: part.leading_space,
+                byte_range: part.byte_range,
+                format: part.format,
+            });
+        }
+    }
+}
+
 pub(crate) struct EditorApp {
     settings: Settings,
     settings_path: PathBuf,
@@ -80,7 +141,6 @@ pub(crate) struct EditorApp {
     search_query: String,
     search_results: Vec<FileMatches>,
     pending_editor_cursor: Option<usize>,
-    pending_editor_selection: Option<(usize, usize)>,
     find_open: bool,
     find_query: String,
     find_query_snapshot: String,
@@ -160,7 +220,6 @@ impl EditorApp {
             search_query: String::new(),
             search_results: Vec::new(),
             pending_editor_cursor: None,
-            pending_editor_selection: None,
             find_open: false,
             find_query: String::new(),
             find_query_snapshot: String::new(),
@@ -283,7 +342,6 @@ impl EditorApp {
             self.buffer.clear();
             self.dirty = false;
             self.pending_editor_cursor = None;
-            self.pending_editor_selection = None;
             self.find_open = false;
             self.find_active = None;
             if !self.open_files.is_empty() {
@@ -333,8 +391,8 @@ impl EditorApp {
             None => 0,
         };
         self.find_active = Some(index);
-        self.pending_editor_selection = Some(matches[index]);
-        ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("main_editor_text")));
+        self.pending_editor_cursor = Some(matches[index].0);
+        ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("find_in_file_query")));
     }
     fn tree(&mut self, ui: &mut egui::Ui, dir: &Path) {
         let Ok(entries) = fs::read_dir(dir) else {
@@ -991,7 +1049,7 @@ impl eframe::App for EditorApp {
                             query.request_focus();
                         }
                         query_changed = query.changed();
-                        if query.has_focus()
+                        if query.lost_focus()
                             && ui.input(|input| input.key_pressed(egui::Key::Enter))
                         {
                             navigate = Some(ui.input(|input| input.modifiers.shift));
@@ -1004,9 +1062,7 @@ impl eframe::App for EditorApp {
                         }
                         ui.label(format!(
                             "{} / {}",
-                            self.find_active
-                                .map(|index| index + 1)
-                                .unwrap_or(usize::from(!matches.is_empty())),
+                            self.find_active.map(|index| index + 1).unwrap_or(0),
                             matches.len()
                         ));
                         close_find = ui.button("×").on_hover_text("Close find").clicked();
@@ -1023,12 +1079,10 @@ impl eframe::App for EditorApp {
                         self.find_query.clear();
                         self.find_query_snapshot.clear();
                         self.find_active = None;
-                        self.pending_editor_selection = None;
                     }
                     if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
                         self.find_open = false;
                         self.find_active = None;
-                        self.pending_editor_selection = None;
                     }
                 }
                 let path = self.active_file.clone().unwrap();
@@ -1054,22 +1108,21 @@ impl eframe::App for EditorApp {
                     }
                 });
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let find_query = if self.find_open {
+                    self.find_query.clone()
+                } else {
+                    String::new()
+                };
+                let find_active = self.find_active;
                 let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
                     let mut job = colored_job(text.as_str(), ext);
+                    highlight_find_matches(&mut job, text.as_str(), &find_query, find_active);
                     job.wrap.max_width = wrap_width;
                     ui.fonts(|f| f.layout_job(job))
                 };
                 let editor_id = egui::Id::new("main_editor_text");
                 let jump_cursor = self.pending_editor_cursor.take();
-                let jump_selection = self.pending_editor_selection.take();
-                if let Some((start, end)) = jump_selection {
-                    let mut state = egui::TextEdit::load_state(ctx, editor_id).unwrap_or_default();
-                    state.cursor.set_char_range(Some(CCursorRange::two(
-                        CCursor::new(start),
-                        CCursor::new(end),
-                    )));
-                    egui::TextEdit::store_state(ctx, editor_id, state);
-                } else if let Some(cursor) = jump_cursor {
+                if let Some(cursor) = jump_cursor {
                     let mut state = egui::TextEdit::load_state(ctx, editor_id).unwrap_or_default();
                     state
                         .cursor
@@ -1130,17 +1183,10 @@ impl eframe::App for EditorApp {
                                 .code_editor()
                                 .layouter(&mut layouter)
                                 .show(ui);
-                            if let Some((cursor, _)) = jump_selection {
-                                edit.response.request_focus();
-                                let mut target = edit
-                                    .galley
-                                    .pos_from_cursor(CCursor::new(cursor))
-                                    .translate(edit.galley_pos.to_vec2());
-                                target.min.y -= row_height * 4.0;
-                                target.max.y -= row_height * 4.0;
-                                ui.scroll_to_rect(target, Some(egui::Align::TOP));
-                            } else if let Some(cursor) = jump_cursor {
-                                edit.response.request_focus();
+                            if let Some(cursor) = jump_cursor {
+                                if !self.find_open {
+                                    edit.response.request_focus();
+                                }
                                 let mut target = edit
                                     .galley
                                     .pos_from_cursor(CCursor::new(cursor))
