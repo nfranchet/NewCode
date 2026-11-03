@@ -10,7 +10,7 @@ Build a fast, Linux-first desktop editor that replaces only the VS Code features
 - Text selections in the editor can be copied and pasted with **Ctrl+C** and **Ctrl+V**, or with the Copy and Paste toolbar actions.
 - The center editor opens files on double-click, supports editing and saving, keeps long lines unwrapped with horizontal scrolling, and colors source text based on common file extensions. Open file tabs have a close button, and **Ctrl+W** closes the active file. Closing a modified file asks whether to save, discard, or cancel.
 - Open files use a single horizontally scrollable tab row. A searchable open-files menu provides direct access to any tab, including those outside the visible row, and brings the selected tab into view.
-- A shell panel across the bottom of the workspace and a shell panel on the right. Both are interactive terminal emulators connected to PTYs. The right panel defaults to `codex --resume`; its command is configurable.
+- An interactive PTY-backed shell across the bottom and a right panel with **Codex** and **Terminal** tabs. The Codex tab communicates with the Codex App Server over JSONL stdio, streams assistant output, and displays/responds to approval and input requests. The server starts at launch by default and can be disabled in the panel or with `--no-codex`.
 - An optional directory argument at startup opens that directory in the explorer, for example `focus-editor ~/projects/my-app`.
 - All panels can be resized, and their dimensions and positions are restored on the next launch.
 

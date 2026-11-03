@@ -1,12 +1,15 @@
 #![cfg_attr(not(target_os = "linux"), allow(unused))]
 
+mod app_server;
+mod codex_ui;
 mod editor;
+mod git_ui;
 mod settings;
 mod syntax;
 mod terminal;
 
-use eframe::egui;
 use editor::EditorApp;
+use eframe::egui;
 
 fn main() -> eframe::Result<()> {
     if !cfg!(target_os = "linux") {

@@ -1,4 +1,4 @@
-use crate::{settings::Settings, syntax::colored_job, terminal::Terminal};
+use crate::{codex_ui::CodexUi, settings::Settings, syntax::colored_job, terminal::Terminal};
 use eframe::egui::{
     self, Color32, FontId, TextFormat, TextStyle,
     text::{CCursor, CCursorRange, LayoutJob, LayoutSection},
@@ -13,6 +13,7 @@ use std::{
 enum SidebarMode {
     Explorer,
     Search,
+    Git,
 }
 
 struct FileMatches {
@@ -143,10 +144,13 @@ pub(crate) struct EditorApp {
     dirty: bool,
     top: Option<Terminal>,
     right: Option<Terminal>,
+    codex_ui: CodexUi,
+    right_tab_terminal: bool,
     rename_target: Option<PathBuf>,
     rename_text: String,
     status: String,
     sidebar_mode: SidebarMode,
+    git_ui: crate::git_ui::GitUi,
     search_query: String,
     search_results: Vec<FileMatches>,
     pending_editor_cursor: Option<usize>,
@@ -168,17 +172,28 @@ impl EditorApp {
             .ok()
             .and_then(|s| toml::from_str(&s).ok())
             .unwrap_or_default();
-        let directory_argument = std::env::args()
-            .nth(1)
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let no_codex = args.iter().any(|arg| arg == "--no-codex");
+        let directory_argument = args
+            .iter()
+            .find(|arg| !arg.starts_with('-'))
             .map(PathBuf::from)
             .filter(|p| p.is_dir());
         let mut settings = settings;
+        // Older settings launched Codex as a shell command. Keep the terminal a normal shell.
+        if settings.right_command.trim() == "codex --resume" {
+            settings.right_command.clear();
+        }
         if let Some(directory) = directory_argument {
             settings.workspace = Some(directory);
         }
         let cwd = settings.workspace.as_deref();
         let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
         let right = Terminal::spawn(&settings.right_command, cwd, cc.egui_ctx.clone()).ok();
+        let mut codex_ui = CodexUi::default();
+        if settings.codex_app_server && !no_codex {
+            codex_ui.start(cwd, cc.egui_ctx.clone());
+        }
         let mut style = (*cc.egui_ctx.style()).clone();
         style
             .text_styles
@@ -223,10 +238,13 @@ impl EditorApp {
             dirty: false,
             top,
             right,
+            codex_ui,
+            right_tab_terminal: false,
             rename_target: None,
             rename_text: String::new(),
             status: "Ready".into(),
             sidebar_mode: SidebarMode::Explorer,
+            git_ui: crate::git_ui::GitUi::default(),
             search_query: String::new(),
             search_results: Vec::new(),
             pending_editor_cursor: None,
@@ -774,6 +792,19 @@ impl eframe::App for EditorApp {
                     if explorer.clicked() {
                         self.sidebar_mode = SidebarMode::Explorer;
                     }
+                    if ui
+                        .add_sized(
+                            [34.0, 40.0],
+                            egui::Button::selectable(
+                                self.sidebar_mode == SidebarMode::Git,
+                                egui::RichText::new("⑂").size(22.0),
+                            ),
+                        )
+                        .on_hover_text("Source Control (Git)")
+                        .clicked()
+                    {
+                        self.sidebar_mode = SidebarMode::Git;
+                    }
                     let search = ui.add_sized(
                         [34.0, 40.0],
                         egui::Button::selectable(
@@ -806,11 +837,18 @@ impl eframe::App for EditorApp {
                             }
                         });
                     });
+                } else if self.sidebar_mode == SidebarMode::Git {
+                    ui.heading("⑂ Source Control");
                 } else {
                     ui.heading("🔎 Search");
                 }
                 ui.separator();
                 match self.sidebar_mode {
+                    SidebarMode::Git => {
+                        if let Some(path) = self.git_ui.ui(ui, self.settings.workspace.as_deref()) {
+                            self.open_file(path);
+                        }
+                    }
                     SidebarMode::Explorer => {
                         if let Some(root) = self.settings.workspace.clone() {
                             ui.label(
@@ -895,25 +933,52 @@ impl eframe::App for EditorApp {
             .width_range(260.0..=700.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.strong("▸_  Codex command");
-                });
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.settings.right_command)
-                            .desired_width(f32::INFINITY),
-                    );
-                    if ui.button("▶  Run").clicked() {
-                        self.right = Terminal::spawn(
-                            &self.settings.right_command,
-                            cwd.as_deref(),
-                            ctx.clone(),
-                        )
-                        .ok();
+                    if ui
+                        .selectable_label(!self.right_tab_terminal, "✦ Codex")
+                        .clicked()
+                    {
+                        self.right_tab_terminal = false;
+                    }
+                    if ui
+                        .selectable_label(self.right_tab_terminal, "▸ Terminal")
+                        .clicked()
+                    {
+                        self.right_tab_terminal = true;
+                    }
+                    ui.separator();
+                    let mut enabled = self.settings.codex_app_server;
+                    if ui.checkbox(&mut enabled, "Start Codex server").changed() {
+                        self.settings.codex_app_server = enabled;
+                        if enabled {
+                            self.codex_ui.start(cwd.as_deref(), ctx.clone());
+                        } else {
+                            self.codex_ui.stop();
+                        }
                         self.save_settings();
                     }
                 });
                 ui.separator();
-                Self::terminal_ui(ctx, ui, "", &mut self.right, cwd.as_deref());
+                if self.right_tab_terminal {
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.settings.right_command)
+                                .hint_text("Shell command")
+                                .desired_width(f32::INFINITY),
+                        );
+                        if ui.button("Run").clicked() {
+                            self.right = Terminal::spawn(
+                                &self.settings.right_command,
+                                cwd.as_deref(),
+                                ctx.clone(),
+                            )
+                            .ok();
+                            self.save_settings();
+                        }
+                    });
+                    Self::terminal_ui(ctx, ui, "Terminal", &mut self.right, cwd.as_deref());
+                } else {
+                    self.codex_ui.show(ui, cwd.as_deref(), ctx);
+                }
             });
         self.settings.right_width = right_response.response.rect.width().max(260.0);
         egui::CentralPanel::default().show(ctx, |ui| {
