@@ -1,0 +1,12 @@
+[package]
+name = "focus-editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = { version = "0.32", features = ["persistence"] }
+portable-pty = "0.9"
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "6"
