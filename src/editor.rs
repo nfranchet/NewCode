@@ -80,6 +80,36 @@ impl EditorApp {
         style
             .text_styles
             .insert(TextStyle::Monospace, FontId::monospace(14.0));
+        style
+            .text_styles
+            .insert(TextStyle::Heading, FontId::proportional(18.0));
+        style.spacing.item_spacing = egui::vec2(8.0, 7.0);
+        style.spacing.button_padding = egui::vec2(10.0, 6.0);
+        style.spacing.interact_size = egui::vec2(22.0, 24.0);
+        style.visuals.dark_mode = false;
+        style.visuals.override_text_color = Some(Color32::from_rgb(48, 49, 51));
+        style.visuals.panel_fill = Color32::from_rgb(248, 248, 248);
+        style.visuals.window_fill = Color32::WHITE;
+        style.visuals.extreme_bg_color = Color32::WHITE;
+        style.visuals.faint_bg_color = Color32::from_rgb(243, 243, 243);
+        style.visuals.code_bg_color = Color32::from_rgb(250, 250, 250);
+        style.visuals.window_corner_radius = egui::CornerRadius::same(4);
+        style.visuals.selection.bg_fill = Color32::from_rgb(204, 231, 255);
+        style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, Color32::from_rgb(0, 122, 204));
+        style.visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
+        style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
+        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, Color32::TRANSPARENT);
+        style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(3);
+        style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(231, 231, 231);
+        style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(239, 239, 239);
+        style.visuals.widgets.hovered.bg_stroke =
+            egui::Stroke::new(1.0_f32, Color32::from_rgb(218, 218, 218));
+        style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(3);
+        style.visuals.widgets.active.bg_fill = Color32::from_rgb(218, 232, 246);
+        style.visuals.widgets.active.weak_bg_fill = Color32::from_rgb(218, 232, 246);
+        style.visuals.widgets.active.bg_stroke =
+            egui::Stroke::new(1.0_f32, Color32::from_rgb(0, 122, 204));
+        style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(3);
         cc.egui_ctx.set_style(style);
         Self {
             settings,
@@ -427,24 +457,43 @@ impl eframe::App for EditorApp {
         if let Some(t) = &mut self.right {
             t.poll();
         }
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("📂 Workspace").clicked() {
-                    self.choose_workspace();
-                }
-                if ui.button("New file").clicked() {
-                    self.create_entry(false);
-                }
-                if ui.button("New folder").clicked() {
-                    self.create_entry(true);
-                }
-                if ui.button("Save  Ctrl+S").clicked() {
-                    self.save_file();
-                }
-                ui.separator();
-                ui.label(&self.status);
+        egui::TopBottomPanel::top("toolbar")
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(248, 248, 248))
+                    .inner_margin(egui::Margin::symmetric(12, 9)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("⌂  Workspace").clicked() {
+                        self.choose_workspace();
+                    }
+                    if let Some(root) = self.settings.workspace.as_ref() {
+                        ui.label(
+                            egui::RichText::new(
+                                root.file_name().unwrap_or_default().to_string_lossy(),
+                            )
+                            .color(Color32::from_rgb(100, 100, 100)),
+                        );
+                    }
+                    ui.separator();
+                    if ui.button("＋  File").clicked() {
+                        self.create_entry(false);
+                    }
+                    if ui.button("＋  Folder").clicked() {
+                        self.create_entry(true);
+                    }
+                    if ui.button("Save  ·  Ctrl+S").clicked() {
+                        self.save_file();
+                    }
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(&self.status)
+                            .small()
+                            .color(Color32::from_rgb(100, 100, 100)),
+                    );
+                });
             });
-        });
         let top_height = self.settings.top_height;
         let cwd = self.settings.workspace.clone();
         let top_response = egui::TopBottomPanel::bottom("top_terminal")
@@ -455,31 +504,60 @@ impl eframe::App for EditorApp {
                 Self::terminal_ui(ui, "Shell", &mut self.top, cwd.as_deref());
             });
         self.settings.top_height = top_response.response.rect.height().max(80.0);
+        egui::SidePanel::left("activity_bar")
+            .exact_width(42.0)
+            .resizable(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(245, 245, 245))
+                    .inner_margin(egui::Margin::symmetric(3, 8)),
+            )
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    let explorer = ui.add_sized(
+                        [34.0, 40.0],
+                        egui::Button::selectable(
+                            self.sidebar_mode == SidebarMode::Explorer,
+                            egui::RichText::new("▣").size(20.0),
+                        ),
+                    );
+                    let explorer = explorer.on_hover_text("Explorer");
+                    if explorer.clicked() {
+                        self.sidebar_mode = SidebarMode::Explorer;
+                    }
+                    let search = ui.add_sized(
+                        [34.0, 40.0],
+                        egui::Button::selectable(
+                            self.sidebar_mode == SidebarMode::Search,
+                            egui::RichText::new("⌕").size(23.0),
+                        ),
+                    );
+                    let search = search.on_hover_text("Search");
+                    if search.clicked() {
+                        self.sidebar_mode = SidebarMode::Search;
+                    }
+                });
+            });
         let left_width = self.settings.explorer_width;
         let left_response = egui::SidePanel::left("explorer")
             .resizable(true)
             .default_width(left_width)
             .width_range(150.0..=500.0)
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(self.sidebar_mode == SidebarMode::Explorer, "Explorer")
-                        .clicked()
-                    {
-                        self.sidebar_mode = SidebarMode::Explorer;
-                    }
-                    if ui
-                        .selectable_label(self.sidebar_mode == SidebarMode::Search, "Search")
-                        .clicked()
-                    {
-                        self.sidebar_mode = SidebarMode::Search;
-                    }
+                ui.heading(match self.sidebar_mode {
+                    SidebarMode::Explorer => "Explorer",
+                    SidebarMode::Search => "Search",
                 });
                 ui.separator();
                 match self.sidebar_mode {
                     SidebarMode::Explorer => {
                         if let Some(root) = self.settings.workspace.clone() {
-                            ui.label(root.file_name().unwrap_or_default().to_string_lossy());
+                            ui.label(
+                                egui::RichText::new(
+                                    root.file_name().unwrap_or_default().to_string_lossy(),
+                                )
+                                .strong(),
+                            );
                             egui::ScrollArea::vertical().show(ui, |ui| self.tree(ui, &root));
                         } else {
                             ui.label("Choose a workspace folder to begin.");
@@ -516,9 +594,26 @@ impl eframe::App for EditorApp {
                                     .unwrap_or(&group.path)
                                     .display()
                                     .to_string();
-                                ui.strong(label);
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new("▰")
+                                            .color(Color32::from_rgb(0, 122, 204)),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(label)
+                                            .strong()
+                                            .color(Color32::from_rgb(58, 58, 58)),
+                                    );
+                                });
                                 for (line, preview) in &group.lines {
-                                    if ui.small_button(format!("{line}: {preview}")).clicked() {
+                                    let result = ui.selectable_label(
+                                        false,
+                                        egui::RichText::new(format!("{line:>4}  {preview}"))
+                                            .monospace()
+                                            .size(12.0)
+                                            .color(Color32::from_rgb(95, 95, 95)),
+                                    );
+                                    if result.clicked() {
                                         open_result = Some((group.path.clone(), *line));
                                     }
                                 }
@@ -584,9 +679,24 @@ impl eframe::App for EditorApp {
             if self.active_file.is_some() {
                 let path = self.active_file.clone().unwrap();
                 ui.horizontal(|ui| {
-                    ui.label(path.display().to_string());
+                    ui.label(
+                        egui::RichText::new(path.file_name().unwrap_or_default().to_string_lossy())
+                            .strong()
+                            .size(16.0),
+                    );
+                    ui.label(
+                        egui::RichText::new(
+                            path.parent().unwrap_or(Path::new("")).display().to_string(),
+                        )
+                        .small()
+                        .color(Color32::from_rgb(120, 120, 120)),
+                    );
                     if self.dirty {
-                        ui.colored_label(Color32::YELLOW, "Modified");
+                        ui.label(
+                            egui::RichText::new("● Modified")
+                                .small()
+                                .color(Color32::from_rgb(176, 112, 0)),
+                        );
                     }
                 });
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");

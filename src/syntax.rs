@@ -31,7 +31,7 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
     };
     let default = TextFormat {
         font_id: FontId::monospace(14.0),
-        color: Color32::from_rgb(210, 214, 220),
+        color: Color32::from_rgb(48, 49, 51),
         ..Default::default()
     };
     for line in text.split_inclusive('\n') {
@@ -41,7 +41,7 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
                 line,
                 0.0,
                 TextFormat {
-                    color: Color32::from_rgb(110, 145, 110),
+                    color: Color32::from_rgb(0, 128, 0),
                     ..default.clone()
                 },
             );
@@ -58,7 +58,7 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
                         &word,
                         0.0,
                         TextFormat {
-                            color: Color32::from_rgb(206, 145, 120),
+                            color: Color32::from_rgb(163, 21, 21),
                             ..default.clone()
                         },
                     );
@@ -94,11 +94,11 @@ fn append_word(job: &mut LayoutJob, word: &str, fmt: &TextFormat, keywords: &str
         .split_whitespace()
         .any(|k| k.eq_ignore_ascii_case(word))
     {
-        Color32::from_rgb(198, 120, 221)
+        Color32::from_rgb(175, 0, 219)
     } else if word.parse::<f64>().is_ok() {
-        Color32::from_rgb(209, 154, 102)
+        Color32::from_rgb(9, 134, 88)
     } else if lang == "json" && word.ends_with(':') {
-        Color32::from_rgb(97, 175, 239)
+        Color32::from_rgb(4, 81, 165)
     } else {
         fmt.color
     };
