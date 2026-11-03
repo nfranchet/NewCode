@@ -142,6 +142,7 @@ enum Action {
     Index { paths: Vec<String>, stage: bool },
     Commit(String),
     Diff(String, bool),
+    Patch(String, bool),
 }
 struct Reply {
     snapshot: Result<Snapshot, String>,
@@ -158,9 +159,13 @@ pub(crate) struct GitUi {
     message: String,
     commit: String,
     diff: Option<String>,
+    diff_target: Option<(String, bool)>,
 }
 impl GitUi {
     fn start(&mut self, action: Action, ctx: &egui::Context) {
+        if let Action::Diff(path, staged) = &action {
+            self.diff_target = Some((path.clone(), *staged));
+        }
         let Some(workspace) = self.workspace.clone() else {
             return;
         };
@@ -191,6 +196,36 @@ impl GitUi {
                     committed = result.is_ok();
                     Some(result.map(|v| String::from_utf8_lossy(&v).trim().into()))
                 }
+                Action::Patch(patch, reverse) => {
+                    use std::io::Write;
+                    use std::process::Stdio;
+                    let result = (|| -> Result<String, String> {
+                        let mut command = Command::new("git");
+                        command.current_dir(&root).args(["apply", "--cached"]);
+                        if reverse {
+                            command.arg("--reverse");
+                        }
+                        let mut child = command
+                            .stdin(Stdio::piped())
+                            .stderr(Stdio::piped())
+                            .stdout(Stdio::piped())
+                            .spawn()
+                            .map_err(|e| e.to_string())?;
+                        child
+                            .stdin
+                            .take()
+                            .unwrap()
+                            .write_all(patch.as_bytes())
+                            .map_err(|e| e.to_string())?;
+                        let output = child.wait_with_output().map_err(|e| e.to_string())?;
+                        if output.status.success() {
+                            Ok("Hunk applied. Select the file to refresh its diff.".into())
+                        } else {
+                            Err(String::from_utf8_lossy(&output.stderr).into())
+                        }
+                    })();
+                    Some(result)
+                }
                 Action::Diff(path, staged) => {
                     let mut args = vec!["diff", "--no-ext-diff", "--no-textconv"];
                     if staged {
@@ -215,6 +250,87 @@ impl GitUi {
             ctx.request_repaint();
         });
     }
+    pub(crate) fn show_diff(&mut self, ui: &mut egui::Ui) -> bool {
+        let Some(diff) = &self.diff else {
+            return false;
+        };
+        let mut close = false;
+        let mut patch = None;
+        let staged = self.diff_target.as_ref().is_some_and(|(_, staged)| *staged);
+        ui.horizontal(|ui| {
+            ui.strong(
+                self.diff_target
+                    .as_ref()
+                    .map(|(path, _)| path.as_str())
+                    .unwrap_or("Git diff"),
+            );
+            ui.label(if staged {
+                "HEAD → Index"
+            } else {
+                "Index → Working tree"
+            });
+            close = ui.button("Close diff").clicked();
+        });
+        let lines: Vec<_> = diff.split_inclusive('\n').collect();
+        let first = lines.iter().position(|line| line.starts_with("@@"));
+        egui::ScrollArea::both().show(ui, |ui| {
+            if diff.is_empty() {
+                ui.label("No text changes available.");
+            }
+            for (index, line) in lines.iter().enumerate() {
+                if line.starts_with("@@")
+                    && !diff.contains("new file mode")
+                    && !diff.contains("deleted file mode")
+                    && !diff.contains("rename from")
+                {
+                    if ui
+                        .add_enabled(
+                            self.pending.is_none(),
+                            egui::Button::new(if staged { "Unstage hunk" } else { "Stage hunk" }),
+                        )
+                        .clicked()
+                    {
+                        let end = lines
+                            .iter()
+                            .enumerate()
+                            .skip(index + 1)
+                            .find(|(_, l)| l.starts_with("@@"))
+                            .map(|(i, _)| i)
+                            .unwrap_or(lines.len());
+                        patch = Some(format!(
+                            "{}{}",
+                            lines[..first.unwrap_or(0)].concat(),
+                            lines[index..end].concat()
+                        ));
+                    }
+                }
+                let color = if line.starts_with('+') {
+                    Color32::DARK_GREEN
+                } else if line.starts_with('-') {
+                    Color32::DARK_RED
+                } else {
+                    Color32::DARK_GRAY
+                };
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(line.trim_end_matches('\n'))
+                            .monospace()
+                            .color(color),
+                    )
+                    .selectable(true),
+                );
+            }
+        });
+        if let Some(patch) = patch {
+            self.start(Action::Patch(patch, staged), ui.ctx());
+            self.diff = None;
+        }
+        if close {
+            self.diff = None;
+        }
+        true
+    }
+
     pub(crate) fn ui(&mut self, ui: &mut egui::Ui, workspace: Option<&Path>) -> Option<PathBuf> {
         if self.workspace.as_deref() != workspace {
             *self = Self {
@@ -274,27 +390,11 @@ impl GitUi {
         if let Some(s) = &self.snapshot {
             ui.label(egui::RichText::new(&s.branch).strong());
             ui.small(s.root.display().to_string());
-            ui.add(
-                egui::TextEdit::multiline(&mut self.commit)
-                    .hint_text("Commit message")
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY),
-            );
             let staged = s
                 .files
                 .iter()
                 .any(|c| c.index != ' ' && c.index != '?' && !conflict(c));
             let conflicts = s.files.iter().any(conflict);
-            if ui
-                .add_enabled(
-                    !busy && staged && !conflicts && !self.commit.trim().is_empty(),
-                    egui::Button::new("Commit staged changes"),
-                )
-                .clicked()
-            {
-                action = Some(Action::Commit(self.commit.clone()));
-            }
-            ui.small("Git uses saved files. Save editor changes before staging.");
             if conflicts {
                 ui.colored_label(
                     Color32::DARK_RED,
@@ -306,20 +406,29 @@ impl GitUi {
             }
             egui::ScrollArea::vertical()
                 .id_salt("git_changes")
+                .max_height((ui.available_height() - 210.0).max(80.0))
                 .show(ui, |ui| {
-                    for staged in [true, false] {
+                    for (group, staged) in [(0, false), (1, false), (2, true), (3, false)] {
                         ui.separator();
-                        ui.strong(if staged { "Staged changes" } else { "Changes" });
-                        ui.small(if staged { &s.staged } else { &s.unstaged });
+                        ui.strong(match group {
+                            0 => "Unstaged",
+                            1 => "Untracked",
+                            2 => "Staged",
+                            _ => "Conflicts",
+                        })
+                        .on_hover_text(if staged {
+                            "Included in the next commit"
+                        } else {
+                            "Not included in the next commit"
+                        });
                         let files: Vec<_> = s
                             .files
                             .iter()
-                            .filter(|c| {
-                                if staged {
-                                    c.index != ' ' && c.index != '?' && !conflict(c)
-                                } else {
-                                    c.work != ' ' || c.index == '?' || conflict(c)
-                                }
+                            .filter(|c| match group {
+                                0 => c.work != ' ' && c.index != '?' && !conflict(c),
+                                1 => c.index == '?',
+                                2 => c.index != ' ' && c.index != '?' && !conflict(c),
+                                _ => conflict(c),
                             })
                             .collect();
                         if !files.is_empty()
@@ -354,72 +463,86 @@ impl GitUi {
                             ui.push_id((&c.path, staged), |ui| {
                                 let code = if staged { c.index } else { c.work };
                                 let title = if conflict(c) { "Conflict" } else { label(code) };
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "{title}: {}  {}",
-                                        c.path,
-                                        s.counts[usize::from(!staged)]
-                                            .get(&c.path)
-                                            .map(String::as_str)
-                                            .unwrap_or("")
-                                    ))
-                                    .color(if conflict(c) {
-                                        Color32::DARK_RED
-                                    } else {
-                                        Color32::from_rgb(45, 95, 65)
-                                    }),
-                                );
+                                if ui
+                                    .selectable_label(
+                                        self.diff_target.as_ref().is_some_and(|(p, cached)| {
+                                            p == &c.path && *cached == staged
+                                        }),
+                                        format!(
+                                            "{title}: {}  {}",
+                                            c.path,
+                                            s.counts[usize::from(!staged)]
+                                                .get(&c.path)
+                                                .map(String::as_str)
+                                                .unwrap_or("")
+                                        ),
+                                    )
+                                    .clicked()
+                                {
+                                    action = Some(Action::Diff(c.path.clone(), staged));
+                                }
                                 if let Some(old) = &c.old {
                                     ui.small(format!("From: {old}"));
                                 }
-                                ui.horizontal(|ui| {
-                                    if ui
-                                        .add_enabled(
-                                            !busy,
-                                            egui::Button::new(if staged {
-                                                "Unstage"
-                                            } else {
-                                                "Stage"
-                                            }),
-                                        )
-                                        .clicked()
-                                    {
-                                        let mut paths = vec![c.path.clone()];
-                                        if let Some(old) = &c.old {
-                                            paths.push(old.clone());
-                                        }
-                                        action = Some(if staged {
-                                            Action::Index {
-                                                paths,
-                                                stage: false,
-                                            }
-                                        } else {
-                                            Action::Index { paths, stage: true }
-                                        });
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            !busy && c.index != '?',
-                                            egui::Button::new("Diff ±"),
-                                        )
-                                        .clicked()
-                                    {
-                                        action = Some(Action::Diff(c.path.clone(), staged));
-                                    }
-                                    if ui
-                                        .add_enabled(
-                                            s.root.join(&c.path).is_file(),
-                                            egui::Button::new("Open"),
-                                        )
-                                        .clicked()
-                                    {
-                                        open = Some(s.root.join(&c.path));
-                                    }
-                                });
                             });
                         }
                     }
                 });
+            ui.separator();
+            if let Some((path, cached)) = &self.diff_target {
+                ui.small(format!("Selected: {path}"));
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            !busy,
+                            egui::Button::new(if *cached {
+                                "Unstage file"
+                            } else {
+                                "Stage file"
+                            }),
+                        )
+                        .clicked()
+                    {
+                        let mut paths = vec![path.clone()];
+                        if let Some(old) = s
+                            .files
+                            .iter()
+                            .find(|c| &c.path == path)
+                            .and_then(|c| c.old.clone())
+                        {
+                            paths.push(old);
+                        }
+                        action = Some(Action::Index {
+                            paths,
+                            stage: !cached,
+                        });
+                    }
+                    if ui
+                        .add_enabled(s.root.join(path).is_file(), egui::Button::new("Open file"))
+                        .clicked()
+                    {
+                        open = Some(s.root.join(path));
+                        self.diff = None;
+                    }
+                });
+            }
+            ui.separator();
+            ui.add(
+                egui::TextEdit::multiline(&mut self.commit)
+                    .hint_text("Commit message…")
+                    .desired_rows(2)
+                    .desired_width(f32::INFINITY),
+            );
+            if ui
+                .add_enabled(
+                    !busy && staged && !conflicts && !self.commit.trim().is_empty(),
+                    egui::Button::new("Commit staged changes"),
+                )
+                .clicked()
+            {
+                action = Some(Action::Commit(self.commit.clone()));
+            }
+            ui.small("Git uses saved files. Save editor changes before staging.");
         }
         if !self.message.is_empty() {
             ui.separator();
@@ -427,33 +550,6 @@ impl GitUi {
         }
         if let Some(action) = action {
             self.start(action, ui.ctx());
-        }
-        if let Some(diff) = &self.diff {
-            let mut visible = true;
-            egui::Window::new("Git diff")
-                .open(&mut visible)
-                .default_size([800.0, 550.0])
-                .show(ui.ctx(), |ui| {
-                    egui::ScrollArea::both().show(ui, |ui| {
-                        if diff.is_empty() {
-                            ui.label("No text diff (the file may be untracked or a submodule).");
-                        }
-                        for line in diff.lines() {
-                            ui.label(egui::RichText::new(line).monospace().color(
-                                if line.starts_with('+') {
-                                    Color32::DARK_GREEN
-                                } else if line.starts_with('-') {
-                                    Color32::DARK_RED
-                                } else {
-                                    Color32::DARK_GRAY
-                                },
-                            ));
-                        }
-                    });
-                });
-            if !visible {
-                self.diff = None;
-            }
         }
         open
     }

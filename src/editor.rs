@@ -1112,6 +1112,9 @@ impl eframe::App for EditorApp {
                 }
                 ui.separator();
             }
+            if self.git_ui.show_diff(ui) {
+                return;
+            }
             if self.active_file.is_some() {
                 if self.find_open {
                     let matches = find_ranges(&self.buffer, &self.find_query);
