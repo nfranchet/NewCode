@@ -22,6 +22,7 @@ The first build downloads crates from crates.io. The app stores settings in the 
 
 - Choose a workspace folder from the toolbar.
 - Double-click a file in Explorer to open it. Edit in the center pane and save with **Ctrl+S** or **Edit → Save**.
+- Editor lines do not wrap; use the horizontal scrollbar to view long lines.
 - Close a file with the **×** on its tab or press **Ctrl+W**. If the file has unsaved changes, choose **Save**, **Discard**, or **Cancel**.
 - Open file tabs stay on one horizontally scrollable row. Use the **⌄** open-files menu to search and jump directly to any open file; its tab scrolls into view when selected.
 - Use **Search** in the left sidebar to search file contents in the current workspace. Results are grouped by file; click a matching line to open the file at that line with nearby context visible.

@@ -11,6 +11,7 @@
 - [ ] Linux app launches into an empty state or restores the last workspace.
 - [ ] Explorer operations update the filesystem and tree.
 - [ ] Double-click opens a text file; edits can be saved.
+- [ ] Long editor lines remain unwrapped and can be viewed with a horizontal scrollbar when needed.
 - [ ] Open files can be closed from their tab or with Ctrl+W; modified files prompt to save, discard, or cancel.
 - [ ] Open tabs stay in one horizontal row, with scrolling and a searchable menu to activate any open file.
 - [ ] Explorer and Search modes switch within the left sidebar; Search mode replaces the tree with a query field and Search button.

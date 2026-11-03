@@ -6,6 +6,7 @@ use eframe::egui::{
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -17,6 +18,15 @@ enum SidebarMode {
 struct FileMatches {
     path: PathBuf,
     lines: Vec<(usize, String)>,
+}
+
+#[derive(Default)]
+struct EditorLayoutCache {
+    text: String,
+    extension: String,
+    query: String,
+    active_match: Option<usize>,
+    galley: Option<Arc<egui::Galley>>,
 }
 
 fn collect_search_files(dir: &Path, files: &mut Vec<PathBuf>) {
@@ -147,6 +157,7 @@ pub(crate) struct EditorApp {
     close_confirmation: Option<PathBuf>,
     open_file_filter: String,
     reveal_active_tab: bool,
+    editor_layout_cache: Arc<Mutex<EditorLayoutCache>>,
 }
 impl EditorApp {
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -226,6 +237,7 @@ impl EditorApp {
             close_confirmation: None,
             open_file_filter: String::new(),
             reveal_active_tab: true,
+            editor_layout_cache: Arc::new(Mutex::new(EditorLayoutCache::default())),
         }
     }
     fn save_settings(&self) {
@@ -1169,12 +1181,35 @@ impl eframe::App for EditorApp {
                     String::new()
                 };
                 let find_active = self.find_active;
-                let mut layouter = |ui: &egui::Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
-                    let mut job = colored_job(text.as_str(), ext);
-                    highlight_find_matches(&mut job, text.as_str(), &find_query, find_active);
-                    job.wrap.max_width = wrap_width;
-                    ui.fonts(|f| f.layout_job(job))
-                };
+                let layout_cache = self.editor_layout_cache.clone();
+                let extension = ext.to_string();
+                let mut layouter =
+                    move |ui: &egui::Ui, text: &dyn egui::TextBuffer, _wrap_width: f32| {
+                        let source = text.as_str();
+                        {
+                            let cached = layout_cache.lock().unwrap();
+                            if cached.text == source
+                                && cached.extension == extension
+                                && cached.query == find_query
+                                && cached.active_match == find_active
+                            {
+                                if let Some(galley) = &cached.galley {
+                                    return galley.clone();
+                                }
+                            }
+                        }
+                        let mut job = colored_job(source, &extension);
+                        highlight_find_matches(&mut job, source, &find_query, find_active);
+                        job.wrap.max_width = f32::INFINITY;
+                        let galley = ui.fonts(|fonts| fonts.layout_job(job));
+                        let mut cached = layout_cache.lock().unwrap();
+                        cached.text = source.to_owned();
+                        cached.extension = extension.clone();
+                        cached.query = find_query.clone();
+                        cached.active_match = find_active;
+                        cached.galley = Some(galley.clone());
+                        galley
+                    };
                 let editor_id = egui::Id::new("main_editor_text");
                 let jump_cursor = self.pending_editor_cursor.take();
                 if let Some(cursor) = jump_cursor {
@@ -1184,9 +1219,8 @@ impl eframe::App for EditorApp {
                         .set_char_range(Some(CCursorRange::one(CCursor::new(cursor))));
                     egui::TextEdit::store_state(ctx, editor_id, state);
                 }
-                let response = egui::ScrollArea::vertical()
+                let response = egui::ScrollArea::both()
                     .auto_shrink([false, false])
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysVisible)
                     .show(ui, |ui| {
                         let line_count = self.buffer.split('\n').count().max(1);
                         let row_height = ui.fonts(|f| f.row_height(&FontId::monospace(14.0)));
@@ -1197,39 +1231,31 @@ impl eframe::App for EditorApp {
                         });
                         let gutter_width = digit_width * line_count.to_string().len() as f32 + 16.0;
                         let text_width = (ui.available_width() - gutter_width - 8.0).max(60.0);
-                        let line_heights: Vec<f32> = self
-                            .buffer
-                            .split('\n')
-                            .map(|line| {
-                                let mut job = colored_job(line, ext);
-                                job.wrap.max_width = text_width;
-                                ui.fonts(|f| f.layout_job(job).size().y.max(row_height))
-                            })
-                            .collect();
                         ui.horizontal_top(|ui| {
-                            ui.vertical(|ui| {
-                                for (index, height) in line_heights.iter().enumerate() {
-                                    let number = index + 1;
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(gutter_width, *height),
-                                        egui::Layout::top_down(egui::Align::RIGHT),
-                                        |ui| {
-                                            ui.add(
-                                                egui::Label::new(
-                                                    egui::RichText::new(format!(
-                                                        "{number:>width$}",
-                                                        width = line_count.to_string().len()
-                                                    ))
-                                                    .monospace()
-                                                    .color(Color32::from_gray(115)),
-                                                )
-                                                .selectable(false)
-                                                .halign(egui::Align::RIGHT),
-                                            );
-                                        },
-                                    );
-                                }
-                            });
+                            let (gutter_rect, _) = ui.allocate_exact_size(
+                                egui::vec2(gutter_width, row_height * line_count as f32),
+                                egui::Sense::hover(),
+                            );
+                            let visible = ui.clip_rect().intersect(gutter_rect);
+                            let first_line = (((visible.top() - gutter_rect.top()) / row_height)
+                                .floor() as usize)
+                                .min(line_count);
+                            let end_line = (((visible.bottom() - gutter_rect.top()) / row_height)
+                                .ceil() as usize)
+                                .min(line_count);
+                            let number_width = line_count.to_string().len();
+                            for index in first_line..end_line {
+                                ui.painter().text(
+                                    egui::pos2(
+                                        gutter_rect.right() - 8.0,
+                                        gutter_rect.top() + index as f32 * row_height,
+                                    ),
+                                    egui::Align2::RIGHT_TOP,
+                                    format!("{:>number_width$}", index + 1),
+                                    FontId::monospace(14.0),
+                                    Color32::from_gray(115),
+                                );
+                            }
                             let edit = egui::TextEdit::multiline(&mut self.buffer)
                                 .id(editor_id)
                                 .font(TextStyle::Monospace)
