@@ -10,22 +10,17 @@ Publishing a GitHub release (including a prerelease) builds the tagged source an
 
 - `focus-editor-<tag>-linux-amd64.tar.gz`
 - `focus-editor-<tag>-linux-arm64.tar.gz`
-- `focus-editor-<tag>-macos-arm64.dmg`
 - `SHA256SUMS`
 
 Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer, an X11 or Wayland desktop, and working OpenGL/EGL libraries. They are dynamically linked; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
 
-On Apple Silicon macOS 11 or newer, open the DMG and drag **Focus Editor.app** to **Applications**. The app has an ad-hoc signature and is not notarized or signed with an Apple Developer ID. If macOS blocks the first launch, attempt to open it, then use **System Settings → Privacy & Security → Open Anyway** when offered. The macOS app stays attached when launched from a terminal:
-
-```sh
-/Applications/Focus\ Editor.app/Contents/MacOS/focus-editor ~/projects/my-project
-```
+Automatic releases currently publish Linux binaries only. macOS arm64 builds and DMGs are skipped. macOS remains available to build from source; its app packaging script remains available for manual use.
 
 Finder launches retain the inherited PATH and add `~/.local/bin`, `~/.opencode/bin`, `/opt/homebrew/bin`, and `/usr/local/bin` for external tools. Git, Docker, Codex, and OpenCode are separate installations; authenticate assistants with their CLI first. Run `focus-editor --version` (or the app's executable path with `--version`) to check the version without opening a window.
 
-To publish: merge the workflow and packaging scripts into `master`, bump the Cargo package version as appropriate, create a tag containing those changes, then publish a release for that tag. Saving a draft or pushing a tag alone does not build downloads. All three native builds and packaging checks must pass before any assets are uploaded. Rerun failed jobs from GitHub Actions to retry; matching assets are replaced. Release tags containing filename-unsafe characters such as `/` use `-` in download names. The bundle and executable version come from Cargo metadata; release filenames use the tag.
+To publish: merge the workflow and packaging scripts into the default branch, bump the Cargo package version as appropriate, create a tag containing those changes, then publish a release for that tag. Saving a draft or pushing a tag alone does not build downloads. Both Linux native builds and packaging checks must pass before any assets are uploaded. Rerun failed jobs from GitHub Actions to retry; matching assets are replaced. Release tags containing filename-unsafe characters such as `/` use `-` in download names. The bundle and executable version come from Cargo metadata; release filenames use the tag.
 
-The workflow needs no personal access token or Apple credentials: its final upload job uses GitHub's built-in token with `contents: write`. Native Linux amd64/arm64 and macOS arm64 builds run tests, validate architectures and runtime dependencies, and verify package contents. The macOS job validates the app signature and mounts the DMG read-only before publishing. Builds are not triggered until a release is published; local checks cannot substitute for a GUI launch check on a Mac.
+The workflow needs no personal access token: its final upload job uses GitHub's built-in token with `contents: write`. Native Linux amd64 and arm64 builds run tests, validate architectures and runtime dependencies, and verify package contents. Both Linux archives must be present before checksums are generated and assets are uploaded. Builds are not triggered until a release is published.
 
 ## Build and run
 
