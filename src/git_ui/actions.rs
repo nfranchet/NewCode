@@ -4,27 +4,49 @@ use super::{
     GitUi,
     repository::{Snapshot, conflict, git, snapshot},
 };
+use super::{
+    fingerprint::FileVersion,
+    patch::{self, PatchTask},
+    review::{DiffView, ReviewUpdate},
+};
 use eframe::egui;
-use std::{process::Command, sync::mpsc, time::Instant};
+use std::{sync::mpsc, time::Instant};
 
 pub(super) enum Action {
     Refresh,
     Index { paths: Vec<String>, stage: bool },
     Commit(String),
     Diff(String, bool),
-    Patch(String, bool),
+    Patch(PatchTask),
 }
 
 pub(super) struct Reply {
     pub(super) snapshot: Result<Snapshot, String>,
     pub(super) message: Option<Result<String, String>>,
     pub(super) committed: bool,
-    pub(super) diff: Option<String>,
+    pub(super) diff: Option<ReviewUpdate>,
 }
 
 impl GitUi {
     pub(super) fn start(&mut self, action: Action, ctx: &egui::Context) {
+        if self.pending.is_some() {
+            return;
+        }
+        let review = self
+            .diff
+            .as_ref()
+            .map(|v| (v.id, v.path.clone(), v.version.clone()));
+        let mut anchor = None;
         if let Action::Diff(path, staged) = &action {
+            anchor = self
+                .diff
+                .as_ref()
+                .filter(|v| &v.path == path)
+                .and_then(DiffView::anchor);
+            if self.diff.as_ref().is_some_and(|v| &v.path != path) {
+                self.diff = None;
+            }
+            self.review_generation += 1;
             self.diff_hidden = false;
             self.diff_target = Some((path.clone(), *staged));
         }
@@ -36,6 +58,7 @@ impl GitUi {
             .as_ref()
             .map(|s| s.root.clone())
             .unwrap_or(workspace.clone());
+        let generation = self.review_generation;
         let (tx, rx) = mpsc::channel();
         self.pending = Some(rx);
         let ctx = ctx.clone();
@@ -43,7 +66,17 @@ impl GitUi {
             let mut diff = None;
             let mut committed = false;
             let message = match action {
-                Action::Refresh => None,
+                Action::Refresh => {
+                    if let Some((id, path, expected)) = &review {
+                        if FileVersion::read(&root, path).map_or(true, |v| v != *expected) {
+                            diff = Some(ReviewUpdate::Invalidated {
+                                id: *id,
+                                reason: "File or index changed. Reload diff to continue.".into(),
+                            });
+                        }
+                    }
+                    None
+                }
                 Action::Index { paths, stage } => {
                     let mut args = if stage {
                         vec!["add", "--"]
@@ -58,51 +91,42 @@ impl GitUi {
                     committed = result.is_ok();
                     Some(result.map(|v| String::from_utf8_lossy(&v).trim().into()))
                 }
-                Action::Patch(patch, reverse) => {
-                    use std::io::Write;
-                    use std::process::Stdio;
-                    let result = (|| -> Result<String, String> {
-                        let mut command = Command::new("git");
-                        command.current_dir(&root).args(["apply", "--cached"]);
-                        if reverse {
-                            command.arg("--reverse");
-                        }
-                        let mut child = command
-                            .stdin(Stdio::piped())
-                            .stderr(Stdio::piped())
-                            .stdout(Stdio::piped())
-                            .spawn()
-                            .map_err(|e| e.to_string())?;
-                        child
-                            .stdin
-                            .take()
-                            .unwrap()
-                            .write_all(patch.as_bytes())
-                            .map_err(|e| e.to_string())?;
-                        let output = child.wait_with_output().map_err(|e| e.to_string())?;
-                        if output.status.success() {
-                            Ok("Hunk applied. Select the file to refresh its diff.".into())
+                Action::Patch(task) => match patch::apply(&root, &task) {
+                    Ok(applied) => {
+                        diff = Some(ReviewUpdate::Applied(applied));
+                        Some(Ok(if task.staged_after {
+                            "Hunk staged"
                         } else {
-                            Err(String::from_utf8_lossy(&output.stderr).into())
+                            "Hunk unstaged"
                         }
-                    })();
-                    Some(result)
-                }
-                Action::Diff(path, staged) => {
-                    let mut args = vec!["diff", "--no-ext-diff", "--no-textconv"];
-                    if staged {
-                        args.push("--cached");
+                        .into()))
                     }
-                    args.extend(["--", &path]);
-                    match git(&root, &args) {
-                        Ok(v) => {
-                            diff = Some(String::from_utf8_lossy(&v).into());
+                    Err(error) => {
+                        diff = Some(ReviewUpdate::Invalidated {
+                            id: task.review_id,
+                            reason: format!("{error} Reload diff before retrying."),
+                        });
+                        Some(Err(error))
+                    }
+                },
+                Action::Diff(path, staged) => {
+                    match DiffView::load(&root, &path, staged, generation, anchor) {
+                        Ok(view) => {
+                            diff = Some(ReviewUpdate::Loaded(Box::new(view)));
                             None
                         }
-                        Err(e) => Some(Err(e)),
+                        Err(error) => Some(Err(error)),
                     }
                 }
             };
+            if diff.is_none() && message.as_ref().is_some_and(Result::is_ok) {
+                if let Some((id, _, _)) = review {
+                    diff = Some(ReviewUpdate::Invalidated {
+                        id,
+                        reason: "Index updated. Reload diff to review the current changes.".into(),
+                    });
+                }
+            }
             let _ = tx.send(Reply {
                 committed,
                 snapshot: snapshot(&workspace),
@@ -147,8 +171,8 @@ impl GitUi {
                     }
                 }
             }
-            if reply.diff.is_some() {
-                self.diff = reply.diff;
+            if let Some(update) = reply.diff {
+                self.accept_review(update);
             }
         }
     }

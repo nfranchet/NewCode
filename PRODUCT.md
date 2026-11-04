@@ -30,9 +30,9 @@ Ctrl+F opens case-insensitive Find in the active file, with match highlights, a 
 
 Use a compact status view with branch/upstream information and distinct bordered groups: amber Unstaged, blue Untracked, green Staged, and red Conflicts. Identify file states and available addition/deletion counts; partially staged files may appear in both staged and unstaged groups.
 
-Selecting a file displays its unified diff in the center. Provide whole-file/group staging and unstaging, plus hunk actions for eligible tracked text changes. Space stages/unstages the focused file row without interfering with text entry. Enter a commit message below the list and commit staged changes only; block commits for unresolved conflicts, an empty message, or no staged content.
+Selecting a file displays its aligned Before/After comparison in the center. Provide whole-file/group staging and unstaging, plus hunk actions for eligible tracked text changes. Space stages/unstages the focused file row without interfering with text entry. Enter a commit message below the list and commit staged changes only; block commits for unresolved conflicts, an empty message, or no staged content.
 
-Run Git operations asynchronously and refresh status while the view is open. Preserve commit-field focus and text during refreshes. Hunk changes require reselecting the file to reload its diff. Returning to Explorer/Search restores the active editor buffer; selecting an editor tab dismisses the preview.
+Run Git operations asynchronously and refresh status while the view is open. Preserve commit-field focus and text during refreshes. Keep the comparison and scroll position after hunk actions; tint staged hunks blue on both sides with a Staged label and offer the reverse action. Retain red/green change indicators. Apply original patch bytes so unrelated staged changes remain intact. Detect changes outside the review and require Reload diff; whole-file operations also invalidate the review. Returning to Explorer/Search restores the active editor buffer; selecting an editor tab dismisses the preview.
 
 ## Shell and Codex
 

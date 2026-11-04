@@ -75,11 +75,13 @@ Open Source Control to see branch/upstream information and saved changes. Status
 | Staged | Green | Changes included in the next commit |
 | Conflicts | Red | Files needing resolution before committing |
 
-Select a file row to preview its unified diff in the center. Use **Stage file** or **Unstage file** for the selection, **Stage all** or **Unstage all** for a group, and **Open file** to edit it. A partially staged file appears in both applicable groups. Counts show additions and removals; renames, conflicts, and binary changes are identified where available.
+Select a file row to preview its aligned **Before / After** comparison in the center. Use **Stage file** or **Unstage file** for the selection, **Stage all** or **Unstage all** for a group, and **Open file** to edit it. A partially staged file appears in both applicable groups. Counts show additions and removals; renames, conflicts, and binary changes are identified where available.
 
 With a file row focused, **Space** stages or unstages the whole file according to its group. It does not affect typing in the commit message or another panel. The shortcut is disabled while a Git operation is pending.
 
-For eligible tracked text modifications, each diff hunk has a **Stage hunk** or **Unstage hunk** action. After applying a hunk, select the file again to load its updated diff. Structural changes such as new files, deletions, and renames use whole-file actions. An empty diff may mean the file is untracked or has no available text diff.
+For eligible tracked text modifications, each hunk has a **Stage hunk** or **Unstage hunk** action. Both sides stay visible in the same position after the action. Staged hunks have a blue background and a **Staged** label; red/green text still identifies removed/added lines. The reverse action applies the original hunk in reverse, preserving other staged changes.
+
+The comparison is a retained review snapshot. **Reload diff** loads the current changes; external file/index changes and whole-file operations require a reload before further hunk actions. New files, deletions, renames, mode changes, symlinks, conflicts, and binary changes use whole-file actions. An empty diff may mean the file is untracked or has no available text diff.
 
 Enter a message below the file groups, then click **Commit staged changes**. Only staged content is committed; save editor edits before staging. Commits are disabled when nothing is staged, the message is empty, or conflicts remain. A successful commit clears the message; failures preserve it and report the error.
 
@@ -144,7 +146,7 @@ The application uses one crate with three feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document and tab actions, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
 - `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
-- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, diff/hunk controls, and presentation helpers. Git tests live in `src/git_ui/tests.rs`.
+- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 
 Other top-level modules provide the shared theme/icons, settings, terminal state, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.

@@ -141,3 +141,5 @@ fn repository_staging_diff_commit_and_unstage() {
     std::fs::remove_dir_all(&root).unwrap();
     result.unwrap();
 }
+
+mod review;

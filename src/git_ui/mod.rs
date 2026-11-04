@@ -12,9 +12,14 @@ use std::{
 };
 mod actions;
 mod diff;
+mod diff_rows;
+mod fingerprint;
 mod panel;
+mod patch;
+mod patch_model;
 mod presentation;
 mod repository;
+mod review;
 #[cfg(test)]
 mod tests;
 
@@ -26,7 +31,8 @@ pub(crate) struct GitUi {
     refreshed: Option<Instant>,
     message: String,
     commit: String,
-    diff: Option<String>,
+    diff: Option<review::DiffView>,
+    review_generation: u64,
     diff_target: Option<(String, bool)>,
     diff_hidden: bool,
 }
