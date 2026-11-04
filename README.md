@@ -2,6 +2,8 @@
 
 A compact Rust editor for Linux and Apple Silicon macOS. Browse projects, edit source files, review Git changes, and work with a shell, Codex, and OpenCode.
 
+Licensed under the [Apache License 2.0](LICENSE).
+
 ## Release downloads
 
 Publishing a GitHub release (including a prerelease) builds the tagged source and attaches:
