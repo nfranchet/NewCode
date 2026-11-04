@@ -7,6 +7,7 @@ mod git_ui;
 mod settings;
 mod syntax;
 mod terminal;
+mod ui_theme;
 
 use editor::EditorApp;
 use eframe::egui;

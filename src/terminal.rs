@@ -39,8 +39,8 @@ impl Default for Cell {
     fn default() -> Self {
         Self {
             ch: ' ',
-            fg: Color32::from_rgb(220, 220, 220),
-            bg: Color32::from_rgb(18, 18, 18),
+            fg: Color32::from_rgb(221, 232, 246),
+            bg: crate::ui_theme::TERMINAL_BG,
         }
     }
 }
@@ -119,8 +119,8 @@ impl Terminal {
             in_osc: false,
             osc_escape: false,
             focused: false,
-            fg: Color32::from_rgb(220, 220, 220),
-            bg: Color32::from_rgb(18, 18, 18),
+            fg: Color32::from_rgb(221, 232, 246),
+            bg: crate::ui_theme::TERMINAL_BG,
         })
     }
     pub(crate) fn poll(&mut self) {
@@ -329,8 +329,8 @@ impl Terminal {
         while i < vals.len() {
             match vals[i] {
                 0 => {
-                    self.fg = Color32::from_rgb(220, 220, 220);
-                    self.bg = Color32::from_rgb(18, 18, 18);
+                    self.fg = Color32::from_rgb(221, 232, 246);
+                    self.bg = crate::ui_theme::TERMINAL_BG;
                 }
                 30..=37 => self.fg = ansi_color(vals[i] - 30, false),
                 90..=97 => self.fg = ansi_color(vals[i] - 90, true),

@@ -1,3 +1,4 @@
+use crate::ui_theme::{self as theme, Icon};
 use eframe::egui::{self, Color32};
 use std::{
     collections::HashMap,
@@ -341,6 +342,7 @@ impl GitUi {
     }
 
     pub(crate) fn ui(&mut self, ui: &mut egui::Ui, workspace: Option<&Path>) -> Option<PathBuf> {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         let cursor_color = if ui.visuals().dark_mode {
             Color32::WHITE
         } else {
@@ -393,7 +395,11 @@ impl GitUi {
             }
         }
         if workspace.is_none() {
-            ui.label("Choose a workspace folder to view Git changes.");
+            ui.vertical_centered(|ui| {
+                theme::empty_art(ui, Icon::Git, theme::GREEN);
+                ui.strong("Changes at a glance");
+                ui.label("Open a workspace to review and commit changes.");
+            });
             return None;
         }
         let busy = self.pending.is_some();
@@ -408,7 +414,10 @@ impl GitUi {
         ui.ctx().request_repaint_after(Duration::from_secs(3));
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!busy, egui::Button::new("Refresh"))
+                .add_enabled_ui(!busy, |ui| {
+                    theme::button(ui, Icon::Refresh, "Refresh", theme::GREEN, false)
+                })
+                .inner
                 .clicked()
             {
                 action = Some(Action::Refresh);
@@ -421,8 +430,14 @@ impl GitUi {
         });
         let mut open = None;
         if let Some(s) = &self.snapshot {
-            ui.label(egui::RichText::new(&s.branch).strong());
-            ui.small(s.root.display().to_string());
+            ui.horizontal_wrapped(|ui| {
+                theme::icon(ui, Icon::Git, theme::GREEN);
+                ui.add(
+                    egui::Label::new(egui::RichText::new(&s.branch).strong().color(theme::INK))
+                        .wrap(),
+                )
+                .on_hover_text(s.root.display().to_string());
+            });
             let staged = s
                 .files
                 .iter()
@@ -435,7 +450,14 @@ impl GitUi {
                 );
             }
             if s.files.is_empty() {
-                ui.label("Working tree clean");
+                egui::Frame::new()
+                    .fill(theme::TEAL_SOFT)
+                    .corner_radius(6)
+                    .inner_margin(8)
+                    .show(ui, |ui| {
+                        theme::heading(ui, Icon::Check, "Working tree clean", theme::GREEN);
+                        ui.small("No saved changes to commit.");
+                    });
             }
             egui::ScrollArea::vertical()
                 .id_salt("git_changes")
@@ -455,11 +477,7 @@ impl GitUi {
                             2 => "Staged",
                             _ => "Conflicts",
                         }).strong().color(accent))
-                        .on_hover_text(if staged {
-                            "Included in the next commit"
-                        } else {
-                            "Not included in the next commit"
-                        });
+                        .on_hover_text(if staged { format!("Included in the next commit\n{}", s.staged) } else { format!("Not included in the next commit\n{}", s.unstaged) });
                         let files: Vec<_> = s
                             .files
                             .iter()
@@ -585,7 +603,11 @@ impl GitUi {
             if ui
                 .add_enabled(
                     !busy && staged && !conflicts && !self.commit.trim().is_empty(),
-                    egui::Button::new("Commit staged changes"),
+                    egui::Button::new(
+                        egui::RichText::new("Commit staged changes").color(Color32::WHITE),
+                    )
+                    .fill(theme::GREEN)
+                    .stroke(egui::Stroke::NONE),
                 )
                 .clicked()
             {
@@ -610,6 +632,7 @@ mod tests {
     #[test]
     fn commit_focus_survives_refresh_and_failure() {
         let ctx = egui::Context::default();
+        theme::apply(&ctx);
         let workspace = PathBuf::from("/tmp/focus-git-focus-test");
         let make_snapshot = || Snapshot {
             root: workspace.clone(),

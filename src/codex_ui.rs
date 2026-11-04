@@ -1,4 +1,7 @@
-use crate::app_server::AppServer;
+use crate::{
+    app_server::AppServer,
+    ui_theme::{self as theme, Icon},
+};
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
@@ -47,11 +50,13 @@ pub(crate) struct CodexUi {
     models: Vec<Value>,
     modes: Vec<Value>,
     model: String,
+    effort: Option<String>,
     mode: Option<Value>,
     usage: Value,
     token_usage: Value,
     usage_error: String,
     last_usage: Option<Instant>,
+    composer_height: f32,
     busy: bool,
     status: String,
     messages: Vec<Message>,
@@ -74,11 +79,13 @@ impl Default for CodexUi {
             models: Vec::new(),
             modes: Vec::new(),
             model: String::new(),
+            effort: None,
             mode: None,
             usage: Value::Null,
             token_usage: Value::Null,
             usage_error: String::new(),
             last_usage: None,
+            composer_height: 190.0,
             busy: false,
             status: "Codex is offline".into(),
             messages: Vec::new(),
@@ -148,7 +155,8 @@ impl CodexUi {
         ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0_f32, cursor_color);
         ui.visuals_mut().text_cursor.blink = false;
         ui.horizontal(|ui| {
-            ui.strong("Codex");
+            theme::icon(ui, Icon::Spark, theme::TEAL);
+            ui.label(egui::RichText::new("Codex").strong().color(theme::TEAL));
             let status = if !self.pending.is_empty() {
                 "Waiting for you"
             } else if self.busy {
@@ -158,7 +166,13 @@ impl CodexUi {
             } else {
                 "Offline"
             };
-            ui.label(status).on_hover_text(&self.status);
+            let (color, fill) = match status {
+                "Running" => (theme::TEAL, theme::TEAL_SOFT),
+                "Ready" => (theme::GREEN, egui::Color32::from_rgb(235, 247, 239)),
+                "Waiting for you" => (theme::AMBER, egui::Color32::from_rgb(255, 246, 223)),
+                _ => (theme::MUTED, theme::SURFACE),
+            };
+            theme::badge(ui, status, color, fill).on_hover_text(&self.status);
             if self.busy {
                 ui.spinner();
             }
@@ -168,10 +182,15 @@ impl CodexUi {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         if self.server.is_some() {
-                            if ui.small_button("Stop").clicked() {
+                            if theme::button(ui, Icon::Stop, "", theme::MUTED, false)
+                                .on_hover_text("Stop Codex")
+                                .clicked()
+                            {
                                 self.stop();
                             }
-                        } else if ui.small_button("Start").clicked() {
+                        } else if theme::button(ui, Icon::Spark, "Start", theme::TEAL, true)
+                            .clicked()
+                        {
                             self.start(cwd, ctx.clone());
                         }
                         ui.add_enabled_ui(
@@ -314,7 +333,7 @@ impl CodexUi {
         });
         ui.separator();
         // Reserve the composer before laying out the scrollable conversation.
-        let composer_height = 190.0;
+        let composer_height = self.composer_height;
         egui::ScrollArea::vertical()
             .id_salt("codex_conversation")
             .max_height((ui.available_height() - composer_height).max(0.0))
@@ -322,9 +341,17 @@ impl CodexUi {
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 if self.messages.is_empty() {
-                    ui.add_space(16.0);
-                    ui.strong("What would you like to work on?");
-                    ui.label("Ask Codex to explain code, make changes, or fix a problem.");
+                    ui.vertical_centered(|ui| {
+                        theme::empty_art(ui, Icon::Spark, theme::TEAL);
+                        ui.label(
+                            egui::RichText::new("A little help, a lot of progress")
+                                .strong()
+                                .color(theme::TEAL),
+                        );
+                        ui.label("Ask a question, plan a change, or work through a bug.");
+                        ui.add_space(8.0);
+                        ui.small("Pick a model, thinking level, and mode below.");
+                    });
                 }
                 for (index, message) in self.messages.iter().enumerate() {
                     ui.push_id(index, |ui| match message.kind.as_str() {
@@ -365,8 +392,27 @@ impl CodexUi {
                             });
                         }
                         _ => {
-                            ui.strong(&message.kind);
-                            ui.add(egui::Label::new(&message.text).wrap());
+                            let (accent, fill) = match message.kind.as_str() {
+                                "You" => (theme::BLUE, theme::BLUE_SOFT),
+                                "Proposed plan" => (theme::TEAL, theme::TEAL_SOFT),
+                                "Error" => (theme::RED, egui::Color32::from_rgb(255, 241, 243)),
+                                "Status" => (theme::GREEN, theme::SURFACE),
+                                _ => (theme::TEAL, egui::Color32::WHITE),
+                            };
+                            egui::Frame::new()
+                                .fill(fill)
+                                .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
+                                .corner_radius(7)
+                                .inner_margin(10)
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(&message.kind)
+                                            .small()
+                                            .strong()
+                                            .color(accent),
+                                    );
+                                    ui.add(egui::Label::new(&message.text).wrap().selectable(true));
+                                });
                         }
                     });
                     ui.add_space(10.0);
@@ -376,41 +422,50 @@ impl CodexUi {
                     let pending_method = self.pending[index].method.clone();
                     let pending_prompt = self.pending[index].prompt.clone();
                     let pending_answer_key = self.pending[index].answer_key.clone();
-                    ui.group(|ui| {
-                        ui.label(egui::RichText::new("Codex needs your response").strong());
-                        ui.label(&pending_prompt);
-                        if pending_method.contains("requestUserInput") {
-                            ui.add(
-                                egui::TextEdit::multiline(&mut self.answer)
-                                    .desired_width(ui.available_width()),
+                    egui::Frame::group(ui.style())
+                        .fill(egui::Color32::from_rgb(255, 248, 231))
+                        .stroke(egui::Stroke::new(1.0_f32, theme::AMBER))
+                        .show(ui, |ui| {
+                            theme::heading(
+                                ui,
+                                Icon::Warning,
+                                "Your response is needed",
+                                theme::AMBER,
                             );
-                            if ui.button("Send response").clicked() {
-                                let answer = self.answer.clone();
-                                self.answer.clear();
-                                self.respond_user_input(
-                                    pending_id.clone(),
-                                    pending_answer_key,
-                                    answer,
+                            ui.label(&pending_prompt);
+                            if pending_method.contains("requestUserInput") {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.answer)
+                                        .desired_width(ui.available_width()),
                                 );
+                                if ui.button("Send response").clicked() {
+                                    let answer = self.answer.clone();
+                                    self.answer.clear();
+                                    self.respond_user_input(
+                                        pending_id.clone(),
+                                        pending_answer_key,
+                                        answer,
+                                    );
+                                }
+                            } else {
+                                ui.horizontal_wrapped(|ui| {
+                                    if ui.button("Allow").clicked() {
+                                        self.respond_decision(index, "accept");
+                                    }
+                                    if ui.button("Allow this session").clicked() {
+                                        self.respond_decision(index, "acceptForSession");
+                                    }
+                                    if ui.button("Decline").clicked() {
+                                        self.respond_decision(index, "decline");
+                                    }
+                                });
                             }
-                        } else {
-                            ui.horizontal_wrapped(|ui| {
-                                if ui.button("Allow").clicked() {
-                                    self.respond_decision(index, "accept");
-                                }
-                                if ui.button("Allow this session").clicked() {
-                                    self.respond_decision(index, "acceptForSession");
-                                }
-                                if ui.button("Decline").clicked() {
-                                    self.respond_decision(index, "decline");
-                                }
-                            });
-                        }
-                    });
+                        });
                 }
             });
         ui.add_space((ui.available_height() - composer_height).max(0.0));
         ui.separator();
+        let composer_top = ui.cursor().top();
         let connected = self.thread_id.is_some()
             && self.server.is_some()
             && !self.requests.values().any(|m| {
@@ -463,7 +518,10 @@ impl CodexUi {
         ui.horizontal_wrapped(|ui| {
             let can_send = connected && !self.busy && !self.input.trim().is_empty();
             if ui
-                .add_enabled(can_send, egui::Button::new("Send"))
+                .add_enabled_ui(can_send, |ui| {
+                    theme::button(ui, Icon::Send, "Send", theme::TEAL, true)
+                })
+                .inner
                 .clicked()
                 || (can_send
                     && composer.has_focus()
@@ -472,7 +530,7 @@ impl CodexUi {
                 self.send_turn();
             }
             if self.busy {
-                if ui.button("Interrupt").clicked() {
+                if theme::button(ui, Icon::Stop, "Interrupt", theme::AMBER, false).clicked() {
                     if let (Some(thread_id), Some(turn_id)) = (&self.thread_id, &self.turn_id) {
                         let _ = self.send(
                             "turn/interrupt",
@@ -481,56 +539,120 @@ impl CodexUi {
                     }
                 }
             }
-            ui.weak("Ctrl+Enter to send");
             let selectors_enabled = connected && !self.busy && self.pending.is_empty();
-            ui.add_enabled_ui(selectors_enabled, |ui| {
-                ui.set_width(95.0);
-                egui::ComboBox::from_id_salt("codex_model")
-                    .width(95.0)
-                    .truncate()
-                    .selected_text(if self.model.is_empty() {
-                        "Default model".to_string()
-                    } else {
-                        self.model.chars().take(14).collect::<String>()
-                    })
-                    .show_ui(ui, |ui| {
-                        for model in &self.models {
-                            if let Some(id) = model.get("model").and_then(Value::as_str) {
+            theme::wrap_control(ui, 95.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(95.0, 28.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    if !selectors_enabled {
+                        ui.disable();
+                    }
+                    egui::ComboBox::from_id_salt("codex_model")
+                        .width(95.0)
+                        .truncate()
+                        .selected_text(if self.model.is_empty() {
+                            "Default model".to_string()
+                        } else {
+                            self.model.chars().take(14).collect::<String>()
+                        })
+                        .show_ui(ui, |ui| {
+                            for model in &self.models {
+                                if let Some(id) = model.get("model").and_then(Value::as_str) {
+                                    ui.selectable_value(
+                                        &mut self.model,
+                                        id.to_string(),
+                                        model
+                                            .get("displayName")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or(id),
+                                    );
+                                }
+                            }
+                        });
+                },
+            );
+            let catalog = self
+                .models
+                .iter()
+                .find(|m| m.get("model").and_then(Value::as_str) == Some(self.model.as_str()));
+            self.effort = resolve_effort(catalog, self.effort.as_deref());
+            let options = catalog
+                .and_then(|m| m.get("supportedReasoningEfforts"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            theme::wrap_control(ui, 80.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(80.0, 28.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    if !selectors_enabled || options.is_empty() {
+                        ui.disable();
+                    }
+                    egui::ComboBox::from_id_salt("codex_effort")
+                        .width(80.0)
+                        .truncate()
+                        .selected_text(self.effort.as_deref().unwrap_or("Default"))
+                        .show_ui(ui, |ui| {
+                            for option in &options {
+                                if let Some(level) =
+                                    option.get("reasoningEffort").and_then(Value::as_str)
+                                {
+                                    ui.selectable_value(
+                                        &mut self.effort,
+                                        Some(level.to_string()),
+                                        level,
+                                    )
+                                    .on_hover_text(
+                                        option
+                                            .get("description")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or(""),
+                                    );
+                                }
+                            }
+                        })
+                        .response
+                        .on_hover_text("Thinking level");
+                },
+            );
+            theme::wrap_control(ui, 95.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(95.0, 28.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    if !selectors_enabled {
+                        ui.disable();
+                    }
+                    egui::ComboBox::from_id_salt("codex_mode")
+                        .width(95.0)
+                        .truncate()
+                        .selected_text(
+                            self.mode
+                                .as_ref()
+                                .and_then(|v| v.get("name"))
+                                .and_then(Value::as_str)
+                                .unwrap_or("Codex default"),
+                        )
+                        .show_ui(ui, |ui| {
+                            for mode in &self.modes {
                                 ui.selectable_value(
-                                    &mut self.model,
-                                    id.to_string(),
-                                    model
-                                        .get("displayName")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or(id),
+                                    &mut self.mode,
+                                    Some(mode.clone()),
+                                    mode.get("name").and_then(Value::as_str).unwrap_or("Mode"),
                                 );
                             }
-                        }
-                    });
-            });
-            ui.add_enabled_ui(selectors_enabled, |ui| {
-                ui.set_width(95.0);
-                egui::ComboBox::from_id_salt("codex_mode")
-                    .width(95.0)
-                    .truncate()
-                    .selected_text(
-                        self.mode
-                            .as_ref()
-                            .and_then(|v| v.get("name"))
-                            .and_then(Value::as_str)
-                            .unwrap_or("Codex default"),
-                    )
-                    .show_ui(ui, |ui| {
-                        for mode in &self.modes {
-                            ui.selectable_value(
-                                &mut self.mode,
-                                Some(mode.clone()),
-                                mode.get("name").and_then(Value::as_str).unwrap_or("Mode"),
-                            );
-                        }
-                    });
-            });
+                        });
+                },
+            );
+            ui.weak("Ctrl+Enter to send");
         });
+        let measured_height = (ui.cursor().top() - composer_top + 10.0).max(120.0);
+        if (measured_height - self.composer_height).abs() > 1.0 {
+            self.composer_height = measured_height;
+            ctx.request_repaint();
+        }
     }
 
     fn process_events(&mut self, cwd: Option<&Path>) {
@@ -659,6 +781,10 @@ impl CodexUi {
                             if let Some(model) = result.get("model").and_then(Value::as_str) {
                                 self.model = model.into();
                             }
+                            self.effort = result
+                                .get("reasoningEffort")
+                                .and_then(Value::as_str)
+                                .map(str::to_string);
                             if let Some(thread) = result.get("thread") {
                                 self.sessions.retain(|s| s.get("id") != thread.get("id"));
                                 self.sessions.insert(0, thread.clone());
@@ -807,7 +933,7 @@ impl CodexUi {
                         {
                             "Plan ready"
                         }
-                        _ => "Change mode and type Go",
+                        _ => "Completed !",
                     };
                     self.messages.push(Message::new("Status", marker.into()));
                     if let Some(error) = params
@@ -895,9 +1021,10 @@ impl CodexUi {
         if !self.model.is_empty() {
             params["model"] = json!(self.model);
         }
+        params["effort"] = json!(self.effort);
         if let Some(mode) = &self.mode {
             if !self.model.is_empty() {
-                params["collaborationMode"] = json!({"mode":mode["mode"],"settings":{"model":self.model,"reasoning_effort":mode["reasoning_effort"],"developer_instructions":null}});
+                params["collaborationMode"] = json!({"mode":mode["mode"],"settings":{"model":self.model,"reasoning_effort":self.effort,"developer_instructions":null}});
             }
         }
         match self.send("turn/start", params) {
@@ -1086,6 +1213,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn thinking_levels_follow_model_capabilities() {
+        let model = json!({"defaultReasoningEffort":"medium","supportedReasoningEfforts":[{"reasoningEffort":"medium"},{"reasoningEffort":"high"}]});
+        assert_eq!(
+            resolve_effort(Some(&model), Some("high")),
+            Some("high".into())
+        );
+        assert_eq!(
+            resolve_effort(Some(&model), Some("low")),
+            Some("medium".into())
+        );
+        assert_eq!(resolve_effort(Some(&model), None), Some("medium".into()));
+        assert_eq!(
+            resolve_effort(Some(&json!({"supportedReasoningEfforts":[]})), Some("high")),
+            None
+        );
+    }
+
+    #[test]
     fn startup_prefers_plan_then_first_available_mode() {
         let agent = json!({"name":"Agent","mode":"default"});
         let plan = json!({"name":"Plan","mode":"plan"});
@@ -1100,6 +1245,7 @@ mod tests {
     #[test]
     fn long_messages_fit_narrow_panel() {
         let ctx = egui::Context::default();
+        theme::apply(&ctx);
         let mut codex = CodexUi::default();
         codex.model = "long-model-name-".repeat(20);
         codex.messages.push(Message::new(
@@ -1109,26 +1255,43 @@ mod tests {
         codex
             .messages
             .push(Message::new("Command", "command ".repeat(100)));
-        for _ in 0..2 {
-            let _ = ctx.run(
-                egui::RawInput {
-                    screen_rect: Some(egui::Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        egui::vec2(260.0, 800.0),
-                    )),
-                    ..Default::default()
-                },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        codex.show(ui, None, ctx);
-                        assert!(
-                            ui.min_rect().right() <= ui.clip_rect().right() + 1.0,
-                            "Codex content exceeds panel: {:?}",
-                            ui.min_rect()
-                        );
-                    });
-                },
-            );
+        codex.messages.push(Message::new(
+            "Proposed plan",
+            "A long proposed plan with several steps. ".repeat(60),
+        ));
+        for size in [
+            egui::vec2(260.0, 420.0),
+            egui::vec2(390.0, 600.0),
+            egui::vec2(700.0, 800.0),
+        ] {
+            for busy in [false, true] {
+                codex.busy = busy;
+                for _ in 0..3 {
+                    let _ = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            egui::CentralPanel::default().show(ctx, |ui| {
+                                codex.show(ui, None, ctx);
+                                assert!(
+                                    ui.min_rect().right() <= ui.clip_rect().right() + 1.0,
+                                    "Codex content exceeds panel: {:?}",
+                                    ui.min_rect()
+                                );
+                                let composer_id = ui.make_persistent_id("codex_composer");
+                                let composer = ctx.read_response(composer_id).unwrap();
+                                assert!(
+                                    composer.rect.bottom() <= ui.clip_rect().bottom() + 1.0,
+                                    "Composer hidden below panel: {:?}",
+                                    composer.rect
+                                );
+                            });
+                        },
+                    );
+                }
+            }
         }
     }
 
@@ -1196,4 +1359,24 @@ fn startup_mode(modes: &[Value]) -> Option<Value> {
         .find(|mode| mode.get("mode").and_then(Value::as_str) == Some("plan"))
         .or_else(|| modes.first())
         .cloned()
+}
+
+fn resolve_effort(model: Option<&Value>, selected: Option<&str>) -> Option<String> {
+    let model = model?;
+    let options = model.get("supportedReasoningEfforts")?.as_array()?;
+    let supported = |value: &str| {
+        options
+            .iter()
+            .any(|o| o.get("reasoningEffort").and_then(Value::as_str) == Some(value))
+    };
+    selected
+        .filter(|value| supported(value))
+        .or_else(|| {
+            model
+                .get("defaultReasoningEffort")
+                .and_then(Value::as_str)
+                .filter(|value| supported(value))
+        })
+        .or_else(|| options.first()?.get("reasoningEffort")?.as_str())
+        .map(str::to_string)
 }

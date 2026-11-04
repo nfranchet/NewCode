@@ -5,6 +5,9 @@ use std::path::PathBuf;
 #[serde(default)]
 pub(crate) struct Settings {
     pub(crate) workspace: Option<PathBuf>,
+    pub(crate) session_workspace: Option<PathBuf>,
+    pub(crate) open_files: Vec<PathBuf>,
+    pub(crate) active_file: Option<PathBuf>,
     pub(crate) top_height: f32,
     pub(crate) explorer_width: f32,
     pub(crate) right_width: f32,
@@ -15,6 +18,9 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             workspace: None,
+            session_workspace: None,
+            open_files: Vec::new(),
+            active_file: None,
             top_height: 180.0,
             explorer_width: 250.0,
             right_width: 390.0,

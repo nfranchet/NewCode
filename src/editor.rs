@@ -1,4 +1,10 @@
-use crate::{codex_ui::CodexUi, settings::Settings, syntax::colored_job, terminal::Terminal};
+use crate::{
+    codex_ui::CodexUi,
+    settings::Settings,
+    syntax::colored_job,
+    terminal::Terminal,
+    ui_theme::{self as theme, Icon},
+};
 use eframe::egui::{
     self, Color32, FontId, TextFormat, TextStyle,
     text::{CCursor, CCursorRange, LayoutJob, LayoutSection},
@@ -191,47 +197,14 @@ impl EditorApp {
         if settings.codex_app_server && !no_codex {
             codex_ui.start(cwd, cc.egui_ctx.clone());
         }
-        let mut style = (*cc.egui_ctx.style()).clone();
-        style
-            .text_styles
-            .insert(TextStyle::Monospace, FontId::monospace(14.0));
-        style
-            .text_styles
-            .insert(TextStyle::Heading, FontId::proportional(18.0));
-        style.spacing.item_spacing = egui::vec2(8.0, 7.0);
-        style.spacing.button_padding = egui::vec2(10.0, 6.0);
-        style.spacing.interact_size = egui::vec2(22.0, 24.0);
-        style.visuals.dark_mode = false;
-        style.visuals.override_text_color = Some(Color32::from_rgb(48, 49, 51));
-        style.visuals.panel_fill = Color32::from_rgb(248, 248, 248);
-        style.visuals.window_fill = Color32::WHITE;
-        style.visuals.extreme_bg_color = Color32::WHITE;
-        style.visuals.faint_bg_color = Color32::from_rgb(243, 243, 243);
-        style.visuals.code_bg_color = Color32::from_rgb(250, 250, 250);
-        style.visuals.window_corner_radius = egui::CornerRadius::same(4);
-        style.visuals.selection.bg_fill = Color32::from_rgb(204, 231, 255);
-        style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, Color32::from_rgb(0, 122, 204));
-        style.visuals.widgets.inactive.bg_fill = Color32::TRANSPARENT;
-        style.visuals.widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-        style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, Color32::TRANSPARENT);
-        style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(3);
-        style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(231, 231, 231);
-        style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(239, 239, 239);
-        style.visuals.widgets.hovered.bg_stroke =
-            egui::Stroke::new(1.0_f32, Color32::from_rgb(218, 218, 218));
-        style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(3);
-        style.visuals.widgets.active.bg_fill = Color32::from_rgb(218, 232, 246);
-        style.visuals.widgets.active.weak_bg_fill = Color32::from_rgb(218, 232, 246);
-        style.visuals.widgets.active.bg_stroke =
-            egui::Stroke::new(1.0_f32, Color32::from_rgb(0, 122, 204));
-        style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(3);
-        cc.egui_ctx.set_style(style);
+        theme::apply(&cc.egui_ctx);
+        let (open_files, active_file, buffer) = restore_open_files(&settings);
         Self {
             settings,
             settings_path,
-            open_files: Vec::new(),
-            active_file: None,
-            buffer: String::new(),
+            open_files,
+            active_file,
+            buffer,
             dirty: false,
             top,
             codex_ui,
@@ -257,7 +230,11 @@ impl EditorApp {
         if let Some(parent) = self.settings_path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        if let Ok(s) = toml::to_string_pretty(&self.settings) {
+        let mut settings = self.settings.clone();
+        settings.session_workspace = settings.workspace.clone();
+        settings.open_files = self.open_files.clone();
+        settings.active_file = self.active_file.clone();
+        if let Ok(s) = toml::to_string_pretty(&settings) {
             let _ = fs::write(&self.settings_path, s);
         }
     }
@@ -451,17 +428,38 @@ impl EditorApp {
                 .to_string_lossy()
                 .to_string();
             if path.is_dir() {
-                let response = egui::CollapsingHeader::new(format!("📁 {name}"))
-                    .id_salt(&path)
-                    .show(ui, |ui| self.tree(ui, &path));
-                response
-                    .header_response
-                    .context_menu(|ui| self.file_menu(ui, &path));
+                let id = ui.make_persistent_id(("folder", &path));
+                let mut clicked = false;
+                let mut folder = egui::collapsing_header::CollapsingState::load_with_default_open(
+                    ui.ctx(),
+                    id,
+                    false,
+                )
+                .show_header(ui, |ui| {
+                    theme::icon(ui, Icon::Folder, theme::AMBER);
+                    clicked = ui
+                        .add(
+                            egui::Label::new(egui::RichText::new(name).color(theme::INK))
+                                .truncate()
+                                .sense(egui::Sense::click()),
+                        )
+                        .clicked();
+                });
+                if clicked {
+                    folder.toggle();
+                }
+                let (_, header, _) = folder.body(|ui| self.tree(ui, &path));
+                header.response.context_menu(|ui| self.file_menu(ui, &path));
             } else {
-                let response = ui.selectable_label(
-                    self.active_file.as_ref() == Some(&path),
-                    format!("📄 {name}"),
-                );
+                let response = ui
+                    .add(
+                        egui::Button::selectable(
+                            self.active_file.as_ref() == Some(&path),
+                            theme::file_text(&path, &name),
+                        )
+                        .truncate(),
+                    )
+                    .on_hover_text(path.display().to_string());
                 if response.double_clicked() {
                     self.open_file(path.clone());
                 }
@@ -548,8 +546,9 @@ impl EditorApp {
         cwd: Option<&Path>,
     ) {
         ui.horizontal(|ui| {
-            ui.strong(format!("▸ {title}"));
-            if ui.button("↻ Restart").clicked() {
+            theme::icon(ui, Icon::Terminal, theme::BLUE);
+            ui.label(egui::RichText::new(title).strong().color(theme::BLUE));
+            if theme::button(ui, Icon::Refresh, "Restart", theme::BLUE, false).clicked() {
                 let cmd = term.as_ref().map(|t| t.command.clone()).unwrap_or_default();
                 *term = Terminal::spawn(&cmd, cwd, ctx.clone()).ok();
             }
@@ -571,8 +570,7 @@ impl EditorApp {
                 response.request_focus();
             }
             t.focused = response.has_focus();
-            ui.painter()
-                .rect_filled(rect, 0.0, Color32::from_rgb(18, 18, 18));
+            ui.painter().rect_filled(rect, 0.0, theme::TERMINAL_BG);
             for (y, line) in t.cells.iter().enumerate() {
                 let mut job = LayoutJob::default();
                 for cell in line {
@@ -661,6 +659,12 @@ impl eframe::App for EditorApp {
         self.save_settings();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.render(ctx);
+    }
+}
+
+impl EditorApp {
+    fn render(&mut self, ctx: &egui::Context) {
         let opened_find = ctx
             .input(|input| input.modifiers.command && input.key_pressed(egui::Key::F))
             && self.active_file.is_some();
@@ -675,49 +679,63 @@ impl eframe::App for EditorApp {
         egui::TopBottomPanel::top("toolbar")
             .frame(
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(248, 248, 248))
+                    .fill(Color32::WHITE)
+                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
                     .inner_margin(egui::Margin::symmetric(12, 9)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("📁  Workspace").clicked() {
+                    theme::icon(ui, Icon::Spark, theme::BLUE);
+                    ui.label(
+                        egui::RichText::new("Focus")
+                            .strong()
+                            .size(18.0)
+                            .color(theme::BLUE),
+                    );
+                    ui.separator();
+                    if theme::button(ui, Icon::Folder, "Workspace", theme::BLUE, false).clicked() {
                         self.choose_workspace();
                     }
                     if let Some(root) = self.settings.workspace.as_ref() {
-                        ui.label(
-                            egui::RichText::new(
-                                root.file_name().unwrap_or_default().to_string_lossy(),
+                        ui.add_sized(
+                            [180.0, 24.0],
+                            egui::Label::new(
+                                egui::RichText::new(
+                                    root.file_name().unwrap_or_default().to_string_lossy(),
+                                )
+                                .color(theme::MUTED),
                             )
-                            .color(Color32::from_rgb(100, 100, 100)),
-                        );
+                            .truncate(),
+                        )
+                        .on_hover_text(root.display().to_string());
                     }
                     ui.separator();
                     ui.menu_button("Edit", |ui| {
                         if ui
-                            .add_enabled(
-                                self.active_file.is_some(),
-                                egui::Button::new("💾  Save   Ctrl+S"),
-                            )
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(ui, Icon::Save, "Save   Ctrl+S", theme::BLUE, false)
+                            })
+                            .inner
                             .clicked()
                         {
                             self.save_file();
                             ui.close();
                         }
                         if ui
-                            .add_enabled(
-                                self.active_file.is_some(),
-                                egui::Button::new("⧉  Copy   Ctrl+C"),
-                            )
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(ui, Icon::Copy, "Copy   Ctrl+C", theme::BLUE, false)
+                            })
+                            .inner
                             .clicked()
                         {
                             self.copy_selection(ctx);
                             ui.close();
                         }
                         if ui
-                            .add_enabled(
-                                self.active_file.is_some(),
-                                egui::Button::new("📋  Paste   Ctrl+V"),
-                            )
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(ui, Icon::Paste, "Paste   Ctrl+V", theme::BLUE, false)
+                            })
+                            .inner
                             .clicked()
                         {
                             self.paste_from_clipboard(ctx);
@@ -725,10 +743,16 @@ impl eframe::App for EditorApp {
                         }
                         ui.separator();
                         if ui
-                            .add_enabled(
-                                self.active_file.is_some(),
-                                egui::Button::new("🔎  Find in File   Ctrl+F"),
-                            )
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(
+                                    ui,
+                                    Icon::Search,
+                                    "Find in File   Ctrl+F",
+                                    theme::BLUE,
+                                    false,
+                                )
+                            })
+                            .inner
                             .clicked()
                         {
                             self.find_open = true;
@@ -749,11 +773,43 @@ impl eframe::App for EditorApp {
                         }
                     });
                     ui.separator();
-                    ui.label(
-                        egui::RichText::new(&self.status)
-                            .small()
-                            .color(Color32::from_rgb(100, 100, 100)),
+                    if ui
+                        .add_enabled_ui(self.active_file.is_some(), |ui| {
+                            theme::button(ui, Icon::Save, "Save", theme::BLUE, true)
+                        })
+                        .inner
+                        .on_hover_text("Save file · Ctrl+S")
+                        .clicked()
+                    {
+                        self.save_file();
+                    }
+                });
+            });
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(25.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BLUE_SOFT)
+                    .inner_margin(egui::Margin::symmetric(12, 3)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&self.status).small().color(theme::INK),
+                        )
+                        .truncate(),
                     );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.small(format!("{} open files", self.open_files.len()));
+                        if self.dirty {
+                            ui.label(
+                                egui::RichText::new("Unsaved changes")
+                                    .small()
+                                    .color(theme::AMBER),
+                            );
+                        }
+                    });
                 });
             });
         let top_height = self.settings.top_height;
@@ -767,49 +823,44 @@ impl eframe::App for EditorApp {
             });
         self.settings.top_height = top_response.response.rect.height().max(80.0);
         egui::SidePanel::left("activity_bar")
-            .exact_width(42.0)
+            .exact_width(48.0)
             .resizable(false)
             .frame(
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(245, 245, 245))
+                    .fill(theme::NAVY)
                     .inner_margin(egui::Margin::symmetric(3, 8)),
             )
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    let explorer = ui.add_sized(
-                        [34.0, 40.0],
-                        egui::Button::selectable(
-                            self.sidebar_mode == SidebarMode::Explorer,
-                            egui::RichText::new("🗂").size(18.0),
-                        ),
-                    );
-                    let explorer = explorer.on_hover_text("Explorer");
-                    if explorer.clicked() {
+                    if theme::nav_button(
+                        ui,
+                        Icon::Folder,
+                        self.sidebar_mode == SidebarMode::Explorer,
+                        "Explorer",
+                    )
+                    .clicked()
+                    {
                         self.sidebar_mode = SidebarMode::Explorer;
                     }
-                    if ui
-                        .add_sized(
-                            [34.0, 40.0],
-                            egui::Button::selectable(
-                                self.sidebar_mode == SidebarMode::Git,
-                                egui::RichText::new("⑂").size(22.0),
-                            ),
-                        )
-                        .on_hover_text("Source Control (Git)")
-                        .clicked()
+                    if theme::nav_button(
+                        ui,
+                        Icon::Search,
+                        self.sidebar_mode == SidebarMode::Search,
+                        "Search in workspace",
+                    )
+                    .clicked()
+                    {
+                        self.sidebar_mode = SidebarMode::Search;
+                    }
+                    if theme::nav_button(
+                        ui,
+                        Icon::Git,
+                        self.sidebar_mode == SidebarMode::Git,
+                        "Source Control",
+                    )
+                    .clicked()
                     {
                         self.sidebar_mode = SidebarMode::Git;
-                    }
-                    let search = ui.add_sized(
-                        [34.0, 40.0],
-                        egui::Button::selectable(
-                            self.sidebar_mode == SidebarMode::Search,
-                            egui::RichText::new("🔍").size(18.0),
-                        ),
-                    );
-                    let search = search.on_hover_text("Search");
-                    if search.clicked() {
-                        self.sidebar_mode = SidebarMode::Search;
                     }
                 });
             });
@@ -820,22 +871,31 @@ impl eframe::App for EditorApp {
             .width_range(150.0..=500.0)
             .show(ctx, |ui| {
                 if self.sidebar_mode == SidebarMode::Explorer {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        ui.heading("🗂 Explorer");
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.small_button("📁").on_hover_text("New folder").clicked() {
-                                self.create_entry(true);
-                            }
-                            if ui.small_button("📄").on_hover_text("New file").clicked() {
-                                self.create_entry(false);
-                            }
-                        });
+                    ui.horizontal_wrapped(|ui| {
+                        theme::icon(ui, Icon::Folder, theme::BLUE);
+                        ui.label(
+                            egui::RichText::new("Explorer")
+                                .size(17.0)
+                                .strong()
+                                .color(theme::BLUE),
+                        );
+                        if theme::button(ui, Icon::NewFile, "", theme::BLUE, false)
+                            .on_hover_text("New file")
+                            .clicked()
+                        {
+                            self.create_entry(false);
+                        }
+                        if theme::button(ui, Icon::NewFolder, "", theme::BLUE, false)
+                            .on_hover_text("New folder")
+                            .clicked()
+                        {
+                            self.create_entry(true);
+                        }
                     });
                 } else if self.sidebar_mode == SidebarMode::Git {
-                    ui.heading("⑂ Source Control");
+                    theme::heading(ui, Icon::Git, "Source Control", theme::GREEN);
                 } else {
-                    ui.heading("🔎 Search");
+                    theme::heading(ui, Icon::Search, "Search", theme::BLUE);
                 }
                 ui.separator();
                 match self.sidebar_mode {
@@ -854,7 +914,22 @@ impl eframe::App for EditorApp {
                             );
                             egui::ScrollArea::vertical().show(ui, |ui| self.tree(ui, &root));
                         } else {
-                            ui.label("Choose a workspace folder to begin.");
+                            ui.vertical_centered(|ui| {
+                                theme::empty_art(ui, Icon::Folder, theme::BLUE);
+                                ui.strong("Your project starts here");
+                                ui.label("Choose a workspace to browse its files.");
+                                if theme::button(
+                                    ui,
+                                    Icon::Folder,
+                                    "Open workspace",
+                                    theme::BLUE,
+                                    true,
+                                )
+                                .clicked()
+                                {
+                                    self.choose_workspace();
+                                }
+                            });
                         }
                     }
                     SidebarMode::Search => {
@@ -862,15 +937,18 @@ impl eframe::App for EditorApp {
                         ui.horizontal(|ui| {
                             let response = ui.add(
                                 egui::TextEdit::singleline(&mut self.search_query)
-                                    .hint_text("🔎 Search in project…")
-                                    .desired_width(f32::INFINITY),
+                                    .hint_text("Search in project…")
+                                    .desired_width((ui.available_width() - 36.0).max(40.0)),
                             );
                             if response.lost_focus()
                                 && ui.input(|i| i.key_pressed(egui::Key::Enter))
                             {
                                 run_search = true;
                             }
-                            if ui.button("🔎 Search").clicked() {
+                            if theme::button(ui, Icon::Search, "", theme::BLUE, false)
+                                .on_hover_text("Search project · Enter")
+                                .clicked()
+                            {
                                 run_search = true;
                             }
                         });
@@ -879,6 +957,16 @@ impl eframe::App for EditorApp {
                         }
                         let mut open_result = None;
                         egui::ScrollArea::vertical().show(ui, |ui| {
+                            if self.search_results.is_empty() {
+                                ui.vertical_centered(|ui| {
+                                    ui.add_space(12.0);
+                                    theme::empty_art(ui, Icon::Search, theme::BLUE);
+                                    ui.strong("Find across your project");
+                                    ui.label(
+                                        "Search saved file contents in the current workspace.",
+                                    );
+                                });
+                            }
                             for group in &self.search_results {
                                 let label = group
                                     .path
@@ -888,17 +976,10 @@ impl eframe::App for EditorApp {
                                     .unwrap_or(&group.path)
                                     .display()
                                     .to_string();
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new("▰")
-                                            .color(Color32::from_rgb(0, 122, 204)),
-                                    );
-                                    ui.label(
-                                        egui::RichText::new(label)
-                                            .strong()
-                                            .color(Color32::from_rgb(58, 58, 58)),
-                                    );
-                                });
+                                ui.add(
+                                    egui::Label::new(theme::file_text(&group.path, &label)).wrap(),
+                                )
+                                .on_hover_text(group.path.display().to_string());
                                 for (line, preview) in &group.lines {
                                     let result = ui.selectable_label(
                                         false,
@@ -926,404 +1007,455 @@ impl eframe::App for EditorApp {
             .resizable(true)
             .default_width(right_width)
             .width_range(260.0..=700.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(242, 250, 248))
+                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
+                    .inner_margin(8),
+            )
             .show(ctx, |ui| {
                 self.codex_ui.show(ui, cwd.as_deref(), ctx);
             });
         self.settings.right_width = right_response.response.rect.width().max(260.0);
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if !self.open_files.is_empty() {
-                let mut close_tab = None;
-                let mut switch_tab = None;
-                let open_files = self.open_files.clone();
-                let active_file = self.active_file.clone();
-                ui.horizontal(|ui| {
-                    let tabs_width = (ui.available_width() - 48.0).max(64.0);
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(tabs_width, 34.0),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            let mut active_tab_rect = None;
-                            let tab_scroll = egui::ScrollArea::horizontal()
-                                .id_salt("open_file_tabs")
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        for p in &open_files {
-                                            let active = active_file.as_ref() == Some(p);
-                                            let dirty = active && self.dirty;
-                                            let label = format!(
-                                                "{}{}",
-                                                p.file_name().unwrap_or_default().to_string_lossy(),
-                                                if dirty { " •" } else { "" }
-                                            );
-                                            let font = FontId::proportional(13.0);
-                                            let galley = ui.painter().layout_no_wrap(
-                                                label,
-                                                font.clone(),
-                                                if dirty {
-                                                    Color32::from_rgb(176, 112, 0)
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(8))
+            .show(ctx, |ui| {
+                if !self.open_files.is_empty() {
+                    let mut close_tab = None;
+                    let mut switch_tab = None;
+                    let open_files = self.open_files.clone();
+                    let active_file = self.active_file.clone();
+                    ui.horizontal(|ui| {
+                        let tabs_width = (ui.available_width() - 48.0).max(64.0);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(tabs_width, 34.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                let mut active_tab_rect = None;
+                                let tab_scroll = egui::ScrollArea::horizontal()
+                                    .id_salt("open_file_tabs")
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            for p in &open_files {
+                                                let active = active_file.as_ref() == Some(p);
+                                                let dirty = active && self.dirty;
+                                                let label = format!(
+                                                    "{}{}",
+                                                    p.file_name()
+                                                        .unwrap_or_default()
+                                                        .to_string_lossy(),
+                                                    if dirty { " •" } else { "" }
+                                                );
+                                                let font = FontId::proportional(13.0);
+                                                let galley = ui.painter().layout_no_wrap(
+                                                    format!("{}  {label}", theme::file_kind(p).0),
+                                                    font.clone(),
+                                                    if dirty {
+                                                        Color32::from_rgb(176, 112, 0)
+                                                    } else {
+                                                        theme::INK
+                                                    },
+                                                );
+                                                let close_width = 26.0;
+                                                let padding = 12.0;
+                                                let size = egui::vec2(
+                                                    galley.size().x + close_width + padding,
+                                                    30.0,
+                                                );
+                                                let (rect, _) = ui.allocate_exact_size(
+                                                    size,
+                                                    egui::Sense::hover(),
+                                                );
+                                                let tab_id = egui::Id::new(("file_tab", p));
+                                                let label_rect = egui::Rect::from_min_max(
+                                                    rect.min,
+                                                    egui::pos2(
+                                                        rect.max.x - close_width,
+                                                        rect.max.y,
+                                                    ),
+                                                );
+                                                let close_rect = egui::Rect::from_min_max(
+                                                    egui::pos2(
+                                                        rect.max.x - close_width,
+                                                        rect.min.y,
+                                                    ),
+                                                    rect.max,
+                                                );
+                                                let select = ui.interact(
+                                                    label_rect,
+                                                    tab_id,
+                                                    egui::Sense::click(),
+                                                );
+                                                let close = ui.interact(
+                                                    close_rect,
+                                                    tab_id.with("close"),
+                                                    egui::Sense::click(),
+                                                );
+                                                let fill = if active {
+                                                    Color32::WHITE
+                                                } else if select.hovered() || close.hovered() {
+                                                    theme::BLUE_SOFT
                                                 } else {
-                                                    Color32::from_rgb(55, 55, 55)
-                                                },
-                                            );
-                                            let close_width = 26.0;
-                                            let padding = 12.0;
-                                            let size = egui::vec2(
-                                                galley.size().x + close_width + padding,
-                                                30.0,
-                                            );
-                                            let (rect, _) =
-                                                ui.allocate_exact_size(size, egui::Sense::hover());
-                                            let tab_id = egui::Id::new(("file_tab", p));
-                                            let label_rect = egui::Rect::from_min_max(
-                                                rect.min,
-                                                egui::pos2(rect.max.x - close_width, rect.max.y),
-                                            );
-                                            let close_rect = egui::Rect::from_min_max(
-                                                egui::pos2(rect.max.x - close_width, rect.min.y),
-                                                rect.max,
-                                            );
-                                            let select = ui.interact(
-                                                label_rect,
-                                                tab_id,
-                                                egui::Sense::click(),
-                                            );
-                                            let close = ui.interact(
-                                                close_rect,
-                                                tab_id.with("close"),
-                                                egui::Sense::click(),
-                                            );
-                                            let fill = if active {
-                                                Color32::WHITE
-                                            } else if select.hovered() || close.hovered() {
-                                                Color32::from_rgb(242, 242, 242)
-                                            } else {
-                                                Color32::from_rgb(236, 236, 236)
-                                            };
-                                            ui.painter().rect_filled(
-                                                rect,
-                                                egui::CornerRadius::same(3),
-                                                fill,
-                                            );
-                                            if active {
-                                                ui.painter().rect_stroke(
+                                                    theme::SURFACE
+                                                };
+                                                ui.painter().rect_filled(
                                                     rect,
                                                     egui::CornerRadius::same(3),
-                                                    egui::Stroke::new(
-                                                        1.0_f32,
-                                                        Color32::from_rgb(215, 215, 215),
-                                                    ),
-                                                    egui::StrokeKind::Inside,
+                                                    fill,
                                                 );
+                                                if active {
+                                                    ui.painter().rect_filled(
+                                                        egui::Rect::from_min_size(
+                                                            rect.min,
+                                                            egui::vec2(rect.width(), 3.0),
+                                                        ),
+                                                        1.0,
+                                                        theme::BLUE,
+                                                    );
+                                                    ui.painter().rect_stroke(
+                                                        rect,
+                                                        egui::CornerRadius::same(3),
+                                                        egui::Stroke::new(1.0_f32, theme::BORDER),
+                                                        egui::StrokeKind::Inside,
+                                                    );
+                                                }
+                                                ui.painter().galley(
+                                                    rect.min
+                                                        + egui::vec2(
+                                                            padding * 0.5,
+                                                            (size.y - galley.size().y) * 0.5,
+                                                        ),
+                                                    galley,
+                                                    if dirty {
+                                                        Color32::from_rgb(176, 112, 0)
+                                                    } else {
+                                                        theme::INK
+                                                    },
+                                                );
+                                                ui.painter().text(
+                                                    close_rect.center(),
+                                                    egui::Align2::CENTER_CENTER,
+                                                    "×",
+                                                    FontId::proportional(16.0),
+                                                    theme::MUTED,
+                                                );
+                                                let select =
+                                                    select.on_hover_text(p.display().to_string());
+                                                let close =
+                                                    close.on_hover_text("Close file (Ctrl+W)");
+                                                if select.clicked() {
+                                                    switch_tab = Some(p.clone());
+                                                }
+                                                if close.clicked() {
+                                                    close_tab = Some(p.clone());
+                                                }
+                                                if active {
+                                                    active_tab_rect = Some(rect);
+                                                }
                                             }
-                                            ui.painter().galley(
-                                                rect.min
-                                                    + egui::vec2(
-                                                        padding * 0.5,
-                                                        (size.y - galley.size().y) * 0.5,
-                                                    ),
-                                                galley,
-                                                if dirty {
-                                                    Color32::from_rgb(176, 112, 0)
-                                                } else {
-                                                    Color32::from_rgb(55, 55, 55)
-                                                },
-                                            );
-                                            ui.painter().text(
-                                                close_rect.center(),
-                                                egui::Align2::CENTER_CENTER,
-                                                "×",
-                                                FontId::proportional(16.0),
-                                                Color32::from_rgb(100, 100, 100),
-                                            );
-                                            let select =
-                                                select.on_hover_text(p.display().to_string());
-                                            let close = close.on_hover_text("Close file (Ctrl+W)");
-                                            if select.clicked() {
-                                                switch_tab = Some(p.clone());
-                                            }
-                                            if close.clicked() {
-                                                close_tab = Some(p.clone());
-                                            }
-                                            if active {
-                                                active_tab_rect = Some(rect);
-                                            }
-                                        }
+                                        });
                                     });
+                                if self.reveal_active_tab {
+                                    if let Some(rect) = active_tab_rect {
+                                        let mut state = tab_scroll.state;
+                                        let viewport = tab_scroll.inner_rect;
+                                        let tab_left =
+                                            rect.left() - viewport.left() + state.offset.x;
+                                        let tab_right =
+                                            rect.right() - viewport.left() + state.offset.x;
+                                        if tab_left < state.offset.x {
+                                            state.offset.x = tab_left;
+                                        } else if tab_right > state.offset.x + viewport.width() {
+                                            state.offset.x = tab_right - viewport.width();
+                                        }
+                                        state.offset.x = state.offset.x.clamp(
+                                            0.0,
+                                            (tab_scroll.content_size.x - viewport.width()).max(0.0),
+                                        );
+                                        state.store(ctx, tab_scroll.id);
+                                    }
+                                    self.reveal_active_tab = false;
+                                }
+                            },
+                        );
+                        ui.menu_button(format!("⌄ {}", open_files.len()), |ui| {
+                            ui.set_min_width(240.0);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.open_file_filter)
+                                    .hint_text("Find an open file…")
+                                    .desired_width(f32::INFINITY),
+                            );
+                            let filter = self.open_file_filter.to_lowercase();
+                            egui::ScrollArea::vertical()
+                                .max_height(360.0)
+                                .show(ui, |ui| {
+                                    for path in &open_files {
+                                        let full_path = path.display().to_string();
+                                        if !filter.is_empty()
+                                            && !full_path.to_lowercase().contains(&filter)
+                                        {
+                                            continue;
+                                        }
+                                        let name =
+                                            path.file_name().unwrap_or_default().to_string_lossy();
+                                        let selected = active_file.as_ref() == Some(path);
+                                        if ui
+                                            .selectable_label(
+                                                selected,
+                                                format!("{name}\n{full_path}"),
+                                            )
+                                            .clicked()
+                                        {
+                                            switch_tab = Some(path.clone());
+                                            ui.close();
+                                        }
+                                    }
                                 });
-                            if self.reveal_active_tab {
-                                if let Some(rect) = active_tab_rect {
-                                    let mut state = tab_scroll.state;
-                                    let viewport = tab_scroll.inner_rect;
-                                    let tab_left = rect.left() - viewport.left() + state.offset.x;
-                                    let tab_right = rect.right() - viewport.left() + state.offset.x;
-                                    if tab_left < state.offset.x {
-                                        state.offset.x = tab_left;
-                                    } else if tab_right > state.offset.x + viewport.width() {
-                                        state.offset.x = tab_right - viewport.width();
-                                    }
-                                    state.offset.x = state.offset.x.clamp(
-                                        0.0,
-                                        (tab_scroll.content_size.x - viewport.width()).max(0.0),
-                                    );
-                                    state.store(ctx, tab_scroll.id);
-                                }
-                                self.reveal_active_tab = false;
+                        });
+                    });
+                    if let Some(path) = switch_tab {
+                        self.git_ui.dismiss_diff();
+                        if self.active_file.as_ref() != Some(&path) {
+                            self.open_file(path);
+                        }
+                    }
+                    if let Some(path) = close_tab {
+                        self.close_file(path);
+                    }
+                    ui.separator();
+                }
+                if self.sidebar_mode == SidebarMode::Git && self.git_ui.show_diff(ui) {
+                    return;
+                }
+                if self.active_file.is_some() {
+                    if self.find_open {
+                        let matches = find_ranges(&self.buffer, &self.find_query);
+                        let mut query_changed = false;
+                        let mut navigate = None;
+                        let mut close_find = false;
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Find").strong());
+                            let query = ui.add(
+                                egui::TextEdit::singleline(&mut self.find_query)
+                                    .id(egui::Id::new("find_in_file_query"))
+                                    .hint_text("Search in this file")
+                                    .desired_width(210.0),
+                            );
+                            if opened_find {
+                                query.request_focus();
                             }
-                        },
-                    );
-                    ui.menu_button(format!("⌄ {}", open_files.len()), |ui| {
-                        ui.set_min_width(240.0);
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.open_file_filter)
-                                .hint_text("Find an open file…")
-                                .desired_width(f32::INFINITY),
-                        );
-                        let filter = self.open_file_filter.to_lowercase();
-                        egui::ScrollArea::vertical()
-                            .max_height(360.0)
-                            .show(ui, |ui| {
-                                for path in &open_files {
-                                    let full_path = path.display().to_string();
-                                    if !filter.is_empty()
-                                        && !full_path.to_lowercase().contains(&filter)
-                                    {
-                                        continue;
-                                    }
-                                    let name =
-                                        path.file_name().unwrap_or_default().to_string_lossy();
-                                    let selected = active_file.as_ref() == Some(path);
-                                    if ui
-                                        .selectable_label(selected, format!("{name}\n{full_path}"))
-                                        .clicked()
-                                    {
-                                        switch_tab = Some(path.clone());
-                                        ui.close();
-                                    }
-                                }
-                            });
-                    });
-                });
-                if let Some(path) = switch_tab {
-                    self.git_ui.dismiss_diff();
-                    if self.active_file.as_ref() != Some(&path) {
-                        self.open_file(path);
-                    }
-                }
-                if let Some(path) = close_tab {
-                    self.close_file(path);
-                }
-                ui.separator();
-            }
-            if self.sidebar_mode == SidebarMode::Git && self.git_ui.show_diff(ui) {
-                return;
-            }
-            if self.active_file.is_some() {
-                if self.find_open {
-                    let matches = find_ranges(&self.buffer, &self.find_query);
-                    let mut query_changed = false;
-                    let mut navigate = None;
-                    let mut close_find = false;
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Find").strong());
-                        let query = ui.add(
-                            egui::TextEdit::singleline(&mut self.find_query)
-                                .id(egui::Id::new("find_in_file_query"))
-                                .hint_text("Search in this file")
-                                .desired_width(210.0),
-                        );
-                        if opened_find {
-                            query.request_focus();
-                        }
-                        query_changed = query.changed();
-                        if query.lost_focus()
-                            && ui.input(|input| input.key_pressed(egui::Key::Enter))
-                        {
-                            navigate = Some(ui.input(|input| input.modifiers.shift));
-                        }
-                        if ui.button("↑").on_hover_text("Previous match").clicked() {
-                            navigate = Some(true);
-                        }
-                        if ui.button("↓").on_hover_text("Next match").clicked() {
-                            navigate = Some(false);
-                        }
-                        ui.label(format!(
-                            "{} / {}",
-                            self.find_active.map(|index| index + 1).unwrap_or(0),
-                            matches.len()
-                        ));
-                        close_find = ui.button("×").on_hover_text("Close find").clicked();
-                    });
-                    if query_changed || self.find_query_snapshot != self.find_query {
-                        self.find_query_snapshot = self.find_query.clone();
-                        self.find_active = None;
-                    }
-                    if let Some(reverse) = navigate {
-                        self.navigate_find(ctx, reverse);
-                    }
-                    if close_find {
-                        self.find_open = false;
-                        self.find_query.clear();
-                        self.find_query_snapshot.clear();
-                        self.find_active = None;
-                    }
-                    if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
-                        self.find_open = false;
-                        self.find_active = None;
-                    }
-                }
-                let path = self.active_file.clone().unwrap();
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(path.file_name().unwrap_or_default().to_string_lossy())
-                            .strong()
-                            .size(16.0),
-                    );
-                    ui.label(
-                        egui::RichText::new(
-                            path.parent().unwrap_or(Path::new("")).display().to_string(),
-                        )
-                        .small()
-                        .color(Color32::from_rgb(120, 120, 120)),
-                    );
-                    if self.dirty {
-                        ui.label(
-                            egui::RichText::new("● Modified")
-                                .small()
-                                .color(Color32::from_rgb(176, 112, 0)),
-                        );
-                    }
-                });
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                let find_query = if self.find_open {
-                    self.find_query.clone()
-                } else {
-                    String::new()
-                };
-                let find_active = self.find_active;
-                let layout_cache = self.editor_layout_cache.clone();
-                let extension = ext.to_string();
-                let mut layouter =
-                    move |ui: &egui::Ui, text: &dyn egui::TextBuffer, _wrap_width: f32| {
-                        let source = text.as_str();
-                        {
-                            let cached = layout_cache.lock().unwrap();
-                            if cached.text == source
-                                && cached.extension == extension
-                                && cached.query == find_query
-                                && cached.active_match == find_active
+                            query_changed = query.changed();
+                            if query.lost_focus()
+                                && ui.input(|input| input.key_pressed(egui::Key::Enter))
                             {
-                                if let Some(galley) = &cached.galley {
-                                    return galley.clone();
+                                navigate = Some(ui.input(|input| input.modifiers.shift));
+                            }
+                            if ui.button("↑").on_hover_text("Previous match").clicked() {
+                                navigate = Some(true);
+                            }
+                            if ui.button("↓").on_hover_text("Next match").clicked() {
+                                navigate = Some(false);
+                            }
+                            ui.label(format!(
+                                "{} / {}",
+                                self.find_active.map(|index| index + 1).unwrap_or(0),
+                                matches.len()
+                            ));
+                            close_find = ui.button("×").on_hover_text("Close find").clicked();
+                        });
+                        if query_changed || self.find_query_snapshot != self.find_query {
+                            self.find_query_snapshot = self.find_query.clone();
+                            self.find_active = None;
+                        }
+                        if let Some(reverse) = navigate {
+                            self.navigate_find(ctx, reverse);
+                        }
+                        if close_find {
+                            self.find_open = false;
+                            self.find_query.clear();
+                            self.find_query_snapshot.clear();
+                            self.find_active = None;
+                        }
+                        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                            self.find_open = false;
+                            self.find_active = None;
+                        }
+                    }
+                    let path = self.active_file.clone().unwrap();
+                    ui.horizontal_wrapped(|ui| {
+                        theme::icon(ui, Icon::File, theme::file_kind(&path).1);
+                        let width =
+                            (ui.available_width() - if self.dirty { 88.0 } else { 0.0 }).max(40.0);
+                        ui.add_sized(
+                            [width, 24.0],
+                            egui::Label::new(theme::file_text(
+                                &path,
+                                &path.file_name().unwrap_or_default().to_string_lossy(),
+                            ))
+                            .truncate(),
+                        )
+                        .on_hover_text(path.display().to_string());
+                        if self.dirty {
+                            theme::badge(
+                                ui,
+                                "Modified",
+                                theme::AMBER,
+                                Color32::from_rgb(255, 246, 223),
+                            );
+                        }
+                    });
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    let find_query = if self.find_open {
+                        self.find_query.clone()
+                    } else {
+                        String::new()
+                    };
+                    let find_active = self.find_active;
+                    let layout_cache = self.editor_layout_cache.clone();
+                    let extension = ext.to_string();
+                    let mut layouter =
+                        move |ui: &egui::Ui, text: &dyn egui::TextBuffer, _wrap_width: f32| {
+                            let source = text.as_str();
+                            {
+                                let cached = layout_cache.lock().unwrap();
+                                if cached.text == source
+                                    && cached.extension == extension
+                                    && cached.query == find_query
+                                    && cached.active_match == find_active
+                                {
+                                    if let Some(galley) = &cached.galley {
+                                        return galley.clone();
+                                    }
                                 }
                             }
-                        }
-                        let mut job = colored_job(source, &extension);
-                        highlight_find_matches(&mut job, source, &find_query, find_active);
-                        job.wrap.max_width = f32::INFINITY;
-                        let galley = ui.fonts(|fonts| fonts.layout_job(job));
-                        let mut cached = layout_cache.lock().unwrap();
-                        cached.text = source.to_owned();
-                        cached.extension = extension.clone();
-                        cached.query = find_query.clone();
-                        cached.active_match = find_active;
-                        cached.galley = Some(galley.clone());
-                        galley
-                    };
-                let editor_id = egui::Id::new("main_editor_text");
-                let jump_cursor = self.pending_editor_cursor.take();
-                if let Some(cursor) = jump_cursor {
-                    let mut state = egui::TextEdit::load_state(ctx, editor_id).unwrap_or_default();
-                    state
-                        .cursor
-                        .set_char_range(Some(CCursorRange::one(CCursor::new(cursor))));
-                    egui::TextEdit::store_state(ctx, editor_id, state);
-                }
-                let response = egui::ScrollArea::both()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        let line_count = self
-                            .buffer
-                            .split('\n')
-                            .count()
-                            .saturating_sub(usize::from(self.buffer.ends_with('\n')))
-                            .max(1);
-                        let row_height = ui.fonts(|f| f.row_height(&FontId::monospace(14.0)));
-                        let digit_width = ui.fonts(|f| {
-                            f.layout_no_wrap("0".into(), FontId::monospace(14.0), Color32::WHITE)
+                            let mut job = colored_job(source, &extension);
+                            highlight_find_matches(&mut job, source, &find_query, find_active);
+                            job.wrap.max_width = f32::INFINITY;
+                            let galley = ui.fonts(|fonts| fonts.layout_job(job));
+                            let mut cached = layout_cache.lock().unwrap();
+                            cached.text = source.to_owned();
+                            cached.extension = extension.clone();
+                            cached.query = find_query.clone();
+                            cached.active_match = find_active;
+                            cached.galley = Some(galley.clone());
+                            galley
+                        };
+                    let editor_id = egui::Id::new("main_editor_text");
+                    let jump_cursor = self.pending_editor_cursor.take();
+                    if let Some(cursor) = jump_cursor {
+                        let mut state =
+                            egui::TextEdit::load_state(ctx, editor_id).unwrap_or_default();
+                        state
+                            .cursor
+                            .set_char_range(Some(CCursorRange::one(CCursor::new(cursor))));
+                        egui::TextEdit::store_state(ctx, editor_id, state);
+                    }
+                    let response = egui::ScrollArea::both()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            let line_count = self
+                                .buffer
+                                .split('\n')
+                                .count()
+                                .saturating_sub(usize::from(self.buffer.ends_with('\n')))
+                                .max(1);
+                            let row_height = ui.fonts(|f| f.row_height(&FontId::monospace(14.0)));
+                            let digit_width = ui.fonts(|f| {
+                                f.layout_no_wrap(
+                                    "0".into(),
+                                    FontId::monospace(14.0),
+                                    Color32::WHITE,
+                                )
                                 .size()
                                 .x
-                        });
-                        let gutter_width = digit_width * line_count.to_string().len() as f32 + 16.0;
-                        let text_width = (ui.available_width() - gutter_width - 8.0).max(60.0);
-                        let editor_galley = layouter(ui, &self.buffer, text_width);
-                        ui.horizontal_top(|ui| {
-                            let (gutter_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(gutter_width, editor_galley.size().y + row_height),
-                                egui::Sense::hover(),
-                            );
-                            let edit = egui::TextEdit::multiline(&mut self.buffer)
-                                .id(editor_id)
-                                .font(TextStyle::Monospace)
-                                .desired_width(text_width)
-                                .desired_rows(1)
-                                .code_editor()
-                                .layouter(&mut layouter)
-                                .show(ui);
-                            let visible = ui.clip_rect().intersect(gutter_rect);
-                            let row_top = edit.galley_pos.y;
-                            let number_width = line_count.to_string().len();
-                            let mut char_offset = 0;
-                            for (index, line) in
-                                self.buffer.split('\n').take(line_count).enumerate()
-                            {
-                                let line_rect =
-                                    edit.galley.pos_from_cursor(CCursor::new(char_offset));
-                                let line_y = row_top + line_rect.top();
-                                if line_y + line_rect.height() >= visible.top()
-                                    && line_y <= visible.bottom()
+                            });
+                            let gutter_width =
+                                digit_width * line_count.to_string().len() as f32 + 16.0;
+                            let text_width = (ui.available_width() - gutter_width - 8.0).max(60.0);
+                            let editor_galley = layouter(ui, &self.buffer, text_width);
+                            ui.horizontal_top(|ui| {
+                                let (gutter_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(gutter_width, editor_galley.size().y + row_height),
+                                    egui::Sense::hover(),
+                                );
+                                let edit = egui::TextEdit::multiline(&mut self.buffer)
+                                    .id(editor_id)
+                                    .font(TextStyle::Monospace)
+                                    .desired_width(text_width)
+                                    .desired_rows(1)
+                                    .code_editor()
+                                    .layouter(&mut layouter)
+                                    .show(ui);
+                                let visible = ui.clip_rect().intersect(gutter_rect);
+                                let row_top = edit.galley_pos.y;
+                                let number_width = line_count.to_string().len();
+                                let mut char_offset = 0;
+                                for (index, line) in
+                                    self.buffer.split('\n').take(line_count).enumerate()
                                 {
-                                    ui.painter().text(
-                                        egui::pos2(gutter_rect.right() - 8.0, line_y),
-                                        egui::Align2::RIGHT_TOP,
-                                        format!("{:>number_width$}", index + 1),
-                                        FontId::monospace(14.0),
-                                        Color32::from_gray(115),
-                                    );
+                                    let line_rect =
+                                        edit.galley.pos_from_cursor(CCursor::new(char_offset));
+                                    let line_y = row_top + line_rect.top();
+                                    if line_y + line_rect.height() >= visible.top()
+                                        && line_y <= visible.bottom()
+                                    {
+                                        ui.painter().text(
+                                            egui::pos2(gutter_rect.right() - 8.0, line_y),
+                                            egui::Align2::RIGHT_TOP,
+                                            format!("{:>number_width$}", index + 1),
+                                            FontId::monospace(14.0),
+                                            Color32::from_gray(115),
+                                        );
+                                    }
+                                    char_offset += line.chars().count() + 1;
                                 }
-                                char_offset += line.chars().count() + 1;
-                            }
-                            if let Some(cursor) = jump_cursor {
-                                if !self.find_open {
-                                    edit.response.request_focus();
+                                if let Some(cursor) = jump_cursor {
+                                    if !self.find_open {
+                                        edit.response.request_focus();
+                                    }
+                                    let mut target = edit
+                                        .galley
+                                        .pos_from_cursor(CCursor::new(cursor))
+                                        .translate(edit.galley_pos.to_vec2());
+                                    target.min.y -= row_height * 4.0;
+                                    target.max.y -= row_height * 4.0;
+                                    ui.scroll_to_rect(target, Some(egui::Align::TOP));
                                 }
-                                let mut target = edit
-                                    .galley
-                                    .pos_from_cursor(CCursor::new(cursor))
-                                    .translate(edit.galley_pos.to_vec2());
-                                target.min.y -= row_height * 4.0;
-                                target.max.y -= row_height * 4.0;
-                                ui.scroll_to_rect(target, Some(egui::Align::TOP));
-                            }
-                            edit.response
+                                edit.response
+                            })
+                            .inner
                         })
-                        .inner
-                    })
-                    .inner;
-                if response.changed() {
-                    self.dirty = true;
+                        .inner;
+                    if response.changed() {
+                        self.dirty = true;
+                    }
+                    if response.has_focus()
+                        && ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S))
+                    {
+                        self.save_file();
+                    }
+                } else {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space((ui.available_height() * 0.23).max(12.0));
+                        theme::empty_art(ui, Icon::File, theme::BLUE);
+                        ui.label(
+                            egui::RichText::new("Make room for your next idea")
+                                .size(20.0)
+                                .strong()
+                                .color(theme::INK),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Double-click a file in Explorer to start editing.",
+                            )
+                            .color(theme::MUTED),
+                        );
+                        ui.add_space(12.0);
+                        ui.small("Ctrl+S  Save     Ctrl+F  Find     Ctrl+W  Close tab");
+                    });
                 }
-                if response.has_focus()
-                    && ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S))
-                {
-                    self.save_file();
-                }
-            } else {
-                ui.centered_and_justified(|ui| {
-                    ui.label("Double-click a file in the explorer to open it")
-                });
-            }
-        });
+            });
         if let Some(path) = self.rename_target.clone() {
             egui::Window::new("Rename")
                 .collapsible(false)
@@ -1374,5 +1506,140 @@ impl eframe::App for EditorApp {
                     });
                 });
         }
+    }
+}
+
+fn restore_open_files(settings: &Settings) -> (Vec<PathBuf>, Option<PathBuf>, String) {
+    let same_workspace = match (&settings.workspace, &settings.session_workspace) {
+        (Some(current), Some(saved)) => {
+            current == saved
+                || std::fs::canonicalize(current)
+                    .ok()
+                    .zip(std::fs::canonicalize(saved).ok())
+                    .is_some_and(|(a, b)| a == b)
+        }
+        (None, None) => true,
+        _ => false,
+    };
+    if !same_workspace {
+        return (Vec::new(), None, String::new());
+    }
+    let mut files = Vec::new();
+    let mut contents = std::collections::HashMap::new();
+    for path in &settings.open_files {
+        if contents.contains_key(path) {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(path) {
+            files.push(path.clone());
+            contents.insert(path.clone(), text);
+        }
+    }
+    let active = settings
+        .active_file
+        .as_ref()
+        .filter(|p| contents.contains_key(*p))
+        .cloned()
+        .or_else(|| files.first().cloned());
+    let buffer = active
+        .as_ref()
+        .and_then(|p| contents.remove(p))
+        .unwrap_or_default();
+    (files, active, buffer)
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    #[test]
+    fn themed_window_fits_compact_and_standard_sizes() {
+        let ctx = egui::Context::default();
+        theme::apply(&ctx);
+        let mut app = EditorApp {
+            settings: Settings::default(),
+            settings_path: PathBuf::from("/tmp/focus-layout-test-unused.toml"),
+            open_files: vec![PathBuf::from(
+                "a_very_long_source_file_name_for_layout_testing.rs",
+            )],
+            active_file: Some(PathBuf::from(
+                "a_very_long_source_file_name_for_layout_testing.rs",
+            )),
+            buffer: "fn main() {\n    println!(\"Hello\");\n}\n".into(),
+            dirty: true,
+            top: None,
+            codex_ui: CodexUi::default(),
+            rename_target: None,
+            rename_text: String::new(),
+            status: "Ready".into(),
+            sidebar_mode: SidebarMode::Explorer,
+            git_ui: crate::git_ui::GitUi::default(),
+            search_query: String::new(),
+            search_results: Vec::new(),
+            pending_editor_cursor: None,
+            find_open: false,
+            find_query: String::new(),
+            find_query_snapshot: String::new(),
+            find_active: None,
+            close_confirmation: None,
+            open_file_filter: String::new(),
+            reveal_active_tab: true,
+            editor_layout_cache: Arc::new(Mutex::new(EditorLayoutCache::default())),
+        };
+        for size in [egui::vec2(900.0, 600.0), egui::vec2(1440.0, 900.0)] {
+            for sidebar in [SidebarMode::Explorer, SidebarMode::Search, SidebarMode::Git] {
+                app.sidebar_mode = sidebar;
+                for _ in 0..3 {
+                    let _ = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            app.render(ctx);
+                            assert!(
+                                ctx.used_rect().right() <= size.x + 1.0,
+                                "Window overflows horizontally: {:?}",
+                                ctx.used_rect()
+                            );
+                            assert!(
+                                ctx.used_rect().bottom() <= size.y + 1.0,
+                                "Window overflows vertically: {:?}",
+                                ctx.used_rect()
+                            );
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn restores_order_active_file_and_skips_missing_files() {
+        let root = std::env::temp_dir().join(format!("focus-session-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        std::fs::write(&first, "first").unwrap();
+        std::fs::write(&second, "second").unwrap();
+        let mut settings = Settings {
+            open_files: vec![first.clone(), root.join("missing.txt"), second.clone()],
+            active_file: Some(second.clone()),
+            ..Settings::default()
+        };
+        assert_eq!(
+            restore_open_files(&settings),
+            (
+                vec![first.clone(), second.clone()],
+                Some(second),
+                "second".into()
+            )
+        );
+        settings.active_file = Some(root.join("missing.txt"));
+        assert_eq!(restore_open_files(&settings).1, Some(first));
+        settings.workspace = Some(root.clone());
+        assert!(restore_open_files(&settings).0.is_empty());
+        let old: Settings = toml::from_str("").unwrap();
+        assert!(restore_open_files(&old).0.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

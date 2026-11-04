@@ -26,6 +26,8 @@ The first build downloads crates from crates.io. The app stores settings in the 
 
 ## Use
 
+The compact light theme uses blue navigation, teal Codex controls, colored file-type markers, and consistent vector icons. Status badges include text, while Source Control keeps its amber/blue/green/red groups. Small illustrations guide empty views; the editor stays focused on code. The bottom status bar shows file and save feedback.
+
 - Choose a workspace folder from the toolbar.
 - Double-click a file in Explorer to open it. Edit in the center pane and save with **Ctrl+S** or **Edit → Save**.
 - Editor lines do not wrap; use the horizontal scrollbar to view long lines.
