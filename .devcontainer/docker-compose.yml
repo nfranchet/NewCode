@@ -3,7 +3,7 @@ services:
   devcontainer:
     build:
       context: .
-      dockerfile: .devcontainer/Dockerfile
+      dockerfile: .Dockerfile
     volumes:
       - .:/workspaces/NewCode
       - cargo-cache-newcode:/usr/local/cargo:rw

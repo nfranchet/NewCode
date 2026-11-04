@@ -3,7 +3,9 @@
 use eframe::egui;
 use serde::Deserialize;
 mod authentication;
+mod compose;
 mod diagnostics;
+use compose::compose;
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -355,7 +357,7 @@ fn start(configuration: &Configuration, rebuild: bool) -> Result<Runtime, String
         args.push("--build");
     }
     args.push(&configuration.service);
-    compose(configuration, args)?;
+    compose::start(configuration, args)?;
     let container_id = compose(configuration, ["ps", "-q", configuration.service.as_str()])?;
     let container_id = String::from_utf8_lossy(&container_id).trim().to_owned();
     if container_id.is_empty() {
@@ -372,30 +374,6 @@ fn start(configuration: &Configuration, rebuild: bool) -> Result<Runtime, String
     };
     runtime.prepare_authentication()?;
     Ok(runtime)
-}
-
-fn compose<I, S>(configuration: &Configuration, args: I) -> Result<Vec<u8>, String>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    let mut command = Command::new("docker");
-    command
-        .arg("compose")
-        .arg("--project-directory")
-        .arg(&configuration.workspace);
-    for file in &configuration.compose_files {
-        command.arg("-f").arg(file);
-    }
-    command.args(args.into_iter().map(|arg| arg.as_ref().to_owned()));
-    let output = command
-        .output()
-        .map_err(|error| format!("Could not run Docker Compose: {error}"))?;
-    if output.status.success() {
-        Ok(output.stdout)
-    } else {
-        Err(diagnostics::compose_failure(&output))
-    }
 }
 
 // devcontainer.json permits comments; serde_json deliberately does not.
