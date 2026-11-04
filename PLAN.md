@@ -1,26 +1,65 @@
-# Implementation plan
+# Implementation and validation notes
 
-1. **Bootstrap the desktop app** — create a Rust/eframe project, Linux build notes, and persistent user settings.
-2. **Project explorer and editor** — select a workspace, browse directories, implement file/folder create, rename, move, delete, and open/edit/save/close text files. Add extension-aware syntax coloring for common languages.
-3. **Workspace search and editor navigation** — add Explorer and Search modes to the left sidebar. Search the selected workspace for a literal query, group matching lines by file, and show line numbers with previews. Clicking a result opens the file, scrolls to the match with a few preceding lines visible, and places the caret on the matching line. Skip directories and unreadable or non-text files, and report search status in the UI.
-4. **In-file find and clipboard actions** — add a Ctrl+F find bar for the active document with case-insensitive matching, highlighting for all references, first-match navigation with preceding context on Enter, previous/next navigation, and a match count. Support copying and pasting editor selections through Ctrl+C/Ctrl+V and visible toolbar actions.
-5. **Shell and Codex App Server panel** — embed a PTY-backed general shell at the bottom and provide right-side Codex and Terminal tabs. The Codex tab launches `codex app-server` over JSONL stdio, streams turns, supports interrupts, and surfaces approval/input requests. Start it by default with a setting and `--no-codex` startup override.
-6. **Resizable layout and polish** — persist panel sizes and settings, add keyboard shortcuts and clear error reporting, and document build/run steps.
+## Implemented areas
 
-## Acceptance checklist
-- [ ] Linux app launches into an empty state or restores the last workspace.
-- [ ] Explorer operations update the filesystem and tree.
-- [ ] Double-click opens a text file; edits can be saved.
-- [ ] Long editor lines remain unwrapped and can be viewed with a horizontal scrollbar when needed.
-- [ ] Open files can be closed from their tab or with Ctrl+W; modified files prompt to save, discard, or cancel.
-- [ ] Open tabs stay in one horizontal row, with scrolling and a searchable menu to activate any open file.
-- [ ] Explorer and Search modes switch within the left sidebar; Search mode replaces the tree with a query field and Search button.
-- [ ] Searching the workspace shows matching lines grouped under each filename, with line numbers and previews; clicking a line opens the file at that line with preceding context visible and the caret on the matching line.
-- [ ] Search skips directories and unreadable or non-text files and gives useful feedback when no matches are found or a search fails.
-- [ ] Ctrl+F opens in-file find; Enter jumps to the first case-insensitive match with preceding context visible, and all references are highlighted. Previous/next navigation updates the active match and count.
-- [ ] Editor selections can be copied and pasted with Ctrl+C/Ctrl+V and the toolbar Copy/Paste actions.
-- [ ] Common extensions receive language-aware colors.
-- [ ] Bottom shell and right Terminal tab accept interactive keyboard input and show live output.
-- [ ] Right Codex tab starts the App Server, sends messages, streams replies and activity, interrupts turns, and responds to approval/input requests; `--no-codex` skips startup.
-- [ ] Passing a directory argument at launch opens it in the explorer.
-- [ ] Layout and workspace survive restarting the app.
+| Area | Current implementation |
+| --- | --- |
+| Desktop foundation | Linux Rust/eframe application, directory launch argument, persistent settings and adjustable pane sizes |
+| Visual design | Shared light palette, vector icons, file-type markers, active-tab/focus styling, status badges, empty-state illustrations, bottom status bar |
+| Explorer | Workspace tree; open, rename, move, inline file/folder creation, and confirmed deletion |
+| Inline creation | Target the displayed file's parent or workspace fallback; reveal nested destinations; Enter creates; Escape/focus loss cancels; reject invalid/duplicate names |
+| Confirmed deletion | In-app modal with Cancel default, permanent-deletion warnings, affected-tab cleanup on success, and symlink-target protection |
+| Editor | Text editing/saving, lightweight syntax colors, unwrapped source lines, horizontal scrolling, tabs, searchable open-files menu, modified-file close confirmation |
+| Search and clipboard | Grouped workspace search, match navigation, Ctrl+F Find with highlights/count, clipboard and Edit actions |
+| Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
+| Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
+| Shell | Bottom interactive PTY-backed Bash terminal and Restart action |
+| Codex sessions | JSONL App Server client, automatic latest-session resume, session picker/pagination, new session, Start/Stop, Interrupt |
+| Codex controls | Catalog-based model/thinking/mode choices, Plan-first startup fallback, Ctrl+Enter send, Tab/Shift+Tab mode cycling, wrapping controls |
+| Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
+| Codex usage | Available account limits with periodic/manual refresh, token/context updates, unavailable-data feedback |
+
+Implementation lives primarily in `src/editor.rs`, `src/git_ui.rs`, `src/codex_ui.rs`, and the shared `src/ui_theme.rs`, with settings, terminal, syntax, and transport support modules.
+
+## Automated checks
+
+Run:
+
+```sh
+cargo check
+cargo test
+cargo fmt --check
+```
+
+The current suite covers:
+
+- Restoring tab order and the active file, skipping missing files, older settings, and workspace isolation.
+- Inline file/folder creation, initial focus, Enter submission, Escape/focus-loss cancellation, invalid/duplicate names, nested-folder reveal, external destinations, and workspace/sidebar cancellation.
+- File/folder delete confirmation cancellation, Enter safety, failed deletion, open-tab cleanup, folder removal, and symbolic-link target preservation; right-click Delete on collapsed and expanded folder headers.
+- Window layout at compact and standard sizes; long Codex messages/plans and composer visibility at narrow widths.
+- Icon-button keyboard activation and disabled actions.
+- Git status parsing for partial changes, renames, unusual names, and conflicts; repository staging/unstaging/commit operations; commit draft/focus stability across refresh and failure.
+- Codex history conversion, thinking-level selection/fallback, startup mode preference/fallback, and usage-title formatting.
+
+Passing these checks does not establish full manual desktop or live Codex validation.
+
+## Manual acceptance checklist
+
+These checks remain manual acceptance tasks, rather than claims that every desktop interaction has already been verified.
+
+- [ ] Launch with no workspace, a saved workspace, a directory argument, and `--no-codex`; verify expected pane and session restoration.
+- [ ] Resize all panes and verify labels, icons, focus outlines, scrollbars, and message wrapping at the minimum window size.
+- [ ] Create files/folders beside root, nested, and external open files; confirm focus, cancellation, errors, and no overwrite.
+- [ ] Confirm and cancel deletion of files and folders, including targets with unsaved edits and filesystem errors.
+- [ ] Edit/save/close files; check long lines, tab scrolling/menu, search navigation, Find, and clipboard shortcuts.
+- [ ] Review staged/unstaged/untracked/conflicting files; use Space and buttons; stage/unstage hunks; reselect to refresh their diff; commit and inspect failures.
+- [ ] Switch between Source Control, Explorer, Search, and editor tabs without replacing the active unsaved buffer with a diff.
+- [ ] Type a commit message through multiple automatic refreshes without focus loss or layout flicker.
+- [ ] Exercise shell input, resize, and Restart.
+- [ ] With Codex configured, resume/switch/create sessions; choose model/thinking/mode; verify keyboard shortcuts, streaming plans, completion, Interrupt, approvals, input requests, and usage refresh.
+
+## Current limits
+
+The app does not recover unsaved buffers or caret/scroll positions on relaunch. Git history, branch switching, and individual-line staging are outside the implemented UI. Diff previews may need a file reselection after index changes. Codex choices and usage fields depend on the installed server/account, and absent reasoning summaries cannot be reconstructed.
+
+Follow-up work should extend the implementation and its validation together; planned features should not be documented as already available.

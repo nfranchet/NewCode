@@ -1,25 +1,51 @@
-# Product brief: focused Rust editor
+# Product brief: Focus Editor
 
 ## Goal
-Build a fast, Linux-first desktop editor that replaces only the VS Code features I use: project file management, opening and editing source files, and two persistent shell work areas.
 
-## Main window
-- A left sidebar with **Explorer** and **Search** modes. Explorer shows a clickable project tree; users can open files, create files/folders, rename, move, and delete entries. Search replaces the tree with a text field and a Search button.
-- Project search scans files in the current workspace and groups matches by filename. Each matching line appears below its filename; clicking a line opens that file in the center editor, scrolls to the line with nearby preceding context visible, and places the text cursor on that line.
-- The editor has an in-file Find bar, opened with **Ctrl+F**, with previous/next match navigation and a match counter. Search is case-insensitive, highlights all references, and pressing Enter jumps to the first reference with preceding context visible, matching workspace search navigation.
-- Text selections in the editor can be copied and pasted with **Ctrl+C** and **Ctrl+V**, or with the Copy and Paste toolbar actions.
-- The center editor opens files on double-click, supports editing and saving, keeps long lines unwrapped with horizontal scrolling, and colors source text based on common file extensions. Open file tabs have a close button, and **Ctrl+W** closes the active file. Closing a modified file asks whether to save, discard, or cancel.
-- Open files use a single horizontally scrollable tab row. A searchable open-files menu provides direct access to any tab, including those outside the visible row, and brings the selected tab into view.
-- An interactive PTY-backed shell across the bottom and a right panel with **Codex** and **Terminal** tabs. The Codex tab communicates with the Codex App Server over JSONL stdio, streams assistant output, and displays/responds to approval and input requests. The server starts at launch by default and can be disabled in the panel or with `--no-codex`.
-- An optional directory argument at startup opens that directory in the explorer, for example `focus-editor ~/projects/my-app`.
-- All panels can be resized, and their dimensions and positions are restored on the next launch.
+A fast, Linux-first Rust desktop editor for project file management, source editing, Git review, an interactive shell, and Codex. Keep the working layout compact and make common actions easy to identify.
 
-## Platform and implementation
-- Linux only for the initial release.
-- Rust desktop application.
-- Prefer native filesystem behavior and a real PTY-backed shell, not a terminal transcript mockup.
+## Window and visual design
 
-## Initial scope
-Include common Rust, C/C++, Python, JavaScript/TypeScript, HTML/CSS, JSON, YAML, TOML, Markdown, shell, and SQL extensions. Keep the app focused: no extensions marketplace, debugger, or source-control UI in this first version.
+The left activity bar selects Explorer, Search, or Source Control. The center displays open files or a Source Control diff. An interactive shell occupies the bottom and Codex occupies the right. Pane sizes are adjustable and saved.
 
-Project search is limited to readable text files under the selected workspace. Search results show one entry per matching line, grouped by file, with line numbers and a short line preview. Directories and files that cannot be read as text are skipped; search reports errors or skipped files through the status area where practical.
+A coordinated light theme uses blue navigation, teal Codex controls, semantic Git colors, vector icons, colored file-type markers, and small empty-state illustrations. Focus, selected tabs, and status badges remain visible. Labels accompany colors, and input cursors are thick and steady. A bottom status bar reports file/save activity.
+
+## Explorer and documents
+
+- Browse the workspace tree and double-click files to edit them. An optional launch directory selects the workspace.
+- Create a file or folder through a temporary inline name field beside the displayed file, with the workspace root as the fallback when no file is open. Reveal nested destinations; label destinations outside the workspace above the tree.
+- Create on Enter only. Escape, focus loss, sidebar changes, or workspace changes cancel without filesystem writes. Validate names, preserve failed drafts for correction, and never overwrite existing entries.
+- Provide right-click Rename, Move, and Delete actions. Deletion requires an in-app confirmation, warns about folder contents and unsaved edits, and removes affected tabs only on success. Deleting a symbolic link preserves its target.
+- Edit/save text with lightweight extension-based syntax coloring. Keep source lines unwrapped and horizontally scrollable.
+- Keep tabs on one scrollable row with close controls and a searchable open-files menu. Closing a modified file asks whether to save, discard, or cancel.
+- Restore workspace, tab order, and active file on relaunch, skipping missing/unreadable files. A different launch workspace does not inherit unrelated tabs. Restore saved disk contents, not unsaved buffers or caret/scroll positions.
+
+## Search and clipboard
+
+Workspace search scans readable text files and groups matching lines by filename. Selecting a result opens the file with the matching line and nearby preceding context visible.
+
+Ctrl+F opens case-insensitive Find in the active file, with match highlights, a count, and forward/backward navigation. Provide editor clipboard shortcuts and Edit-menu actions for Save, Copy, Paste, Find, and Select All.
+
+## Source Control
+
+Use a compact status view with branch/upstream information and distinct bordered groups: amber Unstaged, blue Untracked, green Staged, and red Conflicts. Identify file states and available addition/deletion counts; partially staged files may appear in both staged and unstaged groups.
+
+Selecting a file displays its unified diff in the center. Provide whole-file/group staging and unstaging, plus hunk actions for eligible tracked text changes. Space stages/unstages the focused file row without interfering with text entry. Enter a commit message below the list and commit staged changes only; block commits for unresolved conflicts, an empty message, or no staged content.
+
+Run Git operations asynchronously and refresh status while the view is open. Preserve commit-field focus and text during refreshes. Hunk changes require reselecting the file to reload its diff. Returning to Explorer/Search restores the active editor buffer; selecting an editor tab dismisses the preview.
+
+## Shell and Codex
+
+The bottom pane is a real PTY-backed interactive shell with a Restart action. The right pane is the Codex App Server client over JSONL stdio, with Start/Stop, visible connection/activity status, streaming turns, Interrupt, approval responses, and user-input responses.
+
+Resume the latest workspace session at startup and allow choosing older sessions or creating a new one. Session labels are compact when closed and longer in the dropdown. Provide model, thinking-level, and mode selectors near Send, populated from Codex's catalog. Prefer Plan initially, with the first available mode as fallback. Support Ctrl+Enter to send and Tab/Shift+Tab to cycle modes in the idle composer.
+
+Show proposed plans as expanded message cards and retain them in restored history. Keep reasoning and command details expandable and report turn completion in the conversation. Show available account limits and token/context usage; refresh account limits every minute and on request.
+
+## Platform and boundaries
+
+- Linux desktop application using Rust and eframe/egui, with native filesystem operations and a PTY.
+- Git is required for Source Control; an installed, authenticated Codex CLI is required for the Codex panel. Both capabilities depend on their local tools and configuration.
+- Automatic Codex startup can be disabled in saved settings or for one launch with `--no-codex`.
+- No extension marketplace, debugger, compiler-backed language services, Git history/branch-management UI, individual-line staging, or unsaved-buffer recovery is currently provided.
+- Renaming and moving use existing dialogs; new-entry naming and delete confirmation are handled inside the application.

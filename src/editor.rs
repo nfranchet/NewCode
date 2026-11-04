@@ -22,6 +22,49 @@ enum SidebarMode {
     Git,
 }
 
+struct Deletion {
+    path: PathBuf,
+    error: String,
+    needs_focus: bool,
+}
+
+struct NewEntry {
+    parent: PathBuf,
+    workspace: Option<PathBuf>,
+    is_dir: bool,
+    name: String,
+    error: String,
+    needs_focus: bool,
+}
+
+impl NewEntry {
+    fn id(&self) -> egui::Id {
+        egui::Id::new(("explorer_new_entry", &self.parent, self.is_dir))
+    }
+
+    fn create(&self) -> Result<PathBuf, String> {
+        if self.name.trim().is_empty()
+            || matches!(self.name.as_str(), "." | "..")
+            || self.name.contains(['/', '\\', '\0'])
+        {
+            return Err("Enter a single file or folder name.".into());
+        }
+        let path = self.parent.join(&self.name);
+        let result = if self.is_dir {
+            fs::create_dir(&path)
+        } else {
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map(|_| ())
+        };
+        result
+            .map(|_| path)
+            .map_err(|e| format!("Could not create entry: {e}"))
+    }
+}
+
 struct FileMatches {
     path: PathBuf,
     lines: Vec<(usize, String)>,
@@ -150,6 +193,8 @@ pub(crate) struct EditorApp {
     dirty: bool,
     top: Option<Terminal>,
     codex_ui: CodexUi,
+    creation: Option<NewEntry>,
+    deletion: Option<Deletion>,
     rename_target: Option<PathBuf>,
     rename_text: String,
     status: String,
@@ -208,6 +253,8 @@ impl EditorApp {
             dirty: false,
             top,
             codex_ui,
+            creation: None,
+            deletion: None,
             rename_target: None,
             rename_text: String::new(),
             status: "Ready".into(),
@@ -240,6 +287,7 @@ impl EditorApp {
     }
     fn choose_workspace(&mut self) {
         if let Some(p) = rfd::FileDialog::new().pick_folder() {
+            self.creation = None;
             self.settings.workspace = Some(p.clone());
             self.status = format!("Workspace: {}", p.display());
             self.save_settings();
@@ -411,6 +459,13 @@ impl EditorApp {
         ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("find_in_file_query")));
     }
     fn tree(&mut self, ui: &mut egui::Ui, dir: &Path) {
+        if self
+            .creation
+            .as_ref()
+            .is_some_and(|entry| entry.parent == dir)
+        {
+            self.creation_row(ui);
+        }
         let Ok(entries) = fs::read_dir(dir) else {
             return;
         };
@@ -430,26 +485,45 @@ impl EditorApp {
             if path.is_dir() {
                 let id = ui.make_persistent_id(("folder", &path));
                 let mut clicked = false;
-                let mut folder = egui::collapsing_header::CollapsingState::load_with_default_open(
+                let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                     ui.ctx(),
                     id,
                     false,
-                )
-                .show_header(ui, |ui| {
-                    theme::icon(ui, Icon::Folder, theme::AMBER);
-                    clicked = ui
-                        .add(
-                            egui::Label::new(egui::RichText::new(name).color(theme::INK))
-                                .truncate()
-                                .sense(egui::Sense::click()),
-                        )
-                        .clicked();
+                );
+                if self
+                    .creation
+                    .as_ref()
+                    .is_some_and(|entry| entry.needs_focus && entry.parent.starts_with(&path))
+                {
+                    state.set_open(true);
+                }
+                let mut folder = state.show_header(ui, |ui| {
+                    let (icon_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                    theme::paint_icon(ui, icon_rect, Icon::Folder, theme::AMBER);
+                    let icon = ui.interact(icon_rect, id.with("icon"), egui::Sense::click());
+                    let label = ui.add(
+                        egui::Label::new(egui::RichText::new(name).color(theme::INK)).truncate(),
+                    );
+                    let label = ui.interact(
+                        label.rect,
+                        egui::Id::new(("explorer_folder_name", &path)),
+                        egui::Sense::click(),
+                    );
+                    let response = icon.union(label);
+                    clicked = response.clicked();
+                    response
                 });
                 if clicked {
                     folder.toggle();
                 }
-                let (_, header, _) = folder.body(|ui| self.tree(ui, &path));
-                header.response.context_menu(|ui| self.file_menu(ui, &path));
+                let (toggle, header, _) = folder.body(|ui| self.tree(ui, &path));
+                // The layout response is hover-only. Use the clickable children so
+                // secondary clicks on the name, folder icon, or arrow open the menu.
+                header
+                    .inner
+                    .union(toggle)
+                    .context_menu(|ui| self.file_menu(ui, &path));
             } else {
                 let response = ui
                     .add(
@@ -490,18 +564,130 @@ impl EditorApp {
             }
             ui.close();
         }
-        if ui.button("Delete").clicked() {
-            let result = if path.is_dir() {
-                fs::remove_dir_all(path)
-            } else {
-                fs::remove_file(path)
-            };
-            self.status = result
-                .map(|_| "Deleted".into())
-                .unwrap_or_else(|e| format!("Delete failed: {e}"));
+        let delete = ui.button(egui::RichText::new("Delete…").color(theme::RED));
+        ui.interact(
+            delete.rect,
+            egui::Id::new(("explorer_delete_action", path)),
+            egui::Sense::hover(),
+        );
+        if delete.clicked() {
+            self.deletion = Some(Deletion {
+                path: path.to_path_buf(),
+                error: String::new(),
+                needs_focus: true,
+            });
             ui.close();
         }
     }
+
+    fn confirm_delete(&mut self, path: &Path) -> Result<(), String> {
+        let metadata = fs::symlink_metadata(path).map_err(|e| format!("Delete failed: {e}"))?;
+        let directory = metadata.is_dir();
+        let result = if directory {
+            fs::remove_dir_all(path)
+        } else {
+            fs::remove_file(path)
+        };
+        result.map_err(|e| format!("Delete failed: {e}"))?;
+        let affected = |p: &Path| p == path || (directory && p.starts_with(path));
+        self.open_files.retain(|p| !affected(p));
+        if self.active_file.as_deref().is_some_and(affected) {
+            self.active_file = None;
+            self.buffer.clear();
+            self.dirty = false;
+            self.pending_editor_cursor = None;
+            self.find_open = false;
+            self.find_active = None;
+            if let Some(next) = self.open_files.first().cloned() {
+                self.open_file(next);
+            }
+        }
+        if self.close_confirmation.as_deref().is_some_and(affected) {
+            self.close_confirmation = None;
+        }
+        if self
+            .creation
+            .as_ref()
+            .is_some_and(|entry| affected(&entry.parent))
+        {
+            self.creation = None;
+        }
+        self.status = format!("Deleted {}", path.display());
+        Ok(())
+    }
+
+    fn deletion_dialog(&mut self, ctx: &egui::Context) {
+        let Some(mut deletion) = self.deletion.take() else {
+            return;
+        };
+        let mut cancel = false;
+        let mut confirm = false;
+        let modal = egui::Modal::new(egui::Id::new("delete_confirmation")).show(ctx, |ui| {
+            ui.set_width(380.0_f32.min(ctx.screen_rect().width() - 40.0));
+            theme::heading(ui, Icon::Warning, "Delete this entry?", theme::RED);
+            ui.label(
+                egui::RichText::new(
+                    deletion
+                        .path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                )
+                .strong(),
+            );
+            ui.add(egui::Label::new(deletion.path.display().to_string()).wrap());
+            ui.label("This permanently deletes the entry from disk.");
+            if fs::symlink_metadata(&deletion.path).is_ok_and(|m| m.is_dir()) {
+                ui.colored_label(
+                    theme::RED,
+                    "All files and subfolders inside will also be deleted.",
+                );
+            }
+            if self.dirty
+                && self
+                    .active_file
+                    .as_deref()
+                    .is_some_and(|p| p == deletion.path || p.starts_with(&deletion.path))
+            {
+                ui.colored_label(
+                    theme::AMBER,
+                    "Unsaved edits in the open file will be discarded.",
+                );
+            }
+            if !deletion.error.is_empty() {
+                ui.colored_label(theme::RED, &deletion.error);
+            }
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let response = ui.button("Cancel");
+                if deletion.needs_focus {
+                    response.request_focus();
+                    deletion.needs_focus = false;
+                }
+                cancel = response.clicked();
+                let response = ui
+                    .add(
+                        egui::Button::new(egui::RichText::new("Delete").color(Color32::WHITE))
+                            .fill(theme::RED),
+                    )
+                    .on_hover_text("Permanently delete this entry");
+                // Require an explicit pointer click for the destructive action.
+                confirm = response.clicked()
+                    && ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+            });
+        });
+        if cancel || modal.should_close() {
+            return;
+        }
+        if confirm {
+            match self.confirm_delete(&deletion.path) {
+                Ok(()) => return,
+                Err(error) => deletion.error = error,
+            }
+        }
+        self.deletion = Some(deletion);
+    }
+
     fn update_open_path(&mut self, from: &Path, to: &Path) {
         for open in &mut self.open_files {
             if open == from {
@@ -523,21 +709,93 @@ impl EditorApp {
         }
     }
     fn create_entry(&mut self, is_dir: bool) {
-        let Some(root) = &self.settings.workspace else {
-            return;
-        };
-        let Some(path) = rfd::FileDialog::new().set_directory(root).save_file() else {
-            return;
-        };
-        let result = if is_dir {
-            fs::create_dir_all(&path)
-        } else {
-            fs::write(&path, "")
-        };
-        self.status = result
-            .map(|_| "Created".into())
-            .unwrap_or_else(|e| format!("Create failed: {e}"));
+        let parent = self
+            .active_file
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| self.settings.workspace.clone());
+        if let Some(parent) = parent {
+            let parent = if parent.as_os_str().is_empty() {
+                std::env::current_dir().unwrap_or(parent)
+            } else {
+                parent
+            };
+            let parent = fs::canonicalize(&parent).unwrap_or(parent);
+            self.creation = Some(NewEntry {
+                parent,
+                workspace: self.settings.workspace.clone(),
+                is_dir,
+                name: String::new(),
+                error: String::new(),
+                needs_focus: true,
+            });
+        }
     }
+
+    fn creation_row(&mut self, ui: &mut egui::Ui) {
+        let Some(mut entry) = self.creation.take() else {
+            return;
+        };
+        let id = entry.id();
+        let response = ui
+            .horizontal(|ui| {
+                theme::icon(
+                    ui,
+                    if entry.is_dir {
+                        Icon::Folder
+                    } else {
+                        Icon::File
+                    },
+                    theme::BLUE,
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut entry.name)
+                        .id(id)
+                        .hint_text(if entry.is_dir {
+                            "Folder name…"
+                        } else {
+                            "File name…"
+                        })
+                        .desired_width(ui.available_width()),
+                )
+            })
+            .inner;
+        if entry.needs_focus {
+            response.request_focus();
+            ui.scroll_to_rect(response.rect, None);
+            entry.needs_focus = false;
+        }
+        let owns_keyboard =
+            response.has_focus() || response.lost_focus() || ui.memory(|m| m.has_focus(id));
+        if owns_keyboard
+            && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        {
+            ui.memory_mut(|m| m.surrender_focus(id));
+            return;
+        }
+        if owns_keyboard && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter))
+        {
+            match entry.create() {
+                Ok(path) => {
+                    self.status = format!("Created {}", path.display());
+                    ui.memory_mut(|m| m.surrender_focus(id));
+                    return;
+                }
+                Err(error) => {
+                    entry.error = error;
+                    response.request_focus();
+                }
+            }
+        } else if response.lost_focus() {
+            return;
+        }
+        if !entry.error.is_empty() {
+            ui.colored_label(theme::RED, &entry.error);
+        }
+        self.creation = Some(entry);
+    }
+
     fn terminal_ui(
         ctx: &egui::Context,
         ui: &mut egui::Ui,
@@ -864,6 +1122,11 @@ impl EditorApp {
                     }
                 });
             });
+        if self.creation.as_ref().is_some_and(|entry| {
+            self.sidebar_mode != SidebarMode::Explorer || self.settings.workspace != entry.workspace
+        }) {
+            self.creation = None;
+        }
         let left_width = self.settings.explorer_width;
         let left_response = egui::SidePanel::left("explorer")
             .resizable(true)
@@ -905,7 +1168,33 @@ impl EditorApp {
                         }
                     }
                     SidebarMode::Explorer => {
-                        if let Some(root) = self.settings.workspace.clone() {
+                        let workspace = self
+                            .settings
+                            .workspace
+                            .as_ref()
+                            .map(|root| fs::canonicalize(root).unwrap_or(root.clone()));
+                        let outside = self
+                            .creation
+                            .as_ref()
+                            .filter(|entry| {
+                                workspace
+                                    .as_ref()
+                                    .is_none_or(|root| !entry.parent.starts_with(root))
+                            })
+                            .map(|entry| entry.parent.clone());
+                        if let Some(parent) = outside {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(format!("Create in {}", parent.display()))
+                                        .small()
+                                        .color(theme::BLUE),
+                                )
+                                .wrap(),
+                            );
+                            self.creation_row(ui);
+                            ui.separator();
+                        }
+                        if let Some(root) = workspace {
                             ui.label(
                                 egui::RichText::new(
                                     root.file_name().unwrap_or_default().to_string_lossy(),
@@ -1506,6 +1795,13 @@ impl EditorApp {
                     });
                 });
         }
+        self.deletion_dialog(ctx);
+        if self.creation.as_ref().is_some_and(|entry| {
+            !entry.needs_focus
+                && (!ctx.memory(|m| m.has_focus(entry.id())) || !ctx.input(|i| i.focused))
+        }) {
+            self.creation = None;
+        }
     }
 }
 
@@ -1551,11 +1847,8 @@ fn restore_open_files(settings: &Settings) -> (Vec<PathBuf>, Option<PathBuf>, St
 #[cfg(test)]
 mod session_tests {
     use super::*;
-    #[test]
-    fn themed_window_fits_compact_and_standard_sizes() {
-        let ctx = egui::Context::default();
-        theme::apply(&ctx);
-        let mut app = EditorApp {
+    fn test_app() -> EditorApp {
+        EditorApp {
             settings: Settings::default(),
             settings_path: PathBuf::from("/tmp/focus-layout-test-unused.toml"),
             open_files: vec![PathBuf::from(
@@ -1568,6 +1861,8 @@ mod session_tests {
             dirty: true,
             top: None,
             codex_ui: CodexUi::default(),
+            creation: None,
+            deletion: None,
             rename_target: None,
             rename_text: String::new(),
             status: "Ready".into(),
@@ -1584,7 +1879,324 @@ mod session_tests {
             open_file_filter: String::new(),
             reveal_active_tab: true,
             editor_layout_cache: Arc::new(Mutex::new(EditorLayoutCache::default())),
+        }
+    }
+
+    #[test]
+    fn folder_context_menu_opens_delete_confirmation_when_closed_or_open() {
+        let root = std::env::temp_dir().join(format!(
+            "focus-folder-menu-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let folder = root.join("folder");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("child.txt"), "keep").unwrap();
+        for expanded in [false, true] {
+            let ctx = egui::Context::default();
+            theme::apply(&ctx);
+            let mut app = test_app();
+            let frame = |app: &mut EditorApp, events: Vec<egui::Event>| {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 600.0),
+                        )),
+                        events,
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            let id = ui.make_persistent_id(("folder", &folder));
+                            let mut state =
+                                egui::collapsing_header::CollapsingState::load_with_default_open(
+                                    ctx, id, false,
+                                );
+                            state.set_open(expanded);
+                            state.store(ctx);
+                            app.tree(ui, &root);
+                        });
+                        app.deletion_dialog(ctx);
+                    },
+                );
+            };
+            let click = |app: &mut EditorApp, pos: egui::Pos2, button| {
+                frame(
+                    app,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button,
+                            pressed: true,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+                frame(
+                    app,
+                    vec![egui::Event::PointerButton {
+                        pos,
+                        button,
+                        pressed: false,
+                        modifiers: egui::Modifiers::NONE,
+                    }],
+                );
+                frame(app, vec![]);
+            };
+            frame(&mut app, vec![]);
+            frame(&mut app, vec![]);
+            let row = ctx
+                .read_response(egui::Id::new(("explorer_folder_name", &folder)))
+                .unwrap()
+                .rect;
+            click(&mut app, row.center(), egui::PointerButton::Secondary);
+            let delete = ctx
+                .read_response(egui::Id::new(("explorer_delete_action", folder.as_path())))
+                .expect("Folder context menu must offer Delete")
+                .rect;
+            click(&mut app, delete.center(), egui::PointerButton::Primary);
+            assert_eq!(app.deletion.as_ref().map(|d| &d.path), Some(&folder));
+            assert!(
+                folder.join("child.txt").exists(),
+                "Choosing Delete must only open confirmation"
+            );
+            frame(
+                &mut app,
+                vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            assert!(app.deletion.is_none());
+            assert!(folder.join("child.txt").exists());
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn deletion_confirmation_cancels_and_preserves_symlink_targets() {
+        let root = std::env::temp_dir().join(format!(
+            "focus-delete-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let file = root.join("file.txt");
+        fs::write(&file, "saved").unwrap();
+        let mut app = test_app();
+        app.active_file = Some(file.clone());
+        app.open_files = vec![file.clone()];
+        app.buffer = "unsaved".into();
+        let ctx = egui::Context::default();
+        theme::apply(&ctx);
+        let frame = |app: &mut EditorApp, events: Vec<egui::Event>| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(900.0, 600.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| app.deletion_dialog(ctx),
+            );
         };
+        app.deletion = Some(Deletion {
+            path: file.clone(),
+            error: String::new(),
+            needs_focus: true,
+        });
+        frame(&mut app, vec![]);
+        assert!(file.exists(), "Opening confirmation must not delete");
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&mut app, vec![key(egui::Key::Enter)]);
+        assert!(file.exists(), "Enter must not confirm destructive action");
+        if app.deletion.is_none() {
+            app.deletion = Some(Deletion {
+                path: file.clone(),
+                error: String::new(),
+                needs_focus: true,
+            });
+            frame(&mut app, vec![]);
+        }
+        frame(&mut app, vec![key(egui::Key::Escape)]);
+        assert!(app.deletion.is_none());
+        assert_eq!(app.buffer, "unsaved");
+        assert!(app.confirm_delete(&root.join("missing")).is_err());
+        assert_eq!(app.open_files, vec![file.clone()]);
+        app.confirm_delete(&file).unwrap();
+        assert!(!file.exists());
+        assert!(app.active_file.is_none() && app.open_files.is_empty());
+        assert!(!app.dirty);
+        let target = root.join("target");
+        fs::create_dir(&target).unwrap();
+        fs::write(target.join("keep.txt"), "keep").unwrap();
+        let link = root.join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        app.confirm_delete(&link).unwrap();
+        assert!(!link.exists());
+        assert_eq!(fs::read_to_string(target.join("keep.txt")).unwrap(), "keep");
+        app.open_files = vec![target.join("keep.txt")];
+        app.active_file = app.open_files.first().cloned();
+        app.confirm_delete(&target).unwrap();
+        assert!(!target.exists());
+        assert!(app.open_files.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn inline_creation_submits_cancels_and_never_overwrites() {
+        let root = std::env::temp_dir().join(format!(
+            "focus-inline-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        let ctx = egui::Context::default();
+        theme::apply(&ctx);
+        let mut app = test_app();
+        app.settings.workspace = Some(root.clone());
+        app.active_file = None;
+        let frame = |app: &mut EditorApp, events: Vec<egui::Event>| {
+            let _ = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1200.0, 800.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| app.render(ctx),
+            );
+        };
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for is_dir in [false, true] {
+            let name = if is_dir {
+                "new folder"
+            } else {
+                ".new file.txt"
+            };
+            app.create_entry(is_dir);
+            let id = app.creation.as_ref().unwrap().id();
+            frame(&mut app, vec![]);
+            assert!(ctx.memory(|m| m.has_focus(id)));
+            frame(&mut app, vec![egui::Event::Text(name.into())]);
+            assert!(!root.join(name).exists());
+            frame(&mut app, vec![key(egui::Key::Enter)]);
+            assert!(app.creation.is_none());
+            assert_eq!(root.join(name).is_dir(), is_dir);
+            assert!(root.join(name).exists());
+        }
+        let nested = root.join("nested").join("deep");
+        fs::create_dir_all(&nested).unwrap();
+        let displayed = nested.join("displayed.rs");
+        fs::write(&displayed, "// open file").unwrap();
+        app.active_file = Some(displayed);
+        for is_dir in [false, true] {
+            app.create_entry(is_dir);
+            assert_eq!(app.creation.as_ref().unwrap().parent, nested);
+            let id = app.creation.as_ref().unwrap().id();
+            for _ in 0..4 {
+                frame(&mut app, vec![]);
+            }
+            assert!(
+                ctx.memory(|m| m.has_focus(id)),
+                "Nested creation must reveal and focus its row"
+            );
+            let name = if is_dir {
+                "beside-folder"
+            } else {
+                "beside.txt"
+            };
+            frame(&mut app, vec![egui::Event::Text(name.into())]);
+            frame(&mut app, vec![key(egui::Key::Enter)]);
+            assert!(nested.join(name).exists());
+            assert!(!root.join(name).exists());
+        }
+        app.settings.workspace = Some(root.join("new folder"));
+        app.create_entry(false);
+        let id = app.creation.as_ref().unwrap().id();
+        frame(&mut app, vec![]);
+        assert!(
+            ctx.memory(|m| m.has_focus(id)),
+            "Outside-workspace creation must remain visible"
+        );
+        frame(&mut app, vec![egui::Event::Text("outside.txt".into())]);
+        frame(&mut app, vec![key(egui::Key::Enter)]);
+        assert!(nested.join("outside.txt").is_file());
+        app.active_file = None;
+        app.settings.workspace = Some(root.clone());
+        for cancel_with_escape in [true, false] {
+            app.create_entry(false);
+            frame(&mut app, vec![]);
+            frame(&mut app, vec![egui::Event::Text("cancelled.txt".into())]);
+            if cancel_with_escape {
+                frame(&mut app, vec![key(egui::Key::Escape)]);
+            } else {
+                ctx.memory_mut(|m| m.request_focus(egui::Id::new("main_editor_text")));
+                frame(&mut app, vec![]);
+            }
+            assert!(app.creation.is_none());
+            assert!(!root.join("cancelled.txt").exists());
+        }
+        fs::write(root.join("existing.txt"), "keep me").unwrap();
+        app.create_entry(false);
+        frame(&mut app, vec![]);
+        frame(&mut app, vec![egui::Event::Text("existing.txt".into())]);
+        frame(&mut app, vec![key(egui::Key::Enter)]);
+        assert!(!app.creation.as_ref().unwrap().error.is_empty());
+        assert_eq!(
+            fs::read_to_string(root.join("existing.txt")).unwrap(),
+            "keep me"
+        );
+        for name in ["", ".", "..", "../escape", "a/b", "bad\0name", "a\\b"] {
+            app.creation.as_mut().unwrap().name = name.into();
+            assert!(app.creation.as_ref().unwrap().create().is_err());
+        }
+        app.sidebar_mode = SidebarMode::Search;
+        frame(&mut app, vec![]);
+        assert!(app.creation.is_none());
+        app.sidebar_mode = SidebarMode::Explorer;
+        app.create_entry(false);
+        app.settings.workspace = None;
+        frame(&mut app, vec![]);
+        assert!(app.creation.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn themed_window_fits_compact_and_standard_sizes() {
+        let ctx = egui::Context::default();
+        theme::apply(&ctx);
+        let mut app = test_app();
         for size in [egui::vec2(900.0, 600.0), egui::vec2(1440.0, 900.0)] {
             for sidebar in [SidebarMode::Explorer, SidebarMode::Search, SidebarMode::Git] {
                 app.sidebar_mode = sidebar;
