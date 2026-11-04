@@ -253,51 +253,6 @@ impl CodexUi {
                                             self.list_sessions(cwd, Some(&cursor));
                                         }
                                     }
-                                    egui::ComboBox::from_id_salt("codex_model")
-                                        .width(95.0)
-                                        .truncate()
-                                        .selected_text(if self.model.is_empty() {
-                                            "Default model".to_string()
-                                        } else {
-                                            self.model.chars().take(24).collect::<String>()
-                                        })
-                                        .show_ui(ui, |ui| {
-                                            for model in &self.models {
-                                                if let Some(id) =
-                                                    model.get("model").and_then(Value::as_str)
-                                                {
-                                                    ui.selectable_value(
-                                                        &mut self.model,
-                                                        id.to_string(),
-                                                        model
-                                                            .get("displayName")
-                                                            .and_then(Value::as_str)
-                                                            .unwrap_or(id),
-                                                    );
-                                                }
-                                            }
-                                        });
-                                    egui::ComboBox::from_id_salt("codex_mode")
-                                        .width(95.0)
-                                        .truncate()
-                                        .selected_text(
-                                            self.mode
-                                                .as_ref()
-                                                .and_then(|v| v.get("name"))
-                                                .and_then(Value::as_str)
-                                                .unwrap_or("Codex default"),
-                                        )
-                                        .show_ui(ui, |ui| {
-                                            for mode in &self.modes {
-                                                ui.selectable_value(
-                                                    &mut self.mode,
-                                                    Some(mode.clone()),
-                                                    mode.get("name")
-                                                        .and_then(Value::as_str)
-                                                        .unwrap_or("Mode"),
-                                                );
-                                            }
-                                        });
                                 });
                             },
                         );
@@ -359,7 +314,7 @@ impl CodexUi {
         });
         ui.separator();
         // Reserve the composer before laying out the scrollable conversation.
-        let composer_height = 112.0;
+        let composer_height = 190.0;
         egui::ScrollArea::vertical()
             .id_salt("codex_conversation")
             .max_height((ui.available_height() - composer_height).max(0.0))
@@ -388,6 +343,9 @@ impl CodexUi {
                                 message.kind.clone()
                             };
                             egui::CollapsingHeader::new(title).show(ui, |ui| {
+                                if message.kind == "Reasoning" && message.text.is_empty() {
+                                    ui.weak("No reasoning summary provided");
+                                }
                                 ui.add(
                                     egui::Label::new(
                                         egui::RichText::new(&message.text).monospace(),
@@ -524,20 +482,54 @@ impl CodexUi {
                 }
             }
             ui.weak("Ctrl+Enter to send");
-            let mode = self
-                .mode
-                .as_ref()
-                .or_else(|| {
-                    self.modes
-                        .iter()
-                        .find(|mode| mode.get("mode").and_then(Value::as_str) == Some("default"))
-                })
-                .and_then(|mode| mode.get("name"))
-                .and_then(Value::as_str)
-                .unwrap_or("Codex default");
-            ui.label(mode).on_hover_text(
-                "Tab: next mode · Shift+Tab: previous mode (in the message box, while idle)",
-            );
+            let selectors_enabled = connected && !self.busy && self.pending.is_empty();
+            ui.add_enabled_ui(selectors_enabled, |ui| {
+                ui.set_width(95.0);
+                egui::ComboBox::from_id_salt("codex_model")
+                    .width(95.0)
+                    .truncate()
+                    .selected_text(if self.model.is_empty() {
+                        "Default model".to_string()
+                    } else {
+                        self.model.chars().take(14).collect::<String>()
+                    })
+                    .show_ui(ui, |ui| {
+                        for model in &self.models {
+                            if let Some(id) = model.get("model").and_then(Value::as_str) {
+                                ui.selectable_value(
+                                    &mut self.model,
+                                    id.to_string(),
+                                    model
+                                        .get("displayName")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or(id),
+                                );
+                            }
+                        }
+                    });
+            });
+            ui.add_enabled_ui(selectors_enabled, |ui| {
+                ui.set_width(95.0);
+                egui::ComboBox::from_id_salt("codex_mode")
+                    .width(95.0)
+                    .truncate()
+                    .selected_text(
+                        self.mode
+                            .as_ref()
+                            .and_then(|v| v.get("name"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("Codex default"),
+                    )
+                    .show_ui(ui, |ui| {
+                        for mode in &self.modes {
+                            ui.selectable_value(
+                                &mut self.mode,
+                                Some(mode.clone()),
+                                mode.get("name").and_then(Value::as_str).unwrap_or("Mode"),
+                            );
+                        }
+                    });
+            });
         });
     }
 
@@ -755,12 +747,15 @@ impl CodexUi {
                     }
                 }
                 "item/agentMessage/delta"
+                | "item/plan/delta"
                 | "item/reasoning/summaryTextDelta"
                 | "item/reasoning/textDelta"
                 | "item/commandExecution/outputDelta" => {
                     if let Some(delta) = params.get("delta").and_then(Value::as_str) {
                         let id = params.get("itemId").and_then(Value::as_str).unwrap_or("");
-                        let kind = if method.contains("reasoning") {
+                        let kind = if method == "item/plan/delta" {
+                            "Proposed plan"
+                        } else if method.contains("reasoning") {
                             "Reasoning"
                         } else if method.contains("commandExecution") {
                             "Command"
@@ -796,6 +791,25 @@ impl CodexUi {
                     self.busy = false;
                     self.turn_id = None;
                     self.status = "Ready".into();
+                    let status = params
+                        .pointer("/turn/status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("completed");
+                    let marker = match status {
+                        "failed" => "Response failed",
+                        "interrupted" => "Response interrupted",
+                        _ if self
+                            .messages
+                            .iter()
+                            .rev()
+                            .take_while(|m| m.kind != "You")
+                            .any(|m| m.kind == "Proposed plan") =>
+                        {
+                            "Plan ready"
+                        }
+                        _ => "Change mode and type Go",
+                    };
+                    self.messages.push(Message::new("Status", marker.into()));
                     if let Some(error) = params
                         .pointer("/turn/error/message")
                         .and_then(Value::as_str)
@@ -811,6 +825,7 @@ impl CodexUi {
                         .unwrap_or("activity");
                     let label = match kind {
                         "agentMessage" => "Codex",
+                        "plan" => "Proposed plan",
                         "reasoning" => "Reasoning",
                         "commandExecution" => "Command",
                         "fileChange" => "Files",
@@ -841,11 +856,14 @@ impl CodexUi {
                     }
                     if kind == "reasoning" {
                         if let Some(summary) = item.get("summary").and_then(Value::as_array) {
-                            message.text = summary
+                            let text = summary
                                 .iter()
                                 .filter_map(Value::as_str)
                                 .collect::<Vec<_>>()
                                 .join("\n");
+                            if !text.is_empty() {
+                                message.text = text;
+                            }
                         }
                     }
                     if kind == "fileChange" {
@@ -973,6 +991,7 @@ fn history_message(item: &Value) -> Option<Message> {
                 .join("\n"),
         ),
         "agentMessage" => ("Codex", item.get("text")?.as_str()?.into()),
+        "plan" => ("Proposed plan", item.get("text")?.as_str()?.into()),
         "commandExecution" => ("Command", item.get("command")?.as_str()?.into()),
         "reasoning" => (
             "Reasoning",
