@@ -1,9 +1,12 @@
 //! Detach before initializing GUI libraries, terminals, or background threads.
 use std::{
     ffi::OsString,
-    fs::{self, OpenOptions},
     io,
     path::{Path, PathBuf},
+};
+#[cfg(target_os = "linux")]
+use std::{
+    fs::{self, OpenOptions},
     process::{Command, Stdio},
 };
 
@@ -15,6 +18,7 @@ fn should_detach(args: &[OsString]) -> bool {
         .any(|arg| arg == "--foreground" || arg == CHILD_FLAG)
 }
 
+#[cfg(target_os = "linux")]
 fn log_path() -> io::Result<PathBuf> {
     dirs::data_local_dir()
         .map(|root| root.join("focus-editor/logs/launch.log"))
@@ -98,6 +102,7 @@ pub(crate) fn window_title(workspace: Option<&Path>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
     use std::ffi::OsStr;
 
     #[cfg(target_os = "linux")]

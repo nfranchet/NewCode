@@ -3,6 +3,7 @@ use std::{ffi::OsString, io::Write, path::PathBuf, str::FromStr};
 
 #[derive(Default, Debug)]
 pub(crate) struct Arguments {
+    pub(crate) version: bool,
     pub(crate) level: Option<log::LevelFilter>,
     pub(crate) workspace: Option<PathBuf>,
 }
@@ -12,6 +13,10 @@ impl Arguments {
         let mut args = args.into_iter();
         let mut positional = false;
         while let Some(arg) = args.next() {
+            if !positional && (arg == "--version" || arg == "-V") {
+                result.version = true;
+                continue;
+            }
             if !positional && arg == "--" {
                 positional = true;
                 continue;
@@ -75,6 +80,17 @@ pub(crate) fn init(arguments: &Arguments) -> Result<(), Box<dyn std::error::Erro
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn version_flags_do_not_start_a_workspace_and_respect_separator() {
+        for flag in ["--version", "-V"] {
+            let parsed = Arguments::parse([flag.into()]).unwrap();
+            assert!(parsed.version);
+            assert!(parsed.workspace.is_none());
+        }
+        let parsed = Arguments::parse(["--".into(), "--version".into()]).unwrap();
+        assert!(!parsed.version);
+        assert_eq!(parsed.workspace, Some("--version".into()));
+    }
     #[test]
     fn levels_do_not_become_workspace_arguments() {
         for args in [

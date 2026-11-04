@@ -1,0 +1,17 @@
+Focus Editor for Linux
+
+Extract the archive and put focus-editor on your PATH, for example:
+  mkdir -p ~/.local/bin
+  install -m 755 focus-editor ~/.local/bin/focus-editor
+  focus-editor ~/projects/my-project
+
+These binaries are built on Ubuntu 24.04 with glibc (2.39 or newer).
+They are not static binaries. An X11 or Wayland desktop, working OpenGL/EGL
+drivers, and the desktop's shared libraries are required. Use ldd focus-editor
+to identify missing libraries. A desktop portal enables native file dialogs.
+
+Git, Docker, Codex, and OpenCode are separate optional installations.
+Configure provider authentication with each assistant's CLI before enabling it.
+The editor starts in the background; use --foreground to see diagnostics.
+Use --version to display the application version without opening a window.
+See the project README for features and troubleshooting.

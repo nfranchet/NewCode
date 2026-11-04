@@ -1,16 +1,39 @@
 # Focus Editor
 
-A compact Linux-first Rust editor for browsing projects, editing source files, reviewing Git changes, and working with a shell and Codex.
+A compact Rust editor for Linux and Apple Silicon macOS. Browse projects, edit source files, review Git changes, and work with a shell, Codex, and OpenCode.
+
+## Release downloads
+
+Publishing a GitHub release (including a prerelease) builds the tagged source and attaches:
+
+- `focus-editor-<tag>-linux-amd64.tar.gz`
+- `focus-editor-<tag>-linux-arm64.tar.gz`
+- `focus-editor-<tag>-macos-arm64.dmg`
+- `SHA256SUMS`
+
+Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer, an X11 or Wayland desktop, and working OpenGL/EGL libraries. They are dynamically linked; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
+
+On Apple Silicon macOS 11 or newer, open the DMG and drag **Focus Editor.app** to **Applications**. The app has an ad-hoc signature and is not notarized or signed with an Apple Developer ID. If macOS blocks the first launch, attempt to open it, then use **System Settings → Privacy & Security → Open Anyway** when offered. The macOS app stays attached when launched from a terminal:
+
+```sh
+/Applications/Focus\ Editor.app/Contents/MacOS/focus-editor ~/projects/my-project
+```
+
+Finder launches retain the inherited PATH and add `~/.local/bin`, `~/.opencode/bin`, `/opt/homebrew/bin`, and `/usr/local/bin` for external tools. Git, Docker, Codex, and OpenCode are separate installations; authenticate assistants with their CLI first. Run `focus-editor --version` (or the app's executable path with `--version`) to check the version without opening a window.
+
+To publish: merge the workflow and packaging scripts into `master`, bump the Cargo package version as appropriate, create a tag containing those changes, then publish a release for that tag. Saving a draft or pushing a tag alone does not build downloads. All three native builds and packaging checks must pass before any assets are uploaded. Rerun failed jobs from GitHub Actions to retry; matching assets are replaced. Release tags containing filename-unsafe characters such as `/` use `-` in download names. The bundle and executable version come from Cargo metadata; release filenames use the tag.
+
+The workflow needs no personal access token or Apple credentials: its final upload job uses GitHub's built-in token with `contents: write`. Native Linux amd64/arm64 and macOS arm64 builds run tests, validate architectures and runtime dependencies, and verify package contents. The macOS job validates the app signature and mounts the DMG read-only before publishing. Builds are not triggered until a release is published; local checks cannot substitute for a GUI launch check on a Mac.
 
 ## Build and run
 
-Install a recent Rust toolchain and the system libraries required by eframe/winit for your Linux distribution. Git must be installed for Source Control. The Codex panel requires an installed, authenticated `codex` executable on your `PATH`. OpenCode requires an installed `opencode` executable with a configured provider; it is disabled by default.
+Install a recent Rust toolchain and the system libraries required by eframe/winit for your Linux distribution, or Xcode Command Line Tools on macOS. Git must be installed for Source Control. The Codex panel requires an installed, authenticated `codex` executable on your `PATH`. OpenCode requires an installed `opencode` executable with a configured provider; it is disabled by default.
 
 ```sh
 cargo run --release
 ```
 
-The editor opens in the background and immediately releases the terminal. Each launch opens a separate instance. Its window title is **Focus Editor — workspace-name**, identifying the current workspace in Linux window lists that show window titles. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
+On Linux, the editor opens in the background and immediately releases the terminal. macOS uses the normal application lifecycle. Each launch opens a separate instance. Its window title is **Focus Editor — workspace-name**, identifying the current workspace in Linux window lists that show window titles. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
 
 Keep the editor attached to the terminal for debugging:
 
@@ -20,7 +43,7 @@ cargo run --release -- --foreground
 focus-editor --foreground
 ```
 
-Background output and startup errors are appended to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, usually `~/.local/share/focus-editor/logs/launch.log`. Failures to create the log or spawn the editor are reported in the launching terminal. Errors after detachment are recorded in the log.
+On Linux, background output and startup errors are appended to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, usually `~/.local/share/focus-editor/logs/launch.log`. Failures to create the log or spawn the editor are reported in the launching terminal. Errors after detachment are recorded in the log.
 
 Open a workspace directly:
 

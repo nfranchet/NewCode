@@ -1,0 +1,18 @@
+Focus Editor for Apple Silicon (macOS 11 or newer)
+
+Drag Focus Editor.app to Applications, then open it from Applications.
+This download has an ad-hoc signature, not an Apple Developer ID signature,
+and is not notarized. macOS may block the first launch. After attempting to
+open it, use System Settings > Privacy & Security > Open Anyway if offered.
+Do not disable Gatekeeper globally.
+
+Git, Docker, Codex, and OpenCode are separate optional installations.
+Configure provider authentication with each assistant's CLI before enabling it.
+Finder launches also search ~/.local/bin, ~/.opencode/bin, /opt/homebrew/bin,
+and /usr/local/bin after the inherited PATH.
+
+For terminal diagnostics or to open a workspace directly:
+  /Applications/Focus\ Editor.app/Contents/MacOS/focus-editor ~/projects/my-project
+The macOS application stays attached when launched from a terminal.
+Use --version to display the application version without opening a window.
+See the project README for features and troubleshooting.

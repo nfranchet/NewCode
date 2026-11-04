@@ -4,7 +4,7 @@
 
 | Area | Current implementation |
 | --- | --- |
-| Desktop foundation | Linux Rust/eframe application, directory launch argument, persistent settings and adjustable pane sizes |
+| Desktop foundation | Linux and macOS Rust/eframe application, directory launch argument, persistent settings and adjustable pane sizes |
 | Visual design | Shared light palette, vector icons, file-type markers, active-tab/focus styling, status badges, empty-state illustrations, bottom status bar |
 | Explorer | Workspace tree; open, rename, move, inline file/folder creation, and confirmed deletion |
 | Inline creation | Target the displayed file's parent or workspace fallback; reveal nested destinations; Enter creates; Escape/focus loss cancels; reject invalid/duplicate names |
@@ -97,3 +97,9 @@ Dev Container build-failure capture preserves stdout and stderr with process exi
 Dev Container assistant provisioning and authentication use official native curl installers and a focused authentication module. Validate noninteractive CLI availability, host path overrides, configured-user home resolution, atomic private writes, preservation of installed packages/history, and safe failure reporting. Container connection runs credential transfer on the lifecycle worker before assistant startup; reconnect refreshes the copies. No session/configuration synchronization or assistant-data mounts.
 
 Validated the bundled image with Codex 0.166.0 and OpenCode 1.19.5 as `vscode` through noninteractive Docker exec. Authentication-only transfer preserved host file hashes and installed Codex packages, produced 0600 files owned by `vscode`, and passed Codex login status (ChatGPT). OpenCode server health and connected-provider metadata passed without sending a model prompt. Automated suite: 85 passed, one optional installed-server test ignored; compile, formatting, and whitespace checks passed.
+
+## Multi-platform release validation
+
+Release packaging uses native Ubuntu 24.04 amd64/arm64 and macOS 15 arm64 runners, stable Rust, and the committed lockfile. Validate tests/formatting, executable architectures, Linux shared-library resolution, macOS system-library-only linkage, bundle metadata, ad-hoc signatures, read-only DMG mounting, archive contents, and the complete three-asset checksum set before attaching downloads to an existing published release. Locally validate the workflow and Linux packaging; native macOS/arm64 build results require hosted runs, and Finder/GUI behavior requires a Mac. No release is created as part of implementation.
+
+Local release validation passed: actionlint, 89 Rust tests (one optional integration test ignored), two Python packaging tests, Linux compilation, a native Linux amd64 optimized build and verified tar.gz, plus compile-only checks of the application and tests for macOS arm64. Native Linux arm64 execution, macOS linking/signing/DMG mounting, and release upload remain exercised by the hosted workflow. No release was created or uploaded.

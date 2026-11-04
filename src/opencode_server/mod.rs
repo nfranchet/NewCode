@@ -128,7 +128,7 @@ impl Drop for Server {
 
 fn kill(child: &mut Child) {
     // Each owned server starts in its own process group, including tool children.
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     unsafe {
         libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
     }

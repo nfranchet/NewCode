@@ -147,8 +147,10 @@ fn validate_auth(bytes: &[u8]) -> Result<(), ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
     #[test]
+    #[cfg(target_os = "linux")] // Exercises a Linux container shell (getent).
     fn transfer_is_private_atomic_and_keeps_packages_and_history() {
         let root = std::env::temp_dir().join(format!("focus-auth-{}", std::process::id()));
         std::fs::create_dir_all(root.join("packages")).unwrap();

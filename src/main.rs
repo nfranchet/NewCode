@@ -1,5 +1,3 @@
-#![cfg_attr(not(target_os = "linux"), allow(unused))]
-
 mod app_server;
 mod codex_ui;
 mod dev_container;
@@ -9,6 +7,7 @@ mod launch;
 mod logging;
 mod opencode_server;
 mod opencode_ui;
+mod platform;
 mod settings;
 mod syntax;
 mod terminal;
@@ -19,6 +18,7 @@ use editor::EditorApp;
 use eframe::egui;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    platform::prepare_environment();
     let result = run();
     if result.is_err() {
         log::error!("Application terminated with an error");
@@ -28,10 +28,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = logging::Arguments::parse(std::env::args_os().skip(1))?;
-    logging::init(&arguments)?;
-    if !cfg!(target_os = "linux") {
-        log::error!("Focus Editor currently supports Linux only");
+    if arguments.version {
+        println!("focus-editor {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
+    }
+    logging::init(&arguments)?;
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return Err("Focus Editor supports Linux and macOS".into());
     }
     log::debug!("Launch arguments validated");
     if launch::detach()? {
