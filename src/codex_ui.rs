@@ -147,32 +147,26 @@ impl CodexUi {
         };
         ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0_f32, cursor_color);
         ui.visuals_mut().text_cursor.blink = false;
-        egui::ScrollArea::horizontal()
-            .id_salt("codex_header")
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
+        ui.horizontal(|ui| {
+            ui.strong("Codex");
+            let status = if !self.pending.is_empty() {
+                "Waiting for you"
+            } else if self.busy {
+                "Running"
+            } else if self.thread_id.is_some() {
+                "Ready"
+            } else {
+                "Offline"
+            };
+            ui.label(status).on_hover_text(&self.status);
+            if self.busy {
+                ui.spinner();
+            }
+            egui::ScrollArea::horizontal()
+                .id_salt("codex_header")
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.strong("Codex");
-                        if self.busy {
-                            ui.spinner();
-                        }
-                        ui.label(
-                            egui::RichText::new(if !self.pending.is_empty() {
-                                "●"
-                            } else if self.busy {
-                                "◌"
-                            } else {
-                                ""
-                            })
-                            .small(),
-                        )
-                        .on_hover_text(if !self.pending.is_empty() {
-                            "Waiting for you"
-                        } else {
-                            &self.status
-                        });
                         if self.server.is_some() {
                             if ui.small_button("Stop").clicked() {
                                 self.stop();
@@ -180,136 +174,136 @@ impl CodexUi {
                         } else if ui.small_button("Start").clicked() {
                             self.start(cwd, ctx.clone());
                         }
-                    });
-                    ui.add_enabled_ui(
-                        self.server.is_some()
-                            && self.initializing_id.is_none()
-                            && !self.busy
-                            && self.pending.is_empty()
-                            && !self.requests.values().any(|m| {
-                                matches!(
-                                    m.as_str(),
-                                    "thread/list" | "thread/start" | "thread/resume"
-                                )
-                            }),
-                        |ui| {
-                            ui.horizontal(|ui| {
-                                if ui.small_button("+").on_hover_text("New session").clicked() {
-                                    self.open_thread(cwd, None);
-                                }
-                                let selected = self.sessions.iter().find(|session| {
-                                    session.get("id").and_then(Value::as_str)
-                                        == self.thread_id.as_deref()
-                                });
-                                let label = selected
-                                    .map(|session| session_label(session, 18, false))
-                                    .unwrap_or_else(|| "Choose session…".into());
-                                let mut chosen = None;
-                                egui::ComboBox::from_id_salt("codex_session")
-                                    .truncate()
-                                    .selected_text(label)
-                                    .width(95.0)
-                                    .show_ui(ui, |ui| {
-                                        ui.weak("Recent sessions in this workspace");
-                                        if self.sessions.is_empty() {
-                                            ui.label("No saved sessions");
-                                        }
-                                        for session in &self.sessions {
-                                            if let Some(id) =
-                                                session.get("id").and_then(Value::as_str)
-                                            {
-                                                if ui
-                                                    .selectable_label(
-                                                        self.thread_id.as_deref() == Some(id),
-                                                        session_label(session, 100, true),
-                                                    )
-                                                    .on_hover_text(format!(
-                                                        "{}\n{id}",
-                                                        session
-                                                            .get("name")
-                                                            .and_then(Value::as_str)
-                                                            .or_else(|| session
-                                                                .get("preview")
-                                                                .and_then(Value::as_str))
-                                                            .unwrap_or("Untitled session")
-                                                    ))
-                                                    .clicked()
-                                                    && self.thread_id.as_deref() != Some(id)
+                        ui.add_enabled_ui(
+                            self.server.is_some()
+                                && self.initializing_id.is_none()
+                                && !self.busy
+                                && self.pending.is_empty()
+                                && !self.requests.values().any(|m| {
+                                    matches!(
+                                        m.as_str(),
+                                        "thread/list" | "thread/start" | "thread/resume"
+                                    )
+                                }),
+                            |ui| {
+                                ui.horizontal(|ui| {
+                                    if ui.small_button("+").on_hover_text("New session").clicked() {
+                                        self.open_thread(cwd, None);
+                                    }
+                                    let selected = self.sessions.iter().find(|session| {
+                                        session.get("id").and_then(Value::as_str)
+                                            == self.thread_id.as_deref()
+                                    });
+                                    let label = selected
+                                        .map(|session| session_label(session, 18, false))
+                                        .unwrap_or_else(|| "Choose session…".into());
+                                    let mut chosen = None;
+                                    egui::ComboBox::from_id_salt("codex_session")
+                                        .truncate()
+                                        .selected_text(label)
+                                        .width(95.0)
+                                        .show_ui(ui, |ui| {
+                                            ui.weak("Recent sessions in this workspace");
+                                            if self.sessions.is_empty() {
+                                                ui.label("No saved sessions");
+                                            }
+                                            for session in &self.sessions {
+                                                if let Some(id) =
+                                                    session.get("id").and_then(Value::as_str)
                                                 {
-                                                    chosen = Some(id.to_string());
+                                                    if ui
+                                                        .selectable_label(
+                                                            self.thread_id.as_deref() == Some(id),
+                                                            session_label(session, 100, true),
+                                                        )
+                                                        .on_hover_text(format!(
+                                                            "{}\n{id}",
+                                                            session
+                                                                .get("name")
+                                                                .and_then(Value::as_str)
+                                                                .or_else(|| session
+                                                                    .get("preview")
+                                                                    .and_then(Value::as_str))
+                                                                .unwrap_or("Untitled session")
+                                                        ))
+                                                        .clicked()
+                                                        && self.thread_id.as_deref() != Some(id)
+                                                    {
+                                                        chosen = Some(id.to_string());
+                                                    }
                                                 }
                                             }
-                                        }
-                                    });
-                                if let Some(id) = chosen {
-                                    self.open_thread(cwd, Some(&id));
-                                }
-                                if ui
-                                    .small_button("↻")
-                                    .on_hover_text("Refresh sessions")
-                                    .clicked()
-                                {
-                                    self.list_sessions(cwd, None);
-                                }
-                                if let Some(cursor) = self.sessions_cursor.clone() {
+                                        });
+                                    if let Some(id) = chosen {
+                                        self.open_thread(cwd, Some(&id));
+                                    }
                                     if ui
-                                        .small_button("…")
-                                        .on_hover_text("Load older sessions")
+                                        .small_button("↻")
+                                        .on_hover_text("Refresh sessions")
                                         .clicked()
                                     {
-                                        self.list_sessions(cwd, Some(&cursor));
+                                        self.list_sessions(cwd, None);
                                     }
-                                }
-                                egui::ComboBox::from_id_salt("codex_model")
-                                    .width(95.0)
-                                    .truncate()
-                                    .selected_text(if self.model.is_empty() {
-                                        "Default model".to_string()
-                                    } else {
-                                        self.model.chars().take(24).collect::<String>()
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        for model in &self.models {
-                                            if let Some(id) =
-                                                model.get("model").and_then(Value::as_str)
-                                            {
+                                    if let Some(cursor) = self.sessions_cursor.clone() {
+                                        if ui
+                                            .small_button("…")
+                                            .on_hover_text("Load older sessions")
+                                            .clicked()
+                                        {
+                                            self.list_sessions(cwd, Some(&cursor));
+                                        }
+                                    }
+                                    egui::ComboBox::from_id_salt("codex_model")
+                                        .width(95.0)
+                                        .truncate()
+                                        .selected_text(if self.model.is_empty() {
+                                            "Default model".to_string()
+                                        } else {
+                                            self.model.chars().take(24).collect::<String>()
+                                        })
+                                        .show_ui(ui, |ui| {
+                                            for model in &self.models {
+                                                if let Some(id) =
+                                                    model.get("model").and_then(Value::as_str)
+                                                {
+                                                    ui.selectable_value(
+                                                        &mut self.model,
+                                                        id.to_string(),
+                                                        model
+                                                            .get("displayName")
+                                                            .and_then(Value::as_str)
+                                                            .unwrap_or(id),
+                                                    );
+                                                }
+                                            }
+                                        });
+                                    egui::ComboBox::from_id_salt("codex_mode")
+                                        .width(95.0)
+                                        .truncate()
+                                        .selected_text(
+                                            self.mode
+                                                .as_ref()
+                                                .and_then(|v| v.get("name"))
+                                                .and_then(Value::as_str)
+                                                .unwrap_or("Codex default"),
+                                        )
+                                        .show_ui(ui, |ui| {
+                                            for mode in &self.modes {
                                                 ui.selectable_value(
-                                                    &mut self.model,
-                                                    id.to_string(),
-                                                    model
-                                                        .get("displayName")
+                                                    &mut self.mode,
+                                                    Some(mode.clone()),
+                                                    mode.get("name")
                                                         .and_then(Value::as_str)
-                                                        .unwrap_or(id),
+                                                        .unwrap_or("Mode"),
                                                 );
                                             }
-                                        }
-                                    });
-                                egui::ComboBox::from_id_salt("codex_mode")
-                                    .width(95.0)
-                                    .truncate()
-                                    .selected_text(
-                                        self.mode
-                                            .as_ref()
-                                            .and_then(|v| v.get("name"))
-                                            .and_then(Value::as_str)
-                                            .unwrap_or("Codex default"),
-                                    )
-                                    .show_ui(ui, |ui| {
-                                        for mode in &self.modes {
-                                            ui.selectable_value(
-                                                &mut self.mode,
-                                                Some(mode.clone()),
-                                                mode.get("name")
-                                                    .and_then(Value::as_str)
-                                                    .unwrap_or("Mode"),
-                                            );
-                                        }
-                                    });
-                            });
-                        },
-                    );
+                                        });
+                                });
+                            },
+                        );
+                    });
                 });
-            });
+        });
         if self.server.is_some() && self.initializing_id.is_none() {
             ctx.request_repaint_after(Duration::from_secs(1));
             if self

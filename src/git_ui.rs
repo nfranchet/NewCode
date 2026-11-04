@@ -332,6 +332,13 @@ impl GitUi {
     }
 
     pub(crate) fn ui(&mut self, ui: &mut egui::Ui, workspace: Option<&Path>) -> Option<PathBuf> {
+        let cursor_color = if ui.visuals().dark_mode {
+            Color32::WHITE
+        } else {
+            Color32::BLACK
+        };
+        ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0_f32, cursor_color);
+        ui.visuals_mut().text_cursor.blink = false;
         if self.workspace.as_deref() != workspace {
             *self = Self {
                 workspace: workspace.map(Path::to_path_buf),
@@ -356,6 +363,20 @@ impl GitUi {
                         self.message = m;
                     }
                     Err(e) => self.message = e,
+                }
+            }
+            if let (Some(snapshot), Some((path, staged))) = (&self.snapshot, &mut self.diff_target)
+            {
+                if let Some(change) = snapshot.files.iter().find(|c| &c.path == path) {
+                    let has_staged =
+                        change.index != ' ' && change.index != '?' && !conflict(change);
+                    let has_unstaged =
+                        change.work != ' ' || change.index == '?' || conflict(change);
+                    if *staged && !has_staged && has_unstaged {
+                        *staged = false;
+                    } else if !*staged && !has_unstaged && has_staged {
+                        *staged = true;
+                    }
                 }
             }
             if reply.diff.is_some() {
@@ -413,13 +434,18 @@ impl GitUi {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for (group, staged) in [(0, false), (1, false), (2, true), (3, false)] {
-                        ui.separator();
-                        ui.strong(match group {
+                        let (accent, fill) = group_colors(group, ui.visuals().dark_mode);
+                        egui::Frame::group(ui.style())
+                            .fill(fill)
+                            .stroke(egui::Stroke::new(1.0_f32, accent))
+                            .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
+                        ui.label(egui::RichText::new(match group {
                             0 => "Unstaged",
                             1 => "Untracked",
                             2 => "Staged",
                             _ => "Conflicts",
-                        })
+                        }).strong().color(accent))
                         .on_hover_text(if staged {
                             "Included in the next commit"
                         } else {
@@ -463,26 +489,33 @@ impl GitUi {
                                 Action::Index { paths, stage: true }
                             });
                         }
+                        ui.small(if staged { "Included in the next commit" } else { "Not in the next commit" });
+                        ui.label(egui::RichText::new(format!("{} files", files.len())).small().color(accent));
                         for c in files {
                             ui.push_id((&c.path, staged), |ui| {
                                 let code = if staged { c.index } else { c.work };
                                 let title = if conflict(c) { "Conflict" } else { label(code) };
-                                if ui
-                                    .selectable_label(
+                                let row = ui.selectable_label(
                                         self.diff_target.as_ref().is_some_and(|(p, cached)| {
                                             p == &c.path && *cached == staged
                                         }),
-                                        format!(
-                                            "{title}: {}  {}",
-                                            c.path,
-                                            s.counts[usize::from(!staged)]
-                                                .get(&c.path)
-                                                .map(String::as_str)
-                                                .unwrap_or("")
-                                        ),
+                                        file_row_text(&format!("{title}: {}", c.path),
+                                            s.counts[usize::from(!staged)].get(&c.path).map(String::as_str).unwrap_or(""),
+                                            ui.visuals().text_color(), ui.visuals().dark_mode),
                                     )
-                                    .clicked()
-                                {
+                                ;
+                                if row.clicked() { row.request_focus(); }
+                                let space = row.has_focus() && ui.input_mut(|input| {
+                                    let pressed = input.events.iter().any(|event| matches!(event, egui::Event::Key { key: egui::Key::Space, pressed: true, repeat: false, modifiers, .. } if *modifiers == egui::Modifiers::NONE));
+                                    if pressed { input.consume_key(egui::Modifiers::NONE, egui::Key::Space); }
+                                    pressed
+                                });
+                                if space && !busy {
+                                    let mut paths = vec![c.path.clone()];
+                                    if let Some(old) = &c.old { paths.push(old.clone()); }
+                                    action = Some(Action::Index { paths, stage: !staged });
+                                } else if row.clicked() && !busy {
+
                                     action = Some(Action::Diff(c.path.clone(), staged));
                                 }
                                 if let Some(old) = &c.old {
@@ -490,8 +523,10 @@ impl GitUi {
                                 }
                             });
                         }
+                        });
                     }
                 });
+            ui.small("Space: stage/unstage selected file");
             ui.separator();
             if let Some((path, cached)) = &self.diff_target {
                 ui.small(format!("Selected: {path}"));
@@ -698,4 +733,64 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
         result.unwrap();
     }
+}
+
+fn group_colors(group: usize, dark: bool) -> (Color32, Color32) {
+    let (light_accent, dark_accent, light_fill, dark_fill) = match group {
+        0 => ([135, 82, 0], [245, 190, 85], [255, 248, 231], [49, 41, 25]),
+        1 => (
+            [25, 91, 158],
+            [110, 180, 250],
+            [237, 246, 255],
+            [25, 38, 53],
+        ),
+        2 => (
+            [30, 112, 58],
+            [110, 210, 145],
+            [237, 249, 240],
+            [25, 44, 33],
+        ),
+        _ => (
+            [169, 40, 45],
+            [250, 125, 130],
+            [255, 240, 240],
+            [53, 29, 32],
+        ),
+    };
+    let accent = if dark { dark_accent } else { light_accent };
+    let fill = if dark { dark_fill } else { light_fill };
+    (
+        Color32::from_rgb(accent[0], accent[1], accent[2]),
+        Color32::from_rgb(fill[0], fill[1], fill[2]),
+    )
+}
+
+fn file_row_text(
+    title: &str,
+    counts: &str,
+    foreground: Color32,
+    dark: bool,
+) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let font = egui::FontId::proportional(14.0);
+    job.append(
+        title,
+        0.0,
+        egui::TextFormat::simple(font.clone(), foreground),
+    );
+    for count in counts.split_whitespace() {
+        let color = if count.starts_with('+') {
+            group_colors(2, dark).0
+        } else if count.starts_with('−') {
+            group_colors(3, dark).0
+        } else {
+            foreground
+        };
+        job.append(
+            &format!("  {count}"),
+            0.0,
+            egui::TextFormat::simple(font.clone(), color),
+        );
+    }
+    job
 }
