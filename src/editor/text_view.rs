@@ -1,10 +1,7 @@
 //! Source text rendering, layout caching, gutter painting, and cursor scrolling.
 
 use super::{EditorApp, search::highlight_find_matches};
-use crate::{
-    syntax::colored_job,
-    ui_theme::{self as theme, Icon},
-};
+use crate::{syntax::colored_job, ui_theme as theme};
 use eframe::egui::{
     self, Color32, FontId, TextStyle,
     text::{CCursor, CCursorRange},
@@ -23,27 +20,14 @@ pub(super) struct EditorLayoutCache {
 impl EditorApp {
     pub(super) fn text_view(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let path = self.active_file.clone().unwrap();
-        ui.horizontal_wrapped(|ui| {
-            theme::icon(ui, Icon::File, theme::file_kind(&path).1);
-            let width = (ui.available_width() - if self.dirty { 88.0 } else { 0.0 }).max(40.0);
-            ui.add_sized(
-                [width, 24.0],
-                egui::Label::new(theme::file_text(
-                    &path,
-                    &path.file_name().unwrap_or_default().to_string_lossy(),
-                ))
-                .truncate(),
-            )
-            .on_hover_text(path.display().to_string());
-            if self.dirty {
-                theme::badge(
-                    ui,
-                    "Modified",
-                    theme::AMBER,
-                    Color32::from_rgb(255, 246, 223),
-                );
-            }
-        });
+        if self.dirty {
+            theme::badge(
+                ui,
+                "Modified",
+                theme::AMBER,
+                Color32::from_rgb(255, 246, 223),
+            );
+        }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let find_query = if self.find_open {
             self.find_query.clone()
