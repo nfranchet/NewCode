@@ -1,0 +1,258 @@
+//! Window chrome, global shortcuts, and central/right pane composition.
+
+use super::{EditorApp, SidebarMode};
+use crate::ui_theme::{self as theme, Icon};
+use eframe::egui::{self, Color32};
+use std::path::Path;
+
+impl EditorApp {
+    pub(super) fn editor_shortcuts(&mut self, ctx: &egui::Context) -> bool {
+        let opened_find = ctx
+            .input(|input| input.modifiers.command && input.key_pressed(egui::Key::F))
+            && self.active_file.is_some();
+        if opened_find {
+            self.find_open = true;
+        }
+        if ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::W)) {
+            if let Some(path) = self.active_file.clone() {
+                self.close_file(path);
+            }
+        }
+
+        opened_find
+    }
+    pub(super) fn toolbar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("toolbar")
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::WHITE)
+                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
+                    .inner_margin(egui::Margin::symmetric(12, 9)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Spark, theme::BLUE);
+                    ui.label(
+                        egui::RichText::new("Focus")
+                            .strong()
+                            .size(18.0)
+                            .color(theme::BLUE),
+                    );
+                    ui.separator();
+                    if theme::button(ui, Icon::Folder, "Workspace", theme::BLUE, false).clicked() {
+                        self.choose_workspace();
+                    }
+                    if let Some(root) = self.settings.workspace.as_ref() {
+                        ui.add_sized(
+                            [180.0, 24.0],
+                            egui::Label::new(
+                                egui::RichText::new(
+                                    root.file_name().unwrap_or_default().to_string_lossy(),
+                                )
+                                .color(theme::MUTED),
+                            )
+                            .truncate(),
+                        )
+                        .on_hover_text(root.display().to_string());
+                    }
+                    ui.separator();
+                    ui.menu_button("Edit", |ui| {
+                        if ui
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(ui, Icon::Save, "Save   Ctrl+S", theme::BLUE, false)
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            self.save_file();
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(ui, Icon::Copy, "Copy   Ctrl+C", theme::BLUE, false)
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            self.copy_selection(ctx);
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(ui, Icon::Paste, "Paste   Ctrl+V", theme::BLUE, false)
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            self.paste_from_clipboard(ctx);
+                            ui.close();
+                        }
+                        ui.separator();
+                        if ui
+                            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                                theme::button(
+                                    ui,
+                                    Icon::Search,
+                                    "Find in File   Ctrl+F",
+                                    theme::BLUE,
+                                    false,
+                                )
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            self.find_open = true;
+                            ctx.memory_mut(|memory| {
+                                memory.request_focus(egui::Id::new("find_in_file_query"))
+                            });
+                            ui.close();
+                        }
+                        if ui
+                            .add_enabled(
+                                self.active_file.is_some(),
+                                egui::Button::new("Select All   Ctrl+A"),
+                            )
+                            .clicked()
+                        {
+                            self.select_all(ctx);
+                            ui.close();
+                        }
+                    });
+                    ui.separator();
+                    if ui
+                        .add_enabled_ui(self.active_file.is_some(), |ui| {
+                            theme::button(ui, Icon::Save, "Save", theme::BLUE, true)
+                        })
+                        .inner
+                        .on_hover_text("Save file · Ctrl+S")
+                        .clicked()
+                    {
+                        self.save_file();
+                    }
+                });
+            });
+    }
+    pub(super) fn status_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::bottom("status_bar")
+            .exact_height(25.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::BLUE_SOFT)
+                    .inner_margin(egui::Margin::symmetric(12, 3)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&self.status).small().color(theme::INK),
+                        )
+                        .truncate(),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.small(format!("{} open files", self.open_files.len()));
+                        if self.dirty {
+                            ui.label(
+                                egui::RichText::new("Unsaved changes")
+                                    .small()
+                                    .color(theme::AMBER),
+                            );
+                        }
+                    });
+                });
+            });
+    }
+    pub(super) fn activity_bar(&mut self, ctx: &egui::Context) {
+        egui::SidePanel::left("activity_bar")
+            .exact_width(48.0)
+            .resizable(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::NAVY)
+                    .inner_margin(egui::Margin::symmetric(3, 8)),
+            )
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    if theme::nav_button(
+                        ui,
+                        Icon::Folder,
+                        self.sidebar_mode == SidebarMode::Explorer,
+                        "Explorer",
+                    )
+                    .clicked()
+                    {
+                        self.sidebar_mode = SidebarMode::Explorer;
+                    }
+                    if theme::nav_button(
+                        ui,
+                        Icon::Search,
+                        self.sidebar_mode == SidebarMode::Search,
+                        "Search in workspace",
+                    )
+                    .clicked()
+                    {
+                        self.sidebar_mode = SidebarMode::Search;
+                    }
+                    if theme::nav_button(
+                        ui,
+                        Icon::Git,
+                        self.sidebar_mode == SidebarMode::Git,
+                        "Source Control",
+                    )
+                    .clicked()
+                    {
+                        self.sidebar_mode = SidebarMode::Git;
+                    }
+                });
+            });
+    }
+    pub(super) fn codex_panel(&mut self, ctx: &egui::Context, cwd: Option<&Path>) {
+        let right_width = self.settings.right_width;
+        let right_response = egui::SidePanel::right("codex_terminal")
+            .resizable(true)
+            .default_width(right_width)
+            .width_range(260.0..=700.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(242, 250, 248))
+                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
+                    .inner_margin(8),
+            )
+            .show(ctx, |ui| {
+                self.codex_ui.show(ui, cwd, ctx);
+            });
+        self.settings.right_width = right_response.response.rect.width().max(260.0);
+    }
+    pub(super) fn document_panel(&mut self, ctx: &egui::Context, opened_find: bool) {
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(8))
+            .show(ctx, |ui| {
+                self.document_tabs(ui, ctx);
+                if self.sidebar_mode == SidebarMode::Git && self.git_ui.show_diff(ui) {
+                    return;
+                }
+                if self.active_file.is_some() {
+                    self.find_bar(ui, ctx, opened_find);
+                    self.text_view(ui, ctx);
+                } else {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space((ui.available_height() * 0.23).max(12.0));
+                        theme::empty_art(ui, Icon::File, theme::BLUE);
+                        ui.label(
+                            egui::RichText::new("Make room for your next idea")
+                                .size(20.0)
+                                .strong()
+                                .color(theme::INK),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Double-click a file in Explorer to start editing.",
+                            )
+                            .color(theme::MUTED),
+                        );
+                        ui.add_space(12.0);
+                        ui.small("Ctrl+S  Save     Ctrl+F  Find     Ctrl+W  Close tab");
+                    });
+                }
+            });
+    }
+}

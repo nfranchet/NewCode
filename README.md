@@ -110,7 +110,7 @@ Codex initially selects **Plan** when offered, otherwise the first returned mode
 
 ### Replies, plans, and requests
 
-Replies appear as message cards. Commands, file activity, and reasoning are expandable. Reasoning text depends on what Codex supplies; an absent summary is labeled rather than presented as an empty body.
+Replies appear as message cards. Commands, file activity, and readable reasoning are expandable. New turns request automatic reasoning summaries. The panel prefers a supplied summary and falls back to readable reasoning content supplied by Codex, preserving section boundaries and streamed text in live and restored conversations. An empty running reasoning item shows **Thinking…**; empty completed items are hidden. Reasoning cannot be displayed when Codex supplies neither a summary nor readable content.
 
 Proposed plans are displayed as expanded cards and restored with session history. Completion appears in the conversation as **Plan ready**, **Response complete**, or a failure/interruption message, in addition to the header status.
 
@@ -138,12 +138,13 @@ Expand **Usage / status** for the session ID, model, account limits, session tok
 
 ## Source organization
 
-The application uses one crate with two feature module directories:
+The application uses one crate with three feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document and tab actions, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
-- `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, and message updates.
+- `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, and indexed reasoning sections.
+- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, diff/hunk controls, and presentation helpers. Git tests live in `src/git_ui/tests.rs`.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 
-Other top-level modules provide Git UI, the shared theme/icons, settings, terminal state, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
+Other top-level modules provide the shared theme/icons, settings, terminal state, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.

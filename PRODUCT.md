@@ -40,7 +40,7 @@ The bottom pane is a real PTY-backed interactive shell with a Restart action. Th
 
 Resume the latest workspace session at startup and allow choosing older sessions or creating a new one. Session labels are compact when closed and longer in the dropdown. Provide model, thinking-level, and mode selectors near Send, populated from Codex's catalog. Prefer Plan initially, with the first available mode as fallback. Support Ctrl+Enter to send and Tab/Shift+Tab to cycle modes in the idle composer.
 
-Show proposed plans as expanded message cards and retain them in restored history. Keep reasoning and command details expandable and report turn completion in the conversation. Show available account limits and token/context usage; refresh account limits every minute and on request.
+Show proposed plans as expanded message cards and retain them in restored history. Request automatic reasoning summaries, preserve streamed sections, and show supplied reasoning content when no summary is available. Keep readable reasoning and command details expandable; show Thinking while an empty reasoning item is running, hide empty completed items, and report turn completion in the conversation. Show available account limits and token/context usage; refresh account limits every minute and on request.
 
 ## Platform and boundaries
 
