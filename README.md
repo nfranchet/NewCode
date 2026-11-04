@@ -136,4 +136,14 @@ Expand **Usage / status** for the session ID, model, account limits, session tok
 | Ctrl+Enter | Codex message box | Send |
 | Tab / Shift+Tab | Codex message box, while idle | Next / previous mode |
 
+## Source organization
+
+The application uses one crate with two feature module directories:
+
+- `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document and tab actions, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
+- `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, and message updates.
+- Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
+
+Other top-level modules provide Git UI, the shared theme/icons, settings, terminal state, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
+
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.

@@ -19,7 +19,9 @@
 | Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
 | Codex usage | Available account limits with periodic/manual refresh, token/context updates, unavailable-data feedback |
 
-Implementation lives primarily in `src/editor.rs`, `src/git_ui.rs`, `src/codex_ui.rs`, and the shared `src/ui_theme.rs`, with settings, terminal, syntax, and transport support modules.
+The application remains a single crate. `src/editor/mod.rs` owns application state and calls focused modules for layout, documents, text rendering, Explorer, creation/deletion, search, shell, sidebar routing, and persistence. `src/codex_ui/mod.rs` owns panel state and delegates to header, conversation, composer, catalog, usage, request, response, event, and message modules. Git, theme, settings, terminal, syntax, and App Server transport remain separate top-level modules.
+
+The original monolithic editor and Codex UI source files have been replaced by these directories. Feature tests live under `src/editor/tests/` and in `src/codex_ui/tests.rs`. Public entry types remain `editor::EditorApp` and `codex_ui::CodexUi`; internal helpers use module-scoped visibility.
 
 ## Automated checks
 
@@ -40,6 +42,7 @@ The current suite covers:
 - Icon-button keyboard activation and disabled actions.
 - Git status parsing for partial changes, renames, unusual names, and conflicts; repository staging/unstaging/commit operations; commit draft/focus stability across refresh and failure.
 - Codex history conversion, thinking-level selection/fallback, startup mode preference/fallback, and usage-title formatting.
+- Codex event routing for streamed/final plans, preserved reasoning summaries, unknown item types, thread isolation, correlated responses, server questions, errors, and shutdown.
 
 Passing these checks does not establish full manual desktop or live Codex validation.
 
