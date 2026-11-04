@@ -13,6 +13,7 @@ use std::{
 };
 use text_view::EditorLayoutCache;
 
+mod assistants;
 mod clipboard;
 mod close_dialog;
 mod creation;
@@ -52,6 +53,11 @@ pub(crate) struct EditorApp {
     dirty: bool,
     top: Option<Terminal>,
     codex_ui: CodexUi,
+    opencode_ui: crate::opencode_ui::OpenCodeUi,
+    assistant_workspace: Option<PathBuf>,
+    skip_codex_start: bool,
+    skip_opencode_start: bool,
+    assistant_workspaces: HashMap<PathBuf, (CodexUi, crate::opencode_ui::OpenCodeUi)>,
     creation: Option<NewEntry>,
     deletion: Option<Deletion>,
     rename_target: Option<PathBuf>,
@@ -103,9 +109,25 @@ impl EditorApp {
         let cwd = settings.workspace.as_deref();
         let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
         let mut codex_ui = CodexUi::default();
-        if settings.codex_app_server && !no_codex {
+        if settings.codex_enabled && settings.codex_app_server && !no_codex {
             codex_ui.start(cwd, cc.egui_ctx.clone());
         }
+        let mut opencode_ui = crate::opencode_ui::OpenCodeUi::default();
+        let root = cwd
+            .unwrap_or(std::path::Path::new("."))
+            .canonicalize()
+            .unwrap_or_else(|_| cwd.unwrap_or(std::path::Path::new(".")).to_path_buf());
+        if let Some(id) = settings.opencode_sessions.get(&root) {
+            opencode_ui.remember_session(id.clone());
+        }
+        if settings.opencode_enabled && !args.iter().any(|a| a == "--no-opencode") {
+            opencode_ui.start(cwd, cc.egui_ctx.clone());
+        }
+        let assistant_workspace = Some(
+            cwd.unwrap_or(std::path::Path::new("."))
+                .canonicalize()
+                .unwrap_or_else(|_| cwd.unwrap_or(std::path::Path::new(".")).to_path_buf()),
+        );
         theme::apply(&cc.egui_ctx);
         let (open_files, active_file, buffer) = restore_open_files(&settings);
         let next_document_id = open_files.len() as u64;
@@ -132,6 +154,11 @@ impl EditorApp {
             dirty: false,
             top,
             codex_ui,
+            opencode_ui,
+            assistant_workspace,
+            skip_codex_start: no_codex,
+            skip_opencode_start: args.iter().any(|a| a == "--no-opencode"),
+            assistant_workspaces: HashMap::new(),
             creation: None,
             deletion: None,
             rename_target: None,
@@ -157,13 +184,14 @@ impl EditorApp {
         let opened_find = self.editor_shortcuts(ctx);
         self.toolbar(ctx);
         self.update_window_title(ctx);
+        self.update_assistants(ctx);
         self.status_bar(ctx);
         let cwd = self.settings.workspace.clone();
         self.shell_panel(ctx, cwd.as_deref());
         self.activity_bar(ctx);
         self.cancel_creation_for_workspace_change();
         self.sidebar(ctx);
-        self.codex_panel(ctx, cwd.as_deref());
+        self.assistant_panel(ctx, cwd.as_deref());
         self.document_panel(ctx, opened_find);
         self.rename_dialog(ctx);
         self.close_dialog(ctx);

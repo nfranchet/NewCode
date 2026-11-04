@@ -29,6 +29,7 @@ pub(crate) struct CodexUi {
     sessions: Vec<Value>,
     sessions_cursor: Option<String>,
     resume_latest: bool,
+    resume_thread: Option<String>,
     models: Vec<Value>,
     modes: Vec<Value>,
     model: String,
@@ -59,6 +60,7 @@ impl Default for CodexUi {
             sessions: Vec::new(),
             sessions_cursor: None,
             resume_latest: false,
+            resume_thread: None,
             models: Vec::new(),
             modes: Vec::new(),
             model: String::new(),
@@ -97,7 +99,6 @@ impl CodexUi {
                 self.resume_latest = true;
                 self.models.clear();
                 self.modes.clear();
-                self.mode = None;
                 self.last_usage = None;
                 self.server = Some(server);
                 self.status = "Connecting to Codex…".into();
@@ -109,6 +110,9 @@ impl CodexUi {
     }
 
     pub(crate) fn stop(&mut self) {
+        if self.thread_id.is_some() {
+            self.resume_thread = self.thread_id.clone();
+        }
         self.clear_plan();
         self.server = None;
         self.thread_id = None;
@@ -120,8 +124,26 @@ impl CodexUi {
         self.status = "Codex is offline".into();
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, cwd: Option<&Path>, ctx: &egui::Context) {
+    pub(crate) fn state(&self) -> &'static str {
+        if !self.pending.is_empty() {
+            "Waiting for you"
+        } else if self.busy {
+            "Running"
+        } else if self.thread_id.is_some() {
+            "Ready"
+        } else if self.server.is_some() {
+            "Connecting"
+        } else {
+            "Offline"
+        }
+    }
+    pub(crate) fn tick(&mut self, cwd: Option<&Path>, ctx: &egui::Context) {
         self.process_events(cwd);
+        self.schedule_usage(ctx);
+    }
+
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, cwd: Option<&Path>, ctx: &egui::Context) {
+        self.tick(cwd, ctx);
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         let cursor_color = if ui.visuals().dark_mode {
             egui::Color32::WHITE

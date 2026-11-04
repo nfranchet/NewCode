@@ -6,7 +6,7 @@ A fast, Linux-first Rust desktop editor for project file management, source edit
 
 ## Window and visual design
 
-The left activity bar selects Explorer, Search, or Source Control. The center displays open files or a Source Control diff. An interactive shell occupies the bottom and Codex occupies the right. Pane sizes are adjustable and saved.
+The left activity bar selects Explorer, Search, or Source Control. The center displays open files or a Source Control diff. An interactive shell occupies the bottom and an optional Codex/OpenCode assistant pane occupies the right. Pane sizes are adjustable and saved.
 
 A coordinated light theme uses blue navigation, teal Codex controls, semantic Git colors, vector icons, colored file-type markers, and small empty-state illustrations. Focus, selected tabs, and status badges remain visible. Labels accompany colors, and input cursors are thick and steady. A bottom status bar reports file/save activity.
 
@@ -45,11 +45,17 @@ Show proposed plans as expanded message cards and retain them in restored histor
 
 After a successful completed plan, provide a Go action in Plan mode that selects Default and sends Go in the same session, preserving the selected model, thinking level, and unsent draft. Disable it during work, pending user responses, disconnected sessions, or unavailable Default mode; prevent duplicate submissions and allow explicit retry after submission failure.
 
+## Assistant switching and OpenCode
+
+Provide an always-accessible Assistants toolbar menu with independent Codex and OpenCode enable switches. Use status-bearing tabs in one right pane when both are enabled. Inactive tabs continue processing events and retain their drafts, selections, conversation, and scroll state. Disabling stops and hides that assistant; disabling both releases the entire right-pane width to the editor. Save visibility, selected tab, and pane width. Initially enable Codex only. Keep Start/Stop separate from visibility.
+
+OpenCode uses an owned localhost server and existing CLI configuration/authentication. Provide current-workspace session restore/selection/creation, streaming messages, reasoning/tool details, catalog-driven provider/model/variant/primary-agent choices, Plan-first fallback, Ctrl+Enter send, Tab/Shift+Tab agent cycling, interrupt, native permission replies, and user questions. A completed successful Plan response can offer Go to select Build and send Go while preserving the draft. Display reported tokens/cost/context information and explicitly unavailable account quotas. Poll enabled clients independently of rendering; recover stream state without resending prompts. Keep workspace sessions and drafts isolated; stop old workspace connections on switching. Clean up owned processes on disable/exit.
+
 ## Platform and boundaries
 
 - Linux desktop application using Rust and eframe/egui, with native filesystem operations and a PTY.
 - Git is required for Source Control; an installed, authenticated Codex CLI is required for the Codex panel. Both capabilities depend on their local tools and configuration.
-- Automatic Codex startup can be disabled in saved settings or for one launch with `--no-codex`.
+- Automatic Codex startup can be disabled in saved settings or with `--no-codex`; `--no-opencode` skips OpenCode startup. Visibility is independently controlled by the Assistants menu.
 - No extension marketplace, debugger, compiler-backed language services, Git history/branch-management UI, individual-line staging, or unsaved-buffer recovery is currently provided.
 - Renaming and moving use existing dialogs; new-entry naming and delete confirmation are handled inside the application.
 

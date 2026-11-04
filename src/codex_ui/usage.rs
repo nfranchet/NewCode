@@ -66,7 +66,7 @@ impl CodexUi {
             self.usage_error = e;
         }
     }
-    pub(super) fn show_usage(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    pub(super) fn schedule_usage(&mut self, ctx: &egui::Context) {
         if self.server.is_some() && self.initializing_id.is_none() {
             ctx.request_repaint_after(Duration::from_secs(1));
             if self
@@ -80,6 +80,8 @@ impl CodexUi {
                 self.refresh_usage();
             }
         }
+    }
+    pub(super) fn show_usage(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context) {
         egui::CollapsingHeader::new(usage_title(&self.usage)).show(ui, |ui| {
             if let Some(id) = &self.thread_id {
                 ui.small(format!("Session: {id}"));

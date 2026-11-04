@@ -26,6 +26,11 @@ fn test_app() -> EditorApp {
         dirty: true,
         top: None,
         codex_ui: CodexUi::default(),
+        opencode_ui: crate::opencode_ui::OpenCodeUi::default(),
+        assistant_workspace: None,
+        skip_codex_start: false,
+        skip_opencode_start: false,
+        assistant_workspaces: Default::default(),
         creation: None,
         deletion: None,
         rename_target: None,
@@ -50,3 +55,5 @@ fn test_app() -> EditorApp {
 mod terminal;
 
 mod preview;
+
+mod assistants;

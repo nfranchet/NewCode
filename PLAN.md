@@ -14,6 +14,8 @@
 | Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
 | Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
 | Shell | Bottom interactive PTY-backed Bash terminal, Restart action, exclusive focused keyboard routing, zsh key encoding, application-cursor/bracketed-paste modes |
+| Assistant pane | Independent Codex/OpenCode enable switches, status tabs, hidden-client event processing, full editor width when both disabled, saved visibility and workspace state |
+| OpenCode | Native local HTTP/SSE client, session/history restore, provider/model/variant/agent catalogs, streaming messages/tools/reasoning, permissions/questions, interrupt, Plan-to-Build Go, reported usage |
 | Codex sessions | JSONL App Server client, automatic latest-session resume, session picker/pagination, new session, Start/Stop, Interrupt |
 | Codex controls | Catalog-based model/thinking/mode choices, Plan-first startup fallback, Ctrl+Enter send, Tab/Shift+Tab mode cycling, wrapping controls |
 | Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
@@ -77,3 +79,9 @@ Implemented: Linux session detachment before GUI initialization, `--foreground`,
 Manual desktop check: launch from a terminal, confirm the prompt returns while the window stays open, verify its workspace title in the Linux window list, switch workspaces, and check `--foreground` retains terminal diagnostics.
 
 Terminal keyboard routing runs through the pre-frame input hook before egui navigation and editor shortcuts. Encoding and terminal input modes are isolated in `src/terminal_input.rs`; tests cover focus transfer, exact byte sequences, mode updates, and a real zsh PTY when zsh is installed.
+
+## OpenCode integration validation
+
+The OpenCode transport and panel use focused sibling modules; the editor coordinates their lifecycles with Codex. Mock HTTP/SSE and UI tests cover request routing, reconnect snapshots, session generations, approvals/questions, model/agent choices, send shortcuts, Go, narrow layouts, and space reclamation. An ignored integration test checks the installed OpenCode server's health/catalogs and process cleanup without model prompts: `cargo test opencode_server::tests::installed_server_catalog_smoke -- --ignored`.
+
+Manual desktop checks: enable both assistants, switch during work and pending approvals, disable each individually, disable both and check editor width, re-enable and check drafts/session restoration, then switch workspaces and relaunch to check saved preferences. Provider-level generation behavior remains dependent on configured accounts and is exercised by normal user prompts.

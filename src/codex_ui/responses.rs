@@ -65,12 +65,14 @@ impl CodexUi {
                         .map(str::to_string);
                     if self.resume_latest {
                         self.resume_latest = false;
-                        let previous = self
-                            .sessions
-                            .first()
-                            .and_then(|s| s.get("id"))
-                            .and_then(Value::as_str)
-                            .map(str::to_string);
+                        let remembered = self.resume_thread.take();
+                        let previous = remembered.or_else(|| {
+                            self.sessions
+                                .first()
+                                .and_then(|s| s.get("id"))
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                        });
                         self.open_thread(cwd, previous.as_deref());
                     }
                 }
@@ -138,7 +140,16 @@ impl CodexUi {
                         .and_then(Value::as_array)
                         .cloned()
                         .unwrap_or_default();
-                    self.mode = startup_mode(&self.modes);
+                    self.mode = self
+                        .mode
+                        .as_ref()
+                        .and_then(|old| {
+                            self.modes
+                                .iter()
+                                .find(|mode| mode["mode"] == old["mode"])
+                                .cloned()
+                        })
+                        .or_else(|| startup_mode(&self.modes));
                 }
                 "account/rateLimits/read" => {
                     self.usage = result;

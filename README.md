@@ -4,7 +4,7 @@ A compact Linux-first Rust editor for browsing projects, editing source files, r
 
 ## Build and run
 
-Install a recent Rust toolchain and the system libraries required by eframe/winit for your Linux distribution. Git must be installed for Source Control. The Codex panel requires an installed, authenticated `codex` executable on your `PATH`.
+Install a recent Rust toolchain and the system libraries required by eframe/winit for your Linux distribution. Git must be installed for Source Control. The Codex panel requires an installed, authenticated `codex` executable on your `PATH`. OpenCode requires an installed `opencode` executable with a configured provider; it is disabled by default.
 
 ```sh
 cargo run --release
@@ -41,8 +41,8 @@ The first build downloads crates from crates.io. Settings are stored in the plat
 - The left activity bar switches between **Explorer**, **Search**, and **Source Control**.
 - The center contains file tabs, the editor, and Git diff previews.
 - The bottom pane is an interactive Bash terminal, with a Restart action.
-- The right pane contains Codex. Its header keeps status visible alongside horizontally scrollable session controls; **Usage / status** has its own section below.
-- Drag the dividers to resize the sidebar, terminal, and Codex pane. Their sizes are saved.
+- The optional right pane contains Codex and/or OpenCode. Its header keeps status visible alongside horizontally scrollable session controls; **Usage / status** has its own section below.
+- Drag the dividers to resize the sidebar, terminal, and assistant pane. Their sizes are saved.
 
 The light theme uses blue navigation, teal Codex accents, colored file-type markers, vector icons, and illustrations in empty views. Source Control groups use amber, blue, green, and red. Text labels accompany status colors, and input cursors are thick and steady. The bottom status bar shows file and save feedback.
 
@@ -107,6 +107,16 @@ Click the terminal surface to give it keyboard focus. **Tab** performs shell com
 
 **Ctrl+V** remains clipboard paste. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The default shell remains Bash; running `zsh` inside the terminal supports completion and command-line editing. Shortcuts reserved by your Linux desktop remain controlled by the desktop.
 
+## Assistants: Codex and OpenCode
+
+Use **Assistants** in the main toolbar to enable or disable **Codex** and **OpenCode** independently. When both are enabled, use their tabs at the top of the right pane to switch. Each tab shows activity or **Needs you** for an approval/question. Conversations, drafts, selections, and scroll positions remain independent; work continues in an inactive tab.
+
+Disabling an assistant stops its connection and running work and hides its tab. With both disabled, the right pane disappears and the editor gets its width back. Enabling an assistant starts it and selects it; the previous pane width is restored. **Stop** inside an enabled panel leaves that panel visible so you can use **Start** again.
+
+Enabled assistants and the selected tab are saved. Initially, Codex is enabled and OpenCode is disabled. Workspace changes stop the old connections and resume the new workspace's sessions; drafts survive switching workspaces during the current editor run. Each assistant maintains its own conversations; nothing is copied between Codex and OpenCode.
+
+`--no-codex` and `--no-opencode` skip automatic startup of their respective connections for the launch while keeping enabled panels available for manual Start. The existing `codex_app_server = false` setting still disables automatic Codex startup. Panel visibility is controlled by `codex_enabled` and `opencode_enabled`, or the toolbar menu.
+
 ## Codex
 
 The panel starts `codex app-server` and exchanges JSONL messages over stdio. **Start** and **Stop** control the connection; **Interrupt** stops an active turn. Header badges show **Ready**, **Running**, **Waiting for you**, or **Offline**, with additional details on hover.
@@ -144,6 +154,18 @@ Approval requests provide Allow, Allow this session, and Decline actions. Input 
 
 Expand **Usage / status** for the session ID, model, account limits, session tokens, and context usage when supplied by Codex. Account limits refresh every minute while connected; **Refresh usage** requests an immediate update. Unsupported or unavailable account usage is shown explicitly. Token/context figures update from session events.
 
+## OpenCode
+
+The native panel uses a private local `opencode serve` process and your existing OpenCode configuration and provider authentication. Configure providers using OpenCode's CLI first; Focus Editor does not change those credentials or permission rules. Missing executables, unavailable models, connection failures, and unsupported responses appear in the panel. The transport has been smoke-tested with OpenCode **1.19.5**.
+
+- The compact session dropdown lists conversations in the current workspace. **+** creates a session, **↻** refreshes it, and **…** requests older sessions. The last selected workspace session is remembered; missing sessions fall back to a new session. **Load earlier messages** retrieves earlier history.
+- **Send** or **Ctrl+Enter** submits the draft. Select the connected provider/model, supported **Thinking/variant**, and primary **Agent** beside Send. New choices prefer **Plan**, otherwise the first available primary agent. **Tab / Shift+Tab** cycles agents in the idle composer.
+- Responses stream into the conversation. Reasoning and tool activity are expandable when supplied. **Interrupt** stops active work. Permission and question cards use OpenCode's own responses; approvals are never supplied automatically by the editor.
+- After a successful completed Plan response, **Go** selects **Build** and sends exactly `Go`, preserving your draft, model, and variant. It is unavailable during work, pending questions/approvals, disconnected streams, missing Build agents, failed turns, or cancelled turns.
+- **Usage / status** shows reported tokens, cost, and model context capacity. Where session totals are unavailable, counts are labeled for loaded messages. Account quotas unavailable from OpenCode are stated explicitly. Usage refreshes every minute and on request.
+
+Switching tabs continues processing both backends. Stream reconnects reload authoritative session state without automatically resending prompts. Disabling OpenCode or closing the editor terminates its owned server and tool process group.
+
 ## Keyboard reference
 
 | Shortcut | Context | Action |
@@ -160,16 +182,17 @@ Expand **Usage / status** for the session ID, model, account limits, session tok
 | Tab / Shift+Tab, Escape, navigation, F1–F12 | Terminal | Send to the shell |
 | Ctrl+C / Ctrl+R / Ctrl+W | Terminal | Interrupt / history search / delete previous word |
 | Ctrl+V | Terminal | Paste |
-| Ctrl+Enter | Codex message box | Send |
-| Tab / Shift+Tab | Codex message box, while idle | Next / previous mode |
+| Ctrl+Enter | Codex or OpenCode message box | Send |
+| Tab / Shift+Tab | Idle assistant message box | Next / previous Codex mode or OpenCode agent |
 
 ## Source organization
 
-The application uses one crate with three feature module directories:
+The application uses one crate with focused feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
 - `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
+- `src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/editor/assistants.rs` coordinates the shared pane and independent workspace states.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 
 Other top-level modules provide the shared theme/icons, settings, terminal state and input encoding, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.

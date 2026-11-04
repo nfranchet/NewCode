@@ -3,7 +3,6 @@
 use super::{EditorApp, SidebarMode};
 use crate::ui_theme::{self as theme, Icon};
 use eframe::egui::{self, Color32};
-use std::path::Path;
 
 impl EditorApp {
     pub(super) fn update_window_title(&self, ctx: &egui::Context) {
@@ -74,6 +73,7 @@ impl EditorApp {
                         .on_hover_text(root.display().to_string());
                     }
                     ui.separator();
+                    self.assistants_menu(ui, ctx);
                     ui.menu_button("Edit", |ui| {
                         if ui
                             .add_enabled_ui(self.active_file.is_some(), |ui| {
@@ -222,23 +222,6 @@ impl EditorApp {
                     }
                 });
             });
-    }
-    pub(super) fn codex_panel(&mut self, ctx: &egui::Context, cwd: Option<&Path>) {
-        let right_width = self.settings.right_width;
-        let right_response = egui::SidePanel::right("codex_terminal")
-            .resizable(true)
-            .default_width(right_width)
-            .width_range(260.0..=700.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(Color32::from_rgb(242, 250, 248))
-                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
-                    .inner_margin(8),
-            )
-            .show(ctx, |ui| {
-                self.codex_ui.show(ui, cwd, ctx);
-            });
-        self.settings.right_width = right_response.response.rect.width().max(260.0);
     }
     pub(super) fn document_panel(&mut self, ctx: &egui::Context, opened_find: bool) {
         egui::CentralPanel::default()

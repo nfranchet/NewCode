@@ -16,15 +16,7 @@ impl CodexUi {
         ui.horizontal(|ui| {
             theme::icon(ui, Icon::Spark, theme::TEAL);
             ui.label(egui::RichText::new("Codex").strong().color(theme::TEAL));
-            let status = if !self.pending.is_empty() {
-                "Waiting for you"
-            } else if self.busy {
-                "Running"
-            } else if self.thread_id.is_some() {
-                "Ready"
-            } else {
-                "Offline"
-            };
+            let status = self.state();
             let (color, fill) = match status {
                 "Running" => (theme::TEAL, theme::TEAL_SOFT),
                 "Ready" => (theme::GREEN, egui::Color32::from_rgb(235, 247, 239)),

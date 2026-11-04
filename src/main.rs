@@ -5,6 +5,8 @@ mod codex_ui;
 mod editor;
 mod git_ui;
 mod launch;
+mod opencode_server;
+mod opencode_ui;
 mod settings;
 mod syntax;
 mod terminal;
