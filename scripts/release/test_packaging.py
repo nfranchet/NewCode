@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 import unittest
 
-from package import TARGETS, asset_name, package_linux
+from package import RELEASE_TARGETS, asset_name, package_linux
 
 
 class PackagingTests(unittest.TestCase):
@@ -28,12 +28,16 @@ class PackagingTests(unittest.TestCase):
                 self.assertTrue(archive.getmember("focus-editor").mode & 0o111)
                 self.assertEqual(archive.extractfile("focus-editor").read(), binary.read_bytes())
 
-    def test_checksums_require_all_targets_and_reject_extra_assets(self):
+    def test_checksums_require_both_linux_targets_and_reject_macos_assets(self):
         script = Path(__file__).with_name("checksums.py").resolve()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             # A release tag containing '/' must still produce safe single filenames.
-            names = [asset_name("release/v1.2.3", target) for target in TARGETS]
+            names = [asset_name("release/v1.2.3", target) for target in RELEASE_TARGETS]
+            self.assertEqual(set(names), {
+                "focus-editor-release-v1.2.3-linux-amd64.tar.gz",
+                "focus-editor-release-v1.2.3-linux-arm64.tar.gz",
+            })
             for name in names:
                 self.assertEqual(Path(name).name, name)
                 (root / name).write_bytes(name.encode())
@@ -53,7 +57,7 @@ class PackagingTests(unittest.TestCase):
             self.assertNotEqual(generate().returncode, 0)
             self.assertEqual((root / "SHA256SUMS").read_text(), manifest)
             (root / names[0]).write_bytes(b"replacement")
-            (root / "unexpected.bin").write_bytes(b"unrelated")
+            (root / asset_name("release/v1.2.3", "aarch64-apple-darwin")).write_bytes(b"excluded macOS asset")
             self.assertNotEqual(generate().returncode, 0)
 
 

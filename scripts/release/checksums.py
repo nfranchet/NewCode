@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Require all three release assets before generating the upload manifest."""
+"""Require both Linux release assets before generating the upload manifest."""
 import hashlib
 from pathlib import Path
 import sys
-from package import TARGETS, asset_name
+from package import RELEASE_TARGETS, asset_name
 
 
 def main():
     directory, tag = Path(sys.argv[1]), sys.argv[2]
-    expected = {asset_name(tag, target) for target in TARGETS}
+    expected = {asset_name(tag, target) for target in RELEASE_TARGETS}
     actual = {p.name for p in directory.iterdir()}
     if actual - {"SHA256SUMS"} != expected:
         raise RuntimeError(f"Unexpected or missing release assets: {sorted(actual)}; expected {sorted(expected)}")

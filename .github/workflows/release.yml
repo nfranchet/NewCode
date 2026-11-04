@@ -30,16 +30,12 @@ jobs:
           - platform: linux-arm64
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          #- platform: macos-arm64
-          #  runner: macos-15
-          #  target: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.release.tag_name }}
           persist-credentials: false
       - name: Install Linux build and test dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libx11-dev libxkbcommon-dev \
@@ -52,9 +48,6 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt
           rustup default stable
           rustup target add "$TARGET"
-          if [ "$RUNNER_OS" = macOS ]; then
-            echo 'MACOSX_DEPLOYMENT_TARGET=11.0' >> "$GITHUB_ENV"
-          fi
       - uses: Swatinem/rust-cache@2201cc584a476d1b508be977bbe4b7d1c7a52e9c # v2.9.3
         with:
           key: release-${{ matrix.target }}

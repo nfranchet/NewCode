@@ -17,6 +17,9 @@ TARGETS = {
     "aarch64-apple-darwin": ("macos-arm64", ".dmg"),
 }
 
+# Automatic GitHub releases publish Linux only; macOS packaging remains manual.
+RELEASE_TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
+
 
 def asset_name(tag, target):
     # Git tags may contain slashes; asset names must be single safe filenames.
