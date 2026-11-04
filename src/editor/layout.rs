@@ -263,7 +263,7 @@ impl EditorApp {
                         );
                         ui.label(
                             egui::RichText::new(
-                                "Double-click a file in Explorer to start editing.",
+                                "Click a file to preview it; double-click to keep it open.",
                             )
                             .color(theme::MUTED),
                         );

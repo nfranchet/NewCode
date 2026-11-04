@@ -75,16 +75,26 @@ impl EditorApp {
                     .context_menu(|ui| self.file_menu(ui, &path));
             } else {
                 let response = ui
-                    .add(
-                        egui::Button::selectable(
-                            self.active_file.as_ref() == Some(&path),
-                            theme::file_text(&path, &name),
+                    .push_id(("explorer_file", &path), |ui| {
+                        ui.add(
+                            egui::Button::selectable(
+                                self.active_file.as_ref() == Some(&path),
+                                theme::file_text(&path, &name),
+                            )
+                            .truncate(),
                         )
-                        .truncate(),
-                    )
-                    .on_hover_text(path.display().to_string());
+                        .on_hover_text(path.display().to_string())
+                    })
+                    .inner;
+                ui.interact(
+                    response.rect,
+                    egui::Id::new(("explorer_file_row", &path)),
+                    egui::Sense::hover(),
+                );
                 if response.double_clicked() {
                     self.open_file(path.clone());
+                } else if response.clicked() {
+                    self.preview_file(path.clone());
                 }
                 response.context_menu(|ui| self.file_menu(ui, &path));
             }
@@ -130,26 +140,6 @@ impl EditorApp {
         }
     }
 
-    pub(super) fn update_open_path(&mut self, from: &Path, to: &Path) {
-        for open in &mut self.open_files {
-            if open == from {
-                *open = to.to_path_buf();
-            } else if open.starts_with(from) {
-                if let Ok(suffix) = open.strip_prefix(from) {
-                    *open = to.join(suffix);
-                }
-            }
-        }
-        if let Some(active) = &mut self.active_file {
-            if active == from {
-                *active = to.to_path_buf();
-            } else if active.starts_with(from) {
-                if let Ok(suffix) = active.strip_prefix(from) {
-                    *active = to.join(suffix);
-                }
-            }
-        }
-    }
     pub(super) fn explorer_panel(&mut self, ui: &mut egui::Ui) {
         let workspace = self
             .settings

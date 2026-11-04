@@ -18,6 +18,10 @@ fn test_app() -> EditorApp {
         active_file: Some(PathBuf::from(
             "a_very_long_source_file_name_for_layout_testing.rs",
         )),
+        preview_file: None,
+        unsaved_files: Default::default(),
+        document_ids: Default::default(),
+        next_document_id: 0,
         buffer: "fn main() {\n    println!(\"Hello\");\n}\n".into(),
         dirty: true,
         top: None,
@@ -44,3 +48,5 @@ fn test_app() -> EditorApp {
 }
 
 mod terminal;
+
+mod preview;

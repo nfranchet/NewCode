@@ -166,8 +166,7 @@ impl EditorApp {
     }
 
     pub(super) fn open_search_result(&mut self, path: PathBuf, line_number: usize) {
-        self.open_file(path);
-        if self.active_file.is_some() {
+        if self.open_file(path) {
             self.pending_editor_cursor = Some(
                 self.buffer
                     .split_inclusive('\n')

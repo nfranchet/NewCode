@@ -9,7 +9,7 @@
 | Explorer | Workspace tree; open, rename, move, inline file/folder creation, and confirmed deletion |
 | Inline creation | Target the displayed file's parent or workspace fallback; reveal nested destinations; Enter creates; Escape/focus loss cancels; reject invalid/duplicate names |
 | Confirmed deletion | In-app modal with Cancel default, permanent-deletion warnings, affected-tab cleanup on success, and symlink-target protection |
-| Editor | Text editing/saving, lightweight syntax colors, unwrapped source lines, horizontal scrolling, tabs, searchable open-files menu, modified-file close confirmation |
+| Editor | Text editing/saving, lightweight syntax colors, unwrapped source lines, horizontal scrolling, single-click preview tabs, double-click/edit pinning, per-file unsaved contents and Undo state, searchable open-files menu, modified-file close confirmation |
 | Search and clipboard | Grouped workspace search, match navigation, Ctrl+F Find with highlights/count, clipboard and Edit actions |
 | Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
 | Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
@@ -19,7 +19,7 @@
 | Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
 | Codex usage | Available account limits with periodic/manual refresh, token/context updates, unavailable-data feedback |
 
-The application remains a single crate. `src/editor/mod.rs` owns application state and calls focused modules for layout, documents, text rendering, Explorer, creation/deletion, search, shell, sidebar routing, and persistence. `src/codex_ui/mod.rs` owns panel state and delegates to header, conversation, composer, catalog, usage, request, response, event, message, reasoning-section, and completed-plan/Go modules. `src/git_ui/mod.rs` owns Source Control state and delegates repository/status handling, asynchronous actions/replies, panel controls, aligned comparison rendering, byte-preserving patch parsing, retained reviews, file/index validation, hunk application, and presentation to focused sibling modules. Theme, settings, terminal, syntax, and App Server transport remain separate top-level modules.
+The application remains a single crate. `src/editor/mod.rs` owns application state and calls focused modules for layout, document lifecycle, tabs, clipboard, close confirmation, document path changes, text rendering, Explorer, creation/deletion, search, shell, sidebar routing, and persistence. `src/codex_ui/mod.rs` owns panel state and delegates to header, conversation, composer, catalog, usage, request, response, event, message, reasoning-section, and completed-plan/Go modules. `src/git_ui/mod.rs` owns Source Control state and delegates repository/status handling, asynchronous actions/replies, panel controls, aligned comparison rendering, byte-preserving patch parsing, retained reviews, file/index validation, hunk application, and presentation to focused sibling modules. Theme, settings, terminal, syntax, and App Server transport remain separate top-level modules.
 
 The original monolithic editor, Codex UI, and Git UI source files have been replaced by these directories. Feature tests live under `src/editor/tests/` and in `src/codex_ui/tests.rs` with focused reasoning tests under `src/codex_ui/tests/`. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`. Public entry types remain `editor::EditorApp`, `codex_ui::CodexUi`, and `git_ui::GitUi`; internal helpers use module-scoped visibility.
 
@@ -56,6 +56,7 @@ These checks remain manual acceptance tasks, rather than claims that every deskt
 - [ ] Resize all panes and verify labels, icons, focus outlines, scrollbars, and message wrapping at the minimum window size.
 - [ ] Create files/folders beside root, nested, and external open files; confirm focus, cancellation, errors, and no overwrite.
 - [ ] Confirm and cancel deletion of files and folders, including targets with unsaved edits and filesystem errors.
+- [ ] Single-click files to replace one preview; double-click a file/tab or edit to pin it. Switch among modified files, verify their contents/Undo/modified indicators, and save/discard/cancel inactive tab closes.
 - [ ] Edit/save/close files; check long lines, tab scrolling/menu, search navigation, Find, and clipboard shortcuts.
 - [ ] Review staged/unstaged/untracked/conflicting files; use Space and buttons; stage/unstage hunks without losing the comparison or scroll position; verify blue staged backgrounds and reverse actions; reload after external changes; commit and inspect failures.
 - [ ] Switch between Source Control, Explorer, Search, and editor tabs without replacing the active unsaved buffer with a diff.

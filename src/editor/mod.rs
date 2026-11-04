@@ -6,14 +6,18 @@ use eframe::egui;
 use persistence::restore_open_files;
 use search::FileMatches;
 use std::{
+    collections::HashMap,
     fs,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 use text_view::EditorLayoutCache;
 
+mod clipboard;
+mod close_dialog;
 mod creation;
 mod deletion;
+mod document_paths;
 mod documents;
 mod explorer;
 mod layout;
@@ -21,6 +25,7 @@ mod persistence;
 mod search;
 mod shell;
 mod sidebar;
+mod tabs;
 mod terminal_input;
 mod text_view;
 
@@ -39,6 +44,10 @@ pub(crate) struct EditorApp {
     settings_path: PathBuf,
     open_files: Vec<PathBuf>,
     active_file: Option<PathBuf>,
+    preview_file: Option<PathBuf>,
+    unsaved_files: HashMap<PathBuf, String>,
+    document_ids: HashMap<PathBuf, egui::Id>,
+    next_document_id: u64,
     buffer: String,
     dirty: bool,
     top: Option<Terminal>,
@@ -99,11 +108,26 @@ impl EditorApp {
         }
         theme::apply(&cc.egui_ctx);
         let (open_files, active_file, buffer) = restore_open_files(&settings);
+        let next_document_id = open_files.len() as u64;
+        let document_ids = open_files
+            .iter()
+            .enumerate()
+            .map(|(index, path)| {
+                (
+                    path.clone(),
+                    egui::Id::new(("document_editor", index as u64 + 1)),
+                )
+            })
+            .collect();
         Self {
             settings,
             settings_path,
             open_files,
             active_file,
+            preview_file: None,
+            unsaved_files: HashMap::new(),
+            document_ids,
+            next_document_id,
             buffer,
             dirty: false,
             top,

@@ -48,9 +48,11 @@ The light theme uses blue navigation, teal Codex accents, colored file-type mark
 
 ## Explorer and editing
 
-Choose a workspace from the toolbar. Double-click a file in Explorer to open it, edit in the center, and use **Save**, **Ctrl+S**, or **Edit → Save** to write changes to disk. Source lines stay unwrapped; use horizontal scrolling for long lines. Syntax coloring uses a lightweight built-in tokenizer rather than compiler-backed language services.
+Choose a workspace from the toolbar. **Single-click** a file in Explorer to open an italic **preview tab**. Clicking another file replaces that preview in the same position. **Double-click** the file in Explorer or its tab to keep it permanently open. Editing a preview also makes it permanent. Clicking a file already open permanently selects its existing tab.
 
-Tabs remain in one horizontally scrollable row. Use the **⌄** open-files menu to search and select any open tab. Close a tab with **×** or **Ctrl+W**; closing a modified file offers **Save**, **Discard**, and **Cancel**.
+Edit in the center and use **Save**, **Ctrl+S**, or **Edit → Save** to write changes to disk. Source lines stay unwrapped; use horizontal scrolling for long lines. Syntax coloring uses a lightweight built-in tokenizer rather than compiler-backed language services.
+
+Tabs remain in one horizontally scrollable row. Use the **⌄** open-files menu to search and select any open tab. Close a tab with **×** or **Ctrl+W**; closing a modified file offers **Save**, **Discard**, and **Cancel**, including inactive tabs. Unsaved contents and Undo histories stay with their file while switching tabs. Search results and Source Control’s **Open file** action open permanent tabs.
 
 ### Create files and folders inline
 
@@ -74,7 +76,7 @@ Use **Ctrl+C** and **Ctrl+V** for the editor clipboard. **Edit** also provides S
 
 On relaunch, the editor restores the last workspace, open tabs in order, and active file. Missing or unreadable files are skipped. Launching with a different workspace argument does not restore unrelated tabs.
 
-Files are read from disk. Unsaved edits, cursor positions, and scroll positions are not recovered.
+Files are read from disk, and restored tabs are permanent, including the last preview. Unsaved edits, cursor positions, and scroll positions are not recovered.
 
 ## Source Control
 
@@ -165,7 +167,7 @@ Expand **Usage / status** for the session ID, model, account limits, session tok
 
 The application uses one crate with three feature module directories:
 
-- `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document and tab actions, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
+- `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
 - `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.

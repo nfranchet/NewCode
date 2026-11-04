@@ -12,13 +12,14 @@ A coordinated light theme uses blue navigation, teal Codex controls, semantic Gi
 
 ## Explorer and documents
 
-- Browse the workspace tree and double-click files to edit them. An optional launch directory selects the workspace.
+- Single-click Explorer files to open one replaceable preview tab. Double-click an Explorer file or its tab to keep it permanently; editing also pins it. Use italic preview labels with an explanatory tooltip. Selecting a permanent file activates its existing tab. An optional launch directory selects the workspace.
 - Create a file or folder through a temporary inline name field beside the displayed file, with the workspace root as the fallback when no file is open. Reveal nested destinations; label destinations outside the workspace above the tree.
 - Create on Enter only. Escape, focus loss, sidebar changes, or workspace changes cancel without filesystem writes. Validate names, preserve failed drafts for correction, and never overwrite existing entries.
 - Provide right-click Rename, Move, and Delete actions. Deletion requires an in-app confirmation, warns about folder contents and unsaved edits, and removes affected tabs only on success. Deleting a symbolic link preserves its target.
 - Edit/save text with lightweight extension-based syntax coloring. Keep source lines unwrapped and horizontally scrollable.
 - Keep tabs on one scrollable row with close controls and a searchable open-files menu. Closing a modified file asks whether to save, discard, or cancel.
-- Restore workspace, tab order, and active file on relaunch, skipping missing/unreadable files. A different launch workspace does not inherit unrelated tabs. Restore saved disk contents, not unsaved buffers or caret/scroll positions.
+- Preserve unsaved contents and separate Undo state per open file during tab switches. Modified indicators and close confirmations cover inactive files too; Save targets the file being closed. Keep preview and document state synchronized during rename, move, and deletion.
+- Restore all tabs as permanent, including the last preview; restore workspace, tab order, and active file on relaunch, skipping missing/unreadable files. A different launch workspace does not inherit unrelated tabs. Restore saved disk contents, not unsaved buffers or caret/scroll positions.
 
 ## Search and clipboard
 

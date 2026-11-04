@@ -79,7 +79,7 @@ impl EditorApp {
             cached.galley = Some(galley.clone());
             galley
         };
-        let editor_id = egui::Id::new("main_editor_text");
+        let editor_id = self.editor_id();
         let jump_cursor = self.pending_editor_cursor.take();
         if let Some(cursor) = jump_cursor {
             let mut state = egui::TextEdit::load_state(ctx, editor_id).unwrap_or_default();
@@ -157,7 +157,7 @@ impl EditorApp {
             })
             .inner;
         if response.changed() {
-            self.dirty = true;
+            self.mark_modified();
         }
         if response.has_focus() && ui.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::S)) {
             self.save_file();

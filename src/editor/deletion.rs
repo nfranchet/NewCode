@@ -26,6 +26,11 @@ impl EditorApp {
         result.map_err(|e| format!("Delete failed: {e}"))?;
         let affected = |p: &Path| p == path || (directory && p.starts_with(path));
         self.open_files.retain(|p| !affected(p));
+        self.unsaved_files.retain(|p, _| !affected(p));
+        self.document_ids.retain(|p, _| !affected(p));
+        if self.preview_file.as_deref().is_some_and(affected) {
+            self.preview_file = None;
+        }
         if self.active_file.as_deref().is_some_and(affected) {
             self.active_file = None;
             self.buffer.clear();
@@ -34,7 +39,7 @@ impl EditorApp {
             self.find_open = false;
             self.find_active = None;
             if let Some(next) = self.open_files.first().cloned() {
-                self.open_file(next);
+                self.activate_file(next);
             }
         }
         if self.close_confirmation.as_deref().is_some_and(affected) {
@@ -49,6 +54,13 @@ impl EditorApp {
         }
         self.status = format!("Deleted {}", path.display());
         Ok(())
+    }
+
+    pub(super) fn deletion_has_unsaved(&self, path: &Path) -> bool {
+        let directory = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_dir());
+        self.open_files.iter().any(|open| {
+            self.file_is_dirty(open) && (open == path || (directory && open.starts_with(path)))
+        })
     }
 
     pub(super) fn deletion_dialog(&mut self, ctx: &egui::Context) {
@@ -78,15 +90,10 @@ impl EditorApp {
                     "All files and subfolders inside will also be deleted.",
                 );
             }
-            if self.dirty
-                && self
-                    .active_file
-                    .as_deref()
-                    .is_some_and(|p| p == deletion.path || p.starts_with(&deletion.path))
-            {
+            if self.deletion_has_unsaved(&deletion.path) {
                 ui.colored_label(
                     theme::AMBER,
-                    "Unsaved edits in the open file will be discarded.",
+                    "Unsaved edits in affected files will be discarded.",
                 );
             }
             if !deletion.error.is_empty() {
