@@ -38,7 +38,7 @@ fn commit_focus_survives_refresh_and_failure() {
             },
             |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    git_ui.ui(ui, Some(&workspace));
+                    git_ui.ui(ui, Some(&workspace), None);
                 });
             },
         );

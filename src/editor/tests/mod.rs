@@ -25,6 +25,7 @@ fn test_app() -> EditorApp {
         buffer: "fn main() {\n    println!(\"Hello\");\n}\n".into(),
         dirty: true,
         top: None,
+        dev_container: Default::default(),
         codex_ui: CodexUi::default(),
         opencode_ui: crate::opencode_ui::OpenCodeUi::default(),
         assistant_workspace: None,

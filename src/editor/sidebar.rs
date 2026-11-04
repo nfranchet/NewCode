@@ -42,7 +42,11 @@ impl EditorApp {
                 ui.separator();
                 match self.sidebar_mode {
                     SidebarMode::Git => {
-                        if let Some(path) = self.git_ui.ui(ui, self.settings.workspace.as_deref()) {
+                        if let Some(path) = self.git_ui.ui(
+                            ui,
+                            self.settings.workspace.as_deref(),
+                            self.dev_container.runtime(),
+                        ) {
                             self.open_file(path);
                         }
                     }

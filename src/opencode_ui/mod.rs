@@ -1,5 +1,5 @@
 //! Native OpenCode panel; backend events and rendering remain separate.
-use crate::opencode_server::Server;
+use crate::{dev_container::Runtime, opencode_server::Server};
 use eframe::egui;
 use serde_json::Value;
 use std::{
@@ -88,6 +88,7 @@ pub(crate) struct OpenCodeUi {
     session_limit: usize,
     history_before: Option<String>,
     last_refresh: Option<Instant>,
+    runtime: Option<Runtime>,
 }
 impl Default for OpenCodeUi {
     fn default() -> Self {
@@ -121,11 +122,13 @@ impl Default for OpenCodeUi {
             session_limit: 50,
             history_before: None,
             last_refresh: None,
+            runtime: None,
         }
     }
 }
 impl OpenCodeUi {
     pub(crate) fn start(&mut self, cwd: Option<&Path>, ctx: egui::Context) {
+        log::info!("start requested");
         if self.server.is_some() {
             return;
         }
@@ -133,7 +136,7 @@ impl OpenCodeUi {
             .unwrap_or(Path::new("."))
             .canonicalize()
             .unwrap_or_else(|_| cwd.unwrap_or(Path::new(".")).to_path_buf());
-        self.server = Some(Server::spawn(&self.workspace, ctx));
+        self.server = Some(Server::spawn(&self.workspace, self.runtime.clone(), ctx));
         self.error = None;
         self.online = false;
         self.stream_online = false;
@@ -150,7 +153,17 @@ impl OpenCodeUi {
             self.workspace = path.to_path_buf();
         }
     }
+    pub(crate) fn set_runtime(&mut self, runtime: Option<&Runtime>) -> bool {
+        if self.runtime.as_ref() != runtime {
+            self.stop();
+            self.runtime = runtime.cloned();
+            true
+        } else {
+            false
+        }
+    }
     pub(crate) fn stop(&mut self) {
+        log::info!("stop requested");
         self.server = None;
         self.online = false;
         self.stream_online = false;

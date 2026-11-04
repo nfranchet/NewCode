@@ -20,6 +20,7 @@ impl CodexUi {
         }
     }
     pub(super) fn handle_event(&mut self, event: Value, cwd: Option<&Path>) {
+        log::trace!("Codex protocol event received");
         if let Some(error) = event.get("_error").and_then(Value::as_str) {
             self.status = error.into();
             return;
@@ -29,6 +30,7 @@ impl CodexUi {
             return;
         }
         if event.get("_closed").is_some() {
+            log::warn!("Codex server disconnected");
             self.clear_plan();
             self.status = "Codex App Server stopped".into();
             self.busy = false;
@@ -73,6 +75,7 @@ impl CodexUi {
             })
             .unwrap_or(method)
             .to_string();
+        log::debug!("Codex approval or question received");
         self.pending.push(PendingRequest {
             id: id.clone(),
             method: method.into(),

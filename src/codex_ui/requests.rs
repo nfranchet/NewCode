@@ -16,6 +16,7 @@ impl CodexUi {
     }
 
     pub(super) fn send_turn(&mut self) {
+        log::debug!("Codex prompt submission requested");
         let text = self.input.trim().to_string();
         if text.is_empty() {
             return;
@@ -55,8 +56,8 @@ impl CodexUi {
     }
 
     pub(super) fn list_sessions(&mut self, cwd: Option<&Path>, cursor: Option<&str>) {
-        let directory = cwd
-            .map(|p| p.to_path_buf())
+        let directory = self
+            .remote_cwd(cwd)
             .or_else(|| std::env::current_dir().ok());
         match self.send(
             "thread/list",
@@ -73,7 +74,8 @@ impl CodexUi {
     }
 
     pub(super) fn open_thread(&mut self, cwd: Option<&Path>, previous: Option<&str>) {
-        let mut params = json!({"cwd":cwd});
+        log::info!("Codex session selection existing={}", previous.is_some());
+        let mut params = json!({"cwd":self.remote_cwd(cwd)});
         if !self.model.is_empty() {
             params["model"] = json!(self.model);
         }

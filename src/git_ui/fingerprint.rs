@@ -1,6 +1,7 @@
 //! Exact selected-file versions used to reject actions on stale review snapshots.
 
-use super::repository::git;
+use super::repository::git_with;
+use crate::dev_container::Runtime;
 use std::{
     fs,
     io::ErrorKind,
@@ -19,9 +20,10 @@ pub(super) struct FileVersion {
 }
 
 impl FileVersion {
-    pub(super) fn read(root: &Path, path: &str) -> Result<Self, String> {
-        let head = git(root, &["ls-tree", "-z", "HEAD", "--", path]).unwrap_or_default();
-        let index = git(root, &["ls-files", "--stage", "-z", "--", path])?;
+    pub(super) fn read(root: &Path, path: &str, runtime: Option<&Runtime>) -> Result<Self, String> {
+        let head =
+            git_with(root, &["ls-tree", "-z", "HEAD", "--", path], runtime).unwrap_or_default();
+        let index = git_with(root, &["ls-files", "--stage", "-z", "--", path], runtime)?;
         let file = root.join(path);
         let (working, mode, kind) = match fs::symlink_metadata(&file) {
             Ok(metadata) if metadata.file_type().is_symlink() => {

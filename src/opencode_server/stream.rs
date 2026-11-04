@@ -28,6 +28,7 @@ pub(super) fn listen(
             if !response.status().is_success() {
                 return Err(format!("OpenCode event stream: {}", response.status()));
             }
+            log::debug!("OpenCode event stream connected");
             events.send(Event::Reconnected);
             read(
                 BufReader::new(response),
@@ -40,6 +41,7 @@ pub(super) fn listen(
         if cancel.load(Ordering::Relaxed) {
             break;
         }
+        log::warn!("OpenCode event stream interrupted; reconnecting");
         events.send(Event::Disconnected(
             result
                 .err()

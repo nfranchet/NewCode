@@ -85,3 +85,15 @@ Terminal keyboard routing runs through the pre-frame input hook before egui navi
 The OpenCode transport and panel use focused sibling modules; the editor coordinates their lifecycles with Codex. Mock HTTP/SSE and UI tests cover request routing, reconnect snapshots, session generations, approvals/questions, model/agent choices, send shortcuts, Go, narrow layouts, and space reclamation. An ignored integration test checks the installed OpenCode server's health/catalogs and process cleanup without model prompts: `cargo test opencode_server::tests::installed_server_catalog_smoke -- --ignored`.
 
 Manual desktop checks: enable both assistants, switch during work and pending approvals, disable each individually, disable both and check editor width, re-enable and check drafts/session restoration, then switch workspaces and relaunch to check saved preferences. Provider-level generation behavior remains dependent on configured accounts and is exercised by normal user prompts.
+
+## Logging validation
+
+Application logging uses a dedicated argument parser and a single `log`/`env_logger` initialization before workers start. Tests cover level parsing, workspace ordering, precedence, dependency filtering, off/error levels, and background forwarding. Manual troubleshooting: launch with `--foreground --log-level debug .` or inspect the background launch log. Discrete actions are instrumented without content/payload logging or per-frame rendering logs.
+
+Dev Container diagnostics now leave failure details in the application log rather than the toolbar menu. Tests cover bounded/redacted diagnostics, transition-only warnings, compact repeated menu rendering, configuration failures, and successful lifecycle Info records without starting Docker.
+
+Dev Container build-failure capture preserves stdout and stderr with process exit status, bounds long streams while retaining their tails, and writes separate diagnostic records. BuildKit fixtures verify that command redaction retains the failure explanation and exit code; stdout-only errors and credential redaction are covered without rebuilding containers.
+
+Dev Container assistant provisioning and authentication use official native curl installers and a focused authentication module. Validate noninteractive CLI availability, host path overrides, configured-user home resolution, atomic private writes, preservation of installed packages/history, and safe failure reporting. Container connection runs credential transfer on the lifecycle worker before assistant startup; reconnect refreshes the copies. No session/configuration synchronization or assistant-data mounts.
+
+Validated the bundled image with Codex 0.166.0 and OpenCode 1.19.5 as `vscode` through noninteractive Docker exec. Authentication-only transfer preserved host file hashes and installed Codex packages, produced 0600 files owned by `vscode`, and passed Codex login status (ChatGPT). OpenCode server health and connected-provider metadata passed without sending a model prompt. Automated suite: 85 passed, one optional installed-server test ignored; compile, formatting, and whitespace checks passed.

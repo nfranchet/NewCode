@@ -50,6 +50,15 @@ impl Terminal {
         cwd: Option<&Path>,
         repaint_ctx: eframe::egui::Context,
     ) -> Result<Self, String> {
+        Self::spawn_with_runtime(command, cwd, None, repaint_ctx)
+    }
+    pub(crate) fn spawn_with_runtime(
+        command: &str,
+        cwd: Option<&Path>,
+        runtime: Option<&crate::dev_container::Runtime>,
+        repaint_ctx: eframe::egui::Context,
+    ) -> Result<Self, String> {
+        log::info!("spawn_with_runtime requested");
         let pty = native_pty_system();
         let pair = pty
             .openpty(PtySize {
@@ -58,8 +67,34 @@ impl Terminal {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| e.to_string())?;
-        let mut cmd = if command.trim().is_empty() {
+            .map_err(|e| {
+                log::warn!("Terminal startup operation failed");
+                e.to_string()
+            })?;
+        let mut cmd = if let Some(runtime) = runtime {
+            let mut command_builder = CommandBuilder::new("docker");
+            command_builder.arg("exec");
+            command_builder.arg("-i");
+            command_builder.arg("-w");
+            command_builder.arg(&runtime.workspace_folder);
+            if let Some(user) = &runtime.remote_user {
+                command_builder.arg("-u");
+                command_builder.arg(user);
+            }
+            command_builder.arg(&runtime.container_id);
+            if command.trim().is_empty() {
+                command_builder.arg("/bin/bash");
+                command_builder.arg("--noprofile");
+                command_builder.arg("--norc");
+                command_builder.arg("-i");
+            } else {
+                command_builder.arg("/bin/sh");
+                command_builder.arg("-l");
+                command_builder.arg("-c");
+                command_builder.arg(command);
+            }
+            command_builder
+        } else if command.trim().is_empty() {
             let mut shell_cmd = CommandBuilder::new("/bin/bash");
             shell_cmd.arg("--noprofile");
             shell_cmd.arg("--norc");
@@ -75,13 +110,22 @@ impl Terminal {
         };
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        cmd.cwd(
-            cwd.map(Path::to_path_buf)
-                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))),
-        );
-        let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        if runtime.is_none() {
+            cmd.cwd(
+                cwd.map(Path::to_path_buf).unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
+                }),
+            );
+        }
+        let child = pair.slave.spawn_command(cmd).map_err(|e| {
+            log::warn!("Terminal startup operation failed");
+            e.to_string()
+        })?;
         drop(pair.slave);
-        let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+        let mut reader = pair.master.try_clone_reader().map_err(|e| {
+            log::warn!("Terminal startup operation failed");
+            e.to_string()
+        })?;
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut buf = [0u8; 2048];
@@ -102,7 +146,10 @@ impl Terminal {
             }
         });
         Ok(Self {
-            input: pair.master.take_writer().map_err(|e| e.to_string())?,
+            input: pair.master.take_writer().map_err(|e| {
+                log::warn!("Terminal startup operation failed");
+                e.to_string()
+            })?,
             master: pair.master,
             _child: child,
             rx,
@@ -131,8 +178,9 @@ impl Terminal {
         }
     }
     pub(crate) fn send(&mut self, bytes: &[u8]) {
-        let _ = self.input.write_all(bytes);
-        let _ = self.input.flush();
+        if let Err(error) = self.input.write_all(bytes).and_then(|_| self.input.flush()) {
+            log::warn!("Terminal input write failed kind={:?}", error.kind());
+        }
     }
     pub(crate) fn resize(&mut self, cols: usize, rows: usize) {
         let cols = cols.clamp(2, 500) as u16;
@@ -154,6 +202,7 @@ impl Terminal {
             }
         }
         self.cells = next;
+        log::debug!("Terminal resized columns={cols} rows={rows}");
         self.cols = cols;
         self.rows = rows;
         self.cursor_x = self.cursor_x.min(cols as usize - 1);

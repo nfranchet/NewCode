@@ -15,13 +15,14 @@ impl EditorApp {
         title: &str,
         term: &mut Option<Terminal>,
         cwd: Option<&Path>,
+        runtime: Option<&crate::dev_container::Runtime>,
     ) {
         ui.horizontal(|ui| {
             theme::icon(ui, Icon::Terminal, theme::BLUE);
             ui.label(egui::RichText::new(title).strong().color(theme::BLUE));
             if theme::button(ui, Icon::Refresh, "Restart", theme::BLUE, false).clicked() {
                 let cmd = term.as_ref().map(|t| t.command.clone()).unwrap_or_default();
-                *term = Terminal::spawn(&cmd, cwd, ctx.clone()).ok();
+                *term = Terminal::spawn_with_runtime(&cmd, cwd, runtime, ctx.clone()).ok();
             }
         });
         if let Some(t) = term {
@@ -94,14 +95,19 @@ impl EditorApp {
             ui.colored_label(Color32::LIGHT_RED, "Terminal failed to start");
         }
     }
-    pub(super) fn shell_panel(&mut self, ctx: &egui::Context, cwd: Option<&Path>) {
+    pub(super) fn shell_panel(
+        &mut self,
+        ctx: &egui::Context,
+        cwd: Option<&Path>,
+        runtime: Option<&crate::dev_container::Runtime>,
+    ) {
         let top_height = self.settings.top_height;
         let top_response = egui::TopBottomPanel::bottom("top_terminal")
             .resizable(true)
             .default_height(top_height)
             .min_height(80.0)
             .show(ctx, |ui| {
-                Self::terminal_ui(ctx, ui, "Shell", &mut self.top, cwd);
+                Self::terminal_ui(ctx, ui, "Shell", &mut self.top, cwd, runtime);
             });
         self.settings.top_height = top_response.response.rect.height().max(80.0);
     }

@@ -28,6 +28,14 @@ Open a workspace directly:
 cargo run --release -- ~/projects/my-app
 ```
 
+## Dev Containers
+
+Focus Editor can use a Docker Compose development container without Node.js or the Dev Container CLI. With a workspace open, use **Dev Container** in the toolbar to start the service defined by `.devcontainer/devcontainer.json`. The container stays running when the editor closes; use **Stop** or **Rebuild** from the same menu when needed.
+
+The built-in backend supports Compose-based configurations with `dockerComposeFile`, `service`, `workspaceFolder`, and optional `remoteUser`. It starts the service with Docker Compose, then runs the integrated shell, Source Control commands, Codex, and OpenCode with `docker exec` in that container. Explorer, search, editing, and saved files stay on the host bind mount.
+
+Docker Engine and the Docker Compose plugin are required. Node.js and `@devcontainers/cli` are not required or installed. The bundled image installs Codex and OpenCode using their official curl installers as `vscode`, with both commands available to noninteractive `docker exec`. Custom images must provide the tools you enable. Dev Container Features and lifecycle commands are not interpreted by Focus Editor; express required setup in the Dockerfile or Compose service instead.
+
 Skip automatic Codex startup for a launch:
 
 ```sh
@@ -36,11 +44,40 @@ cargo run --release -- --no-codex ~/projects/my-app
 
 The first build downloads crates from crates.io. Settings are stored in the platform configuration directory, usually `~/.config/focus-editor/settings.toml`. Set `codex_app_server = false` there to disable automatic Codex startup on future launches; the panel's Start button remains available.
 
+The bundled Rust Dev Container image updates the stable Rust toolchain during its build, installs matching `llvm-tools-preview`, and installs `grcov` with its published lockfile. Use **Dev Container → Rebuild** after changing the Dockerfile. The image also runs the official installers at `https://chatgpt.com/codex/install.sh` and `https://opencode.ai/install`; rebuilding selects their current default releases.
+
+## Logging
+
+On **Open**, **Reconnect**, and **Rebuild**, Focus Editor copies only host Codex/OpenCode `auth.json` files into the configured container user's home before connecting assistants. Host `CODEX_HOME` and `XDG_DATA_HOME` overrides are respected; container destinations use their own overrides. Writes are atomic, with directory mode 0700 and file mode 0600; credentials travel through stdin and are never included in image layers or logs. Codex uses file-backed credentials in the container. Missing host auth files leave existing container credentials intact and produce a warning; keyring-only host logins require a file-backed login first. Unreadable or invalid credentials and transfer failures stop the connection and are reported in the application log.
+
+Assistant launches forward present `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENCODE_API_KEY`, and OpenCode server username/password variables by name. Restart the editor to pick up changes to its inherited environment. Use **Reconnect** after refreshing host credentials. Session history, databases, configuration, and container token refreshes remain independent; no assistant data directories are shared or copied back to the host.
+
+Dev Container failure details are written to the application log at **Warn** level. Its toolbar menu shows a short failure message and retains **Retry**; opening the menu does not repeat diagnostics. Configuration, start/rebuild/reconnect, and stop errors include operation context. Failure records include the Compose exit status and captured stdout/stderr, with long output bounded while retaining its tail. Each diagnostic line gets its own timestamped record. Sensitive values and build-command payloads are redacted while surrounding failure explanations and exit codes remain visible.
+
+Logging defaults to **Info**. Change it easily for a launch:
+
+```sh
+focus-editor --log-level debug .
+focus-editor --foreground --log-level=trace .
+cargo run --release -- --log-level debug .
+```
+
+Supported levels are `trace`, `debug`, `info`, `warn`, `error`, and `off`. Both flag forms work before or after the workspace argument, and background launching forwards the chosen level. Invalid levels fail before the GUI launches.
+
+- **Debug:** discrete editor/file/search/Git actions, terminal lifecycle and resizing, assistant controls, session and request activity. Rendering frames, text contents, prompts, answers, terminal input/output, credentials, and protocol payloads are excluded.
+- **Info:** important application, workspace, assistant, Dev Container, and session lifecycle events; successful commits, deletion, and path changes.
+- **Warn:** recoverable operation failures, configuration fallbacks, and connection recovery. **Error** records fatal application failure. **Trace** adds low-level event metadata.
+
+Records contain a timestamp, level, process ID, and component. Foreground launches write to the terminal's stderr; background launches append to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, normally `~/.local/share/focus-editor/logs/launch.log`.
+
+For component filters, use `RUST_LOG`, for example `RUST_LOG=warn,focus_editor::git_ui=debug focus-editor .`. An explicit `--log-level` takes precedence over `RUST_LOG`. With neither set, application Info and dependency Warn are enabled. Log files retain the existing append behavior without rotation.
+
 ## Layout and appearance
 
 - The left activity bar switches between **Explorer**, **Search**, and **Source Control**.
 - The center contains file tabs, the editor, and Git diff previews.
 - The bottom pane is an interactive Bash terminal, with a Restart action.
+- **Dev Container** starts a configured Docker Compose service and changes the terminal, Git, and assistants to use it.
 - The optional right pane contains Codex and/or OpenCode. Its header keeps status visible alongside horizontally scrollable session controls; **Usage / status** has its own section below.
 - Drag the dividers to resize the sidebar, terminal, and assistant pane. Their sizes are saved.
 

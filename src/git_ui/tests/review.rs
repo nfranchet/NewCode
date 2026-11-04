@@ -81,7 +81,7 @@ fn hunk_toggles_retain_review_and_preserve_other_staging() {
     repo.write("other", "staged elsewhere\n");
     repo.run(&["add", "other"]);
     let other_index = repo.run(&["show", ":other"]);
-    let view = DiffView::load(&repo.0, "file [1]", false, 7, None).unwrap();
+    let view = DiffView::load(&repo.0, "file [1]", false, 7, None, None).unwrap();
     assert_eq!(view.hunks.len(), 2);
     let raw = view.hunks[0].patch.clone();
     let rows = format!("{:?}", view.hunks[0].rows);
@@ -93,7 +93,9 @@ fn hunk_toggles_retain_review_and_preserve_other_staging() {
     for index in [0, 1, 0, 0, 1, 0] {
         let task = ui.diff.as_ref().unwrap().patch_task(index).unwrap();
         let expected = task.staged_after;
-        ui.accept_review(ReviewUpdate::Applied(patch::apply(&repo.0, &task).unwrap()));
+        ui.accept_review(ReviewUpdate::Applied(
+            patch::apply(&repo.0, &task, None).unwrap(),
+        ));
         let view = ui.diff.as_ref().unwrap();
         assert_eq!(view.id, 7);
         assert_eq!(view.hunks[index].staged, expected);
@@ -108,12 +110,19 @@ fn hunk_toggles_retain_review_and_preserve_other_staging() {
     assert_eq!(repo.run(&["show", ":file [1]"]), original.as_bytes());
     // An old background load must not replace a newer review.
     ui.accept_review(ReviewUpdate::Loaded(Box::new(
-        DiffView::load(&repo.0, "file [1]", false, 6, None).unwrap(),
+        DiffView::load(&repo.0, "file [1]", false, 6, None, None).unwrap(),
     )));
     assert_eq!(ui.diff.as_ref().unwrap().id, 7);
     // Detect external edits even when the number of changed lines stays identical.
     repo.write("file [1]", &changed.replace("changed 3", "another 3"));
-    assert!(patch::apply(&repo.0, &ui.diff.as_ref().unwrap().patch_task(0).unwrap()).is_err());
+    assert!(
+        patch::apply(
+            &repo.0,
+            &ui.diff.as_ref().unwrap().patch_task(0).unwrap(),
+            None
+        )
+        .is_err()
+    );
     assert_eq!(repo.run(&["show", ":file [1]"]), original.as_bytes());
 }
 
@@ -126,16 +135,16 @@ fn staged_review_reverses_only_selected_hunk_and_rejects_bad_patch() {
     repo.write("f", "ONE\ntwo\nthree\n");
     repo.run(&["add", "f"]);
     repo.write("f", "ONE\ntwo\nTHREE\n");
-    let mut view = DiffView::load(&repo.0, "f", true, 1, None).unwrap();
+    let mut view = DiffView::load(&repo.0, "f", true, 1, None, None).unwrap();
     let mut bad = view.patch_task(0).unwrap();
     bad.patch = b"invalid patch\n".to_vec();
-    assert!(patch::apply(&repo.0, &bad).is_err());
+    assert!(patch::apply(&repo.0, &bad, None).is_err());
     assert!(view.hunks[0].staged);
-    let applied = patch::apply(&repo.0, &view.patch_task(0).unwrap()).unwrap();
+    let applied = patch::apply(&repo.0, &view.patch_task(0).unwrap(), None).unwrap();
     view.version = applied.version.unwrap();
     view.hunks[0].staged = applied.staged;
     assert_eq!(repo.run(&["show", ":f"]), b"one\ntwo\nthree\n");
-    patch::apply(&repo.0, &view.patch_task(0).unwrap()).unwrap();
+    patch::apply(&repo.0, &view.patch_task(0).unwrap(), None).unwrap();
     assert_eq!(repo.run(&["show", ":f"]), b"ONE\ntwo\nthree\n");
     assert_eq!(
         std::fs::read_to_string(repo.0.join("f")).unwrap(),
@@ -143,7 +152,7 @@ fn staged_review_reverses_only_selected_hunk_and_rejects_bad_patch() {
     );
     repo.write("f", "ONE\ntwo\nthree\n");
     repo.run(&["reset", "-q", "--", "f"]);
-    assert!(patch::apply(&repo.0, &view.patch_task(0).unwrap()).is_err());
+    assert!(patch::apply(&repo.0, &view.patch_task(0).unwrap(), None).is_err());
 }
 
 #[test]
@@ -155,7 +164,7 @@ fn comparison_layout_stays_stable_when_hunk_is_staged() {
     repo.run(&["-c", "core.hooksPath=/dev/null", "commit", "-qm", "initial"]);
     repo.write("f", &format!("{}\n", "a long changed line ".repeat(30)));
     for width in [360.0, 1000.0] {
-        let view = DiffView::load(&repo.0, "f", false, 1, None).unwrap();
+        let view = DiffView::load(&repo.0, "f", false, 1, None, None).unwrap();
         let mut state = GitUi {
             diff: Some(view),
             ..Default::default()

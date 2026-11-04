@@ -1,3 +1,4 @@
+use crate::dev_container::Runtime;
 use eframe::egui;
 use serde_json::{Value, json};
 use std::{
@@ -19,19 +20,33 @@ pub(crate) struct AppServer {
 }
 
 impl AppServer {
-    pub(crate) fn spawn(cwd: Option<&Path>, ctx: egui::Context) -> Result<Self, String> {
-        let mut command = Command::new("codex");
+    pub(crate) fn spawn(
+        cwd: Option<&Path>,
+        runtime: Option<&Runtime>,
+        ctx: egui::Context,
+    ) -> Result<Self, String> {
+        log::info!("spawn requested");
+        let mut command = runtime.map_or_else(
+            || Command::new("codex"),
+            |runtime| runtime.assistant_command("codex"),
+        );
+        if runtime.is_some() {
+            command.args(["-c", "cli_auth_credentials_store=\"file\""]);
+        }
         command
             .args(["app-server", "--listen", "stdio://"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        if let Some(path) = cwd {
+        if runtime.is_none()
+            && let Some(path) = cwd
+        {
             command.current_dir(path);
         }
-        let mut child = command
-            .spawn()
-            .map_err(|e| format!("Could not start codex app-server: {e}"))?;
+        let mut child = command.spawn().map_err(|e| {
+            log::warn!("Codex server startup failed; check executable and runtime configuration");
+            format!("Could not start codex app-server: {e}")
+        })?;
         let input = Arc::new(Mutex::new(
             child
                 .stdin
@@ -123,6 +138,7 @@ impl AppServer {
     }
 
     pub(crate) fn request(&mut self, method: &str, params: Value) -> Result<u64, String> {
+        log::debug!("Codex request method={method}");
         let id = self.next_id;
         self.next_id += 1;
         self.write(json!({"id":id,"method":method,"params":params}))?;
@@ -134,6 +150,7 @@ impl AppServer {
     }
 
     pub(crate) fn respond(&mut self, id: Value, result: Value) -> Result<(), String> {
+        log::debug!("respond requested");
         self.write(json!({"id":id,"result":result}))
     }
 
@@ -156,6 +173,7 @@ impl AppServer {
 
 impl Drop for AppServer {
     fn drop(&mut self) {
+        log::debug!("Codex transport shutting down");
         let _ = self.child.kill();
         let _ = self.child.wait();
     }

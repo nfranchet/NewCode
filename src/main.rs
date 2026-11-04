@@ -2,9 +2,11 @@
 
 mod app_server;
 mod codex_ui;
+mod dev_container;
 mod editor;
 mod git_ui;
 mod launch;
+mod logging;
 mod opencode_server;
 mod opencode_ui;
 mod settings;
@@ -17,13 +19,26 @@ use editor::EditorApp;
 use eframe::egui;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let result = run();
+    if result.is_err() {
+        log::error!("Application terminated with an error");
+    }
+    result
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let arguments = logging::Arguments::parse(std::env::args_os().skip(1))?;
+    logging::init(&arguments)?;
     if !cfg!(target_os = "linux") {
-        eprintln!("Focus Editor currently supports Linux only");
+        log::error!("Focus Editor currently supports Linux only");
         return Ok(());
     }
+    log::debug!("Launch arguments validated");
     if launch::detach()? {
+        log::debug!("Background editor spawned; returning shell prompt");
         return Ok(());
     }
+    log::info!("Application starting version={}", env!("CARGO_PKG_VERSION"));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1440.0, 900.0])
@@ -35,5 +50,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         options,
         Box::new(|cc| Ok(Box::new(EditorApp::new(cc)))),
     )?;
+    log::info!("Application stopped");
     Ok(())
 }

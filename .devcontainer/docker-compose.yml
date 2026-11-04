@@ -1,0 +1,14 @@
+
+services:
+  devcontainer:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/workspaces/NewCode
+      - cargo-cache-newcode:/usr/local/cargo:rw
+    command: sleep infinity
+
+
+volumes:
+  cargo-cache-newcode:

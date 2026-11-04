@@ -18,6 +18,7 @@ impl CodexUi {
         if self.initializing_id == id.as_u64() {
             self.initializing_id = None;
             if let Some(error) = error {
+                log::warn!("Codex request failed; details available in panel");
                 self.status = format!("Initialize failed: {error}");
                 return;
             }
@@ -31,6 +32,7 @@ impl CodexUi {
             self.status = "Finding previous session…".into();
         } else if let Some(method) = id.as_u64().and_then(|id| self.requests.remove(&id)) {
             if let Some(error) = error {
+                log::warn!("Codex request failed; details available in panel");
                 self.reject_go(id);
                 if method == "account/rateLimits/read" {
                     self.usage_error = error;

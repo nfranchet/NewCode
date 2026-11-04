@@ -1,5 +1,5 @@
 //! Codex panel state and lifecycle; rendering and protocol handling are separate modules.
-use crate::app_server::AppServer;
+use crate::{app_server::AppServer, dev_container::Runtime};
 use eframe::egui;
 use messages::{Message, PendingRequest};
 use serde_json::{Value, json};
@@ -46,6 +46,7 @@ pub(crate) struct CodexUi {
     pending: Vec<PendingRequest>,
     answer: String,
     plan: plan::PlanState,
+    runtime: Option<Runtime>,
 }
 
 impl Default for CodexUi {
@@ -77,16 +78,18 @@ impl Default for CodexUi {
             pending: Vec::new(),
             answer: String::new(),
             plan: plan::PlanState::default(),
+            runtime: None,
         }
     }
 }
 
 impl CodexUi {
     pub(crate) fn start(&mut self, cwd: Option<&Path>, ctx: egui::Context) {
+        log::info!("start requested");
         if self.server.is_some() {
             return;
         }
-        match AppServer::spawn(cwd, ctx) {
+        match AppServer::spawn(cwd, self.runtime.as_ref(), ctx) {
             Ok(mut server) => {
                 self.initializing_id = match server.request("initialize", json!({
                     "clientInfo":{"name":"focus_editor","title":"Focus Editor","version":env!("CARGO_PKG_VERSION")},
@@ -108,8 +111,26 @@ impl CodexUi {
             Err(error) => self.status = error,
         }
     }
+    pub(crate) fn set_runtime(&mut self, runtime: Option<&Runtime>) -> bool {
+        if self.runtime.as_ref() != runtime {
+            self.stop();
+            self.runtime = runtime.cloned();
+            true
+        } else {
+            false
+        }
+    }
+    pub(super) fn remote_cwd(&self, cwd: Option<&Path>) -> Option<std::path::PathBuf> {
+        cwd.and_then(|path| {
+            self.runtime.as_ref().map_or_else(
+                || Some(path.to_path_buf()),
+                |runtime| runtime.container_path(path).ok(),
+            )
+        })
+    }
 
     pub(crate) fn stop(&mut self) {
+        log::info!("stop requested");
         if self.thread_id.is_some() {
             self.resume_thread = self.thread_id.clone();
         }

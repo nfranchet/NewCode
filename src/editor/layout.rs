@@ -73,6 +73,7 @@ impl EditorApp {
                         .on_hover_text(root.display().to_string());
                     }
                     ui.separator();
+                    ui.menu_button("Dev Container", |ui| self.dev_container.menu(ui, ctx));
                     self.assistants_menu(ui, ctx);
                     ui.menu_button("Edit", |ui| {
                         if ui

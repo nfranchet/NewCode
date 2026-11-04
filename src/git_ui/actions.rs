@@ -2,7 +2,7 @@
 
 use super::{
     GitUi,
-    repository::{Snapshot, conflict, git, snapshot},
+    repository::{Snapshot, conflict, git_with, snapshot_with},
 };
 use super::{
     fingerprint::FileVersion,
@@ -20,6 +20,19 @@ pub(super) enum Action {
     Patch(PatchTask),
 }
 
+impl Action {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Refresh => "refresh",
+            Self::Index { stage: true, .. } => "stage",
+            Self::Index { .. } => "unstage",
+            Self::Commit(_) => "commit",
+            Self::Diff(..) => "diff",
+            Self::Patch(_) => "hunk",
+        }
+    }
+}
+
 pub(super) struct Reply {
     pub(super) snapshot: Result<Snapshot, String>,
     pub(super) message: Option<Result<String, String>>,
@@ -29,6 +42,7 @@ pub(super) struct Reply {
 
 impl GitUi {
     pub(super) fn start(&mut self, action: Action, ctx: &egui::Context) {
+        log::debug!("Git action requested action={}", action.label());
         if self.pending.is_some() {
             return;
         }
@@ -58,6 +72,7 @@ impl GitUi {
             .as_ref()
             .map(|s| s.root.clone())
             .unwrap_or(workspace.clone());
+        let runtime = self.runtime.clone();
         let generation = self.review_generation;
         let (tx, rx) = mpsc::channel();
         self.pending = Some(rx);
@@ -68,7 +83,9 @@ impl GitUi {
             let message = match action {
                 Action::Refresh => {
                     if let Some((id, path, expected)) = &review {
-                        if FileVersion::read(&root, path).map_or(true, |v| v != *expected) {
+                        if FileVersion::read(&root, path, runtime.as_ref())
+                            .map_or(true, |v| v != *expected)
+                        {
                             diff = Some(ReviewUpdate::Invalidated {
                                 id: *id,
                                 reason: "File or index changed. Reload diff to continue.".into(),
@@ -84,14 +101,14 @@ impl GitUi {
                         vec!["reset", "-q", "--"]
                     };
                     args.extend(paths.iter().map(String::as_str));
-                    Some(git(&root, &args).map(|_| "Index updated".into()))
+                    Some(git_with(&root, &args, runtime.as_ref()).map(|_| "Index updated".into()))
                 }
                 Action::Commit(message) => {
-                    let result = git(&root, &["commit", "-m", &message]);
+                    let result = git_with(&root, &["commit", "-m", &message], runtime.as_ref());
                     committed = result.is_ok();
                     Some(result.map(|v| String::from_utf8_lossy(&v).trim().into()))
                 }
-                Action::Patch(task) => match patch::apply(&root, &task) {
+                Action::Patch(task) => match patch::apply(&root, &task, runtime.as_ref()) {
                     Ok(applied) => {
                         diff = Some(ReviewUpdate::Applied(applied));
                         Some(Ok(if task.staged_after {
@@ -110,7 +127,8 @@ impl GitUi {
                     }
                 },
                 Action::Diff(path, staged) => {
-                    match DiffView::load(&root, &path, staged, generation, anchor) {
+                    match DiffView::load(&root, &path, staged, generation, anchor, runtime.as_ref())
+                    {
                         Ok(view) => {
                             diff = Some(ReviewUpdate::Loaded(Box::new(view)));
                             None
@@ -129,7 +147,7 @@ impl GitUi {
             }
             let _ = tx.send(Reply {
                 committed,
-                snapshot: snapshot(&workspace),
+                snapshot: snapshot_with(&workspace, runtime.as_ref()),
                 message,
                 diff,
             });
@@ -138,11 +156,17 @@ impl GitUi {
     }
     pub(super) fn poll_reply(&mut self) {
         if let Some(reply) = self.pending.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            log::debug!(
+                "Git reply snapshot_success={} action_success={}",
+                reply.snapshot.is_ok(),
+                reply.message.as_ref().is_none_or(|m| m.is_ok())
+            );
             self.pending = None;
             self.refreshed = Some(Instant::now());
             match reply.snapshot {
                 Ok(s) => self.snapshot = Some(s),
                 Err(e) => {
+                    log::warn!("Git status refresh failed; details available in Source Control");
                     self.message = e;
                 }
             }
@@ -150,11 +174,15 @@ impl GitUi {
                 match message {
                     Ok(m) => {
                         if reply.committed {
+                            log::info!("Git commit completed");
                             self.commit.clear();
                         }
                         self.message = m;
                     }
-                    Err(e) => self.message = e,
+                    Err(e) => {
+                        log::warn!("Git action failed; details available in Source Control");
+                        self.message = e;
+                    }
                 }
             }
             if let (Some(snapshot), Some((path, staged))) = (&self.snapshot, &mut self.diff_target)

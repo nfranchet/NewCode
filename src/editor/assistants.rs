@@ -10,6 +10,7 @@ impl EditorApp {
         enabled: bool,
         ctx: &egui::Context,
     ) {
+        log::info!("set_assistant_enabled requested");
         let cwd = self.settings.workspace.clone();
         match assistant {
             Assistant::Codex => {
@@ -106,6 +107,18 @@ impl EditorApp {
             }
         }
         self.assistant_workspace = Some(root.clone());
+        let runtime_changed = self.codex_ui.set_runtime(self.dev_container.runtime());
+        if runtime_changed
+            && self.settings.codex_enabled
+            && self.settings.codex_app_server
+            && !self.skip_codex_start
+        {
+            self.codex_ui.start(Some(&root), ctx.clone());
+        }
+        let opencode_runtime_changed = self.opencode_ui.set_runtime(self.dev_container.runtime());
+        if opencode_runtime_changed && self.settings.opencode_enabled && !self.skip_opencode_start {
+            self.opencode_ui.start(Some(&root), ctx.clone());
+        }
         self.normalize_assistant();
         self.opencode_ui.set_directory(&root);
         if self.settings.codex_enabled {

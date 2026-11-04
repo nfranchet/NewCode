@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OpenMode {
     Preview,
     Permanent,
@@ -31,11 +31,13 @@ impl EditorApp {
         self.open_document(path, OpenMode::Activate)
     }
     pub(super) fn keep_preview(&mut self, path: &Path) {
+        log::debug!("Pin preview path={}", path.display());
         if self.preview_file.as_deref() == Some(path) {
             self.preview_file = None;
         }
     }
     pub(super) fn mark_modified(&mut self) {
+        log::debug!("Document edited");
         self.dirty = true;
         if let Some(path) = self.active_file.clone() {
             self.keep_preview(&path);
@@ -47,6 +49,7 @@ impl EditorApp {
     }
 
     fn open_document(&mut self, path: PathBuf, mode: OpenMode) -> bool {
+        log::debug!("Open document path={} mode={mode:?}", path.display());
         if self.active_file.as_ref() == Some(&path) {
             if mode == OpenMode::Permanent || self.dirty {
                 self.keep_preview(&path);
@@ -68,6 +71,7 @@ impl EditorApp {
             Ok(content) => content,
             Err(error) => {
                 self.status = format!("Could not open file: {error}");
+                log::warn!("Document read failed kind={:?}", error.kind());
                 return false;
             }
         };
@@ -125,6 +129,7 @@ impl EditorApp {
         }
     }
     pub(super) fn save_document(&mut self, path: &Path) -> bool {
+        log::debug!("Save document path={}", path.display());
         let active = self.active_file.as_deref() == Some(path);
         let content = if active {
             &self.buffer
@@ -144,12 +149,18 @@ impl EditorApp {
             }
             Err(error) => {
                 self.status = format!("Save failed: {error}");
+                log::warn!("Document save failed kind={:?}", error.kind());
                 false
             }
         }
     }
 
     pub(super) fn close_file(&mut self, path: PathBuf) {
+        log::debug!(
+            "Close document path={} modified={}",
+            path.display(),
+            self.file_is_dirty(&path)
+        );
         if self.file_is_dirty(&path) {
             self.close_confirmation = Some(path);
         } else {

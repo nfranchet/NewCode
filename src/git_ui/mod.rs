@@ -1,5 +1,6 @@
 //! Source Control state and public panel entry points.
 
+use crate::dev_container::Runtime;
 use crate::ui_theme::{self as theme, Icon};
 use actions::Reply;
 use eframe::egui;
@@ -35,14 +36,21 @@ pub(crate) struct GitUi {
     review_generation: u64,
     diff_target: Option<(String, bool)>,
     diff_hidden: bool,
+    runtime: Option<Runtime>,
 }
 
 impl GitUi {
-    pub(crate) fn ui(&mut self, ui: &mut egui::Ui, workspace: Option<&Path>) -> Option<PathBuf> {
+    pub(crate) fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        workspace: Option<&Path>,
+        runtime: Option<&Runtime>,
+    ) -> Option<PathBuf> {
         configure_input_style(ui);
-        if self.workspace.as_deref() != workspace {
+        if self.workspace.as_deref() != workspace || self.runtime.as_ref() != runtime {
             *self = Self {
                 workspace: workspace.map(Path::to_path_buf),
+                runtime: runtime.cloned(),
                 ..Self::default()
             };
         }

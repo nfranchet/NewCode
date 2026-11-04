@@ -66,6 +66,7 @@ impl OpenCodeUi {
         });
     }
     pub(super) fn event(&mut self, event: Value) {
+        log::trace!("OpenCode stream event received");
         let kind = string(&event, "type");
         let props = event
             .get("properties")

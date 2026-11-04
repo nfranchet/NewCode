@@ -1,6 +1,7 @@
 //! Validate and apply one retained hunk to the index, including its exact inverse.
 
 use super::fingerprint::FileVersion;
+use crate::dev_container::Runtime;
 use std::{
     io::Write,
     path::Path,
@@ -25,14 +26,26 @@ pub(super) struct AppliedPatch {
     pub(super) warning: Option<String>,
 }
 
-pub(super) fn apply(root: &Path, task: &PatchTask) -> Result<AppliedPatch, String> {
-    if FileVersion::read(root, &task.path)? != task.expected {
+pub(super) fn apply(
+    root: &Path,
+    task: &PatchTask,
+    runtime: Option<&Runtime>,
+) -> Result<AppliedPatch, String> {
+    if FileVersion::read(root, &task.path, runtime)? != task.expected {
         return Err(
             "The file or index changed outside this review. Reload diff before continuing.".into(),
         );
     }
-    let mut command = Command::new("git");
-    command.current_dir(root).args(["apply", "--cached"]);
+    let mut command = if let Some(runtime) = runtime {
+        let mut command = runtime.command("git");
+        command.arg("-C").arg(runtime.container_path(root)?);
+        command
+    } else {
+        let mut command = Command::new("git");
+        command.current_dir(root);
+        command
+    };
+    command.args(["apply", "--cached"]);
     if task.reverse {
         command.arg("--reverse");
     }
@@ -52,7 +65,7 @@ pub(super) fn apply(root: &Path, task: &PatchTask) -> Result<AppliedPatch, Strin
         return Err(String::from_utf8_lossy(&output.stderr).trim().into());
     }
     write_result.map_err(|e| e.to_string())?;
-    let (version, warning) = match FileVersion::read(root, &task.path) {
+    let (version, warning) = match FileVersion::read(root, &task.path, runtime) {
         Ok(version) => {
             let warning = (!version.same_sources(&task.expected)).then(|| {
                 "The file changed during the action. Reload diff before continuing.".into()

@@ -4,6 +4,11 @@ use std::path::Path;
 
 impl EditorApp {
     pub(super) fn update_open_path(&mut self, from: &Path, to: &Path) {
+        log::info!(
+            "Document path changed from={} to={}",
+            from.display(),
+            to.display()
+        );
         let remap = |path: &Path| match path.strip_prefix(from) {
             Ok(suffix) => to.join(suffix),
             Err(_) => path.to_path_buf(),

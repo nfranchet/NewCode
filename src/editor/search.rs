@@ -123,6 +123,7 @@ pub(super) fn highlight_find_matches(
 
 impl EditorApp {
     pub(super) fn search_workspace(&mut self) {
+        log::debug!("Workspace search requested");
         let query = self.search_query.trim().to_lowercase();
         self.search_results.clear();
         if query.is_empty() {
@@ -166,6 +167,10 @@ impl EditorApp {
     }
 
     pub(super) fn open_search_result(&mut self, path: PathBuf, line_number: usize) {
+        log::debug!(
+            "Open search result path={} line={line_number}",
+            path.display()
+        );
         if self.open_file(path) {
             self.pending_editor_cursor = Some(
                 self.buffer
@@ -178,6 +183,7 @@ impl EditorApp {
     }
 
     pub(super) fn navigate_find(&mut self, ctx: &egui::Context, reverse: bool) {
+        log::debug!("Navigate find reverse={reverse}");
         let matches = find_ranges(&self.buffer, &self.find_query);
         if matches.is_empty() {
             self.find_active = None;

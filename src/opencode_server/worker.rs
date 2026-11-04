@@ -1,5 +1,6 @@
 //! Process startup, bounded HTTP requests, and process cleanup.
 use super::{Event, Events, Request, stream};
+use crate::dev_container::Runtime;
 use reqwest::blocking::Client;
 use serde_json::Value;
 use std::{
@@ -17,17 +18,20 @@ use std::{
 
 pub(super) fn run(
     cwd: PathBuf,
+    runtime: Option<Runtime>,
     commands: Receiver<Request>,
     events: Events,
     cancel: Arc<AtomicBool>,
     owned: Arc<Mutex<Option<Child>>>,
 ) {
-    let result = serve(&cwd, commands, &events, &cancel, &owned);
+    log::debug!("OpenCode worker starting");
+    let result = serve(&cwd, runtime.as_ref(), commands, &events, &cancel, &owned);
     if let Some(mut child) = owned.lock().unwrap().take() {
         super::kill(&mut child);
         let _ = child.wait();
     }
     if !cancel.load(Ordering::Relaxed) {
+        log::warn!("OpenCode worker stopped unexpectedly; details available in panel");
         events.send(Event::Closed(
             result.err().unwrap_or_else(|| "OpenCode stopped".into()),
         ));
@@ -35,6 +39,7 @@ pub(super) fn run(
 }
 fn serve(
     cwd: &std::path::Path,
+    runtime: Option<&Runtime>,
     commands: Receiver<Request>,
     events: &Events,
     cancel: &Arc<AtomicBool>,
@@ -46,18 +51,32 @@ fn serve(
         if cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let mut command = Command::new("opencode");
+        let mut command = runtime.map_or_else(
+            || Command::new("opencode"),
+            |runtime| runtime.assistant_command("opencode"),
+        );
         command.process_group(0);
-        let mut child = command
-            .args(["serve", "--hostname", "127.0.0.1", "--port", "0"])
-            .current_dir(cwd)
+        let child = command
+            .args([
+                "serve",
+                "--hostname",
+                if runtime.is_some() {
+                    "0.0.0.0"
+                } else {
+                    "127.0.0.1"
+                },
+                "--port",
+                "0",
+            ])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                format!("Could not start OpenCode: {e}. Install opencode and check PATH.")
-            })?;
+            .stderr(Stdio::piped());
+        if runtime.is_none() {
+            child.current_dir(cwd);
+        }
+        let mut child = child.spawn().map_err(|e| {
+            format!("Could not start OpenCode: {e}. Install opencode and check PATH.")
+        })?;
         let stdout = child.stdout.take().ok_or("OpenCode stdout unavailable")?;
         let stderr = child.stderr.take().ok_or("OpenCode stderr unavailable")?;
         *guard = Some(child);
@@ -99,16 +118,32 @@ fn serve(
         }
     };
     let parsed = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
-    if parsed.scheme() != "http" || parsed.host_str() != Some("127.0.0.1") {
+    if parsed.scheme() != "http"
+        || !matches!(parsed.host_str(), Some("127.0.0.1") | Some("0.0.0.0"))
+    {
         return Err("OpenCode returned an unexpected server address".into());
     }
+    let cwd = runtime.map_or_else(
+        || Ok(cwd.to_path_buf()),
+        |runtime| runtime.container_path(cwd),
+    )?;
+    let url = if let Some(runtime) = runtime {
+        let address = runtime.container_ip()?;
+        format!(
+            "http://{address}:{}",
+            parsed.port().ok_or("OpenCode did not return a port")?
+        )
+    } else {
+        url
+    };
     let client = Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(3))
         .build()
         .map_err(|e| e.to_string())?;
-    let health = execute(&client, &url, cwd, "GET", "/global/health", None)?;
+    log::debug!("OpenCode HTTP connection established");
+    let health = execute(&client, &url, &cwd, "GET", "/global/health", None)?;
     events.send(Event::Ready(
         health["version"].as_str().unwrap_or("unknown").into(),
     ));
@@ -140,7 +175,7 @@ fn serve(
                 let result = execute(
                     &client,
                     &url,
-                    cwd,
+                    &cwd,
                     &request.method,
                     &request.path,
                     request.body.as_ref(),

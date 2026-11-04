@@ -6,6 +6,7 @@ use eframe::egui::{
 };
 impl EditorApp {
     pub(super) fn copy_selection(&mut self, ctx: &egui::Context) {
+        log::debug!("Copy selection requested");
         let id = self.editor_id();
         let Some(range) = egui::TextEdit::load_state(ctx, id)
             .and_then(|state| state.cursor.char_range())
@@ -26,6 +27,7 @@ impl EditorApp {
     }
 
     pub(super) fn paste_from_clipboard(&mut self, ctx: &egui::Context) {
+        log::debug!("Clipboard paste requested");
         ctx.memory_mut(|memory| memory.request_focus(self.editor_id()));
         ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         self.status = "Paste requested".into();

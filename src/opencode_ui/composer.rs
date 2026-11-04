@@ -3,6 +3,8 @@ use super::{OpenCodeUi, Operation, short};
 use eframe::egui;
 impl OpenCodeUi {
     pub(super) fn composer(&mut self, ui: &mut egui::Ui) {
+        let selection_before = log::log_enabled!(log::Level::Debug)
+            .then(|| (self.model.clone(), self.variant.clone(), self.agent.clone()));
         let id = ui.make_persistent_id("opencode_composer");
         if self.can_send() && ui.memory(|m| m.has_focus(id)) {
             let backwards = ui.input_mut(|i| {
@@ -73,6 +75,11 @@ impl OpenCodeUi {
             }
             self.selectors(ui);
         });
+        if selection_before.is_some_and(|before| {
+            before != (self.model.clone(), self.variant.clone(), self.agent.clone())
+        }) {
+            log::debug!("Assistant model/thinking/mode selection changed");
+        }
     }
     fn selectors(&mut self, ui: &mut egui::Ui) {
         let enabled = self.online && !self.locked();

@@ -9,6 +9,7 @@ impl OpenCodeUi {
         path: String,
         body: Option<Value>,
     ) -> bool {
+        log::debug!("OpenCode request method={method}");
         match self
             .server
             .as_mut()
@@ -47,6 +48,7 @@ impl OpenCodeUi {
     }
 
     pub(super) fn select_session(&mut self, id: Option<String>) {
+        log::info!("OpenCode session selection existing={}", id.is_some());
         if self.busy || !self.permissions.is_empty() || !self.questions.is_empty() {
             return;
         }
@@ -127,6 +129,7 @@ impl OpenCodeUi {
             && !self.locked()
     }
     pub(super) fn submit(&mut self, go: bool) {
+        log::debug!("OpenCode prompt submission requested go={go}");
         if !self.can_send() || (go && !self.go_ready()) {
             return;
         }

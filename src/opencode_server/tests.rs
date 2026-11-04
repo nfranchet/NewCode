@@ -93,7 +93,7 @@ fn installed_server_catalog_smoke() {
         std::process::id()
     ));
     std::fs::create_dir_all(&root).unwrap();
-    let mut server = Server::spawn(&root, egui::Context::default());
+    let mut server = Server::spawn(&root, None, egui::Context::default());
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     let mut ready = false;
     while std::time::Instant::now() < deadline && !ready {

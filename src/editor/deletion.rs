@@ -16,6 +16,7 @@ pub(super) struct Deletion {
 
 impl EditorApp {
     pub(super) fn confirm_delete(&mut self, path: &Path) -> Result<(), String> {
+        log::debug!("Delete confirmed path={}", path.display());
         let metadata = fs::symlink_metadata(path).map_err(|e| format!("Delete failed: {e}"))?;
         let directory = metadata.is_dir();
         let result = if directory {
@@ -23,7 +24,10 @@ impl EditorApp {
         } else {
             fs::remove_file(path)
         };
-        result.map_err(|e| format!("Delete failed: {e}"))?;
+        result.map_err(|e| {
+            log::warn!("Filesystem deletion failed kind={:?}", e.kind());
+            format!("Delete failed: {e}")
+        })?;
         let affected = |p: &Path| p == path || (directory && p.starts_with(path));
         self.open_files.retain(|p| !affected(p));
         self.unsaved_files.retain(|p, _| !affected(p));
@@ -53,6 +57,7 @@ impl EditorApp {
             self.creation = None;
         }
         self.status = format!("Deleted {}", path.display());
+        log::info!("Deleted entry path={}", path.display());
         Ok(())
     }
 

@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 
 impl CodexUi {
     pub(super) fn show_composer(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let selection_before = log::log_enabled!(log::Level::Debug)
+            .then(|| (self.model.clone(), self.effort.clone(), self.mode.clone()));
         ui.separator();
         let composer_top = ui.cursor().top();
         let connected = self.thread_id.is_some()
@@ -195,6 +197,11 @@ impl CodexUi {
         if (measured_height - self.composer_height).abs() > 1.0 {
             self.composer_height = measured_height;
             ctx.request_repaint();
+        }
+        if selection_before.is_some_and(|before| {
+            before != (self.model.clone(), self.effort.clone(), self.mode.clone())
+        }) {
+            log::debug!("Assistant model/thinking/mode selection changed");
         }
     }
 }

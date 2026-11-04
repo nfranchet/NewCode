@@ -64,6 +64,7 @@ impl EditorApp {
                     response
                 });
                 if clicked {
+                    log::debug!("Explorer folder expansion toggled");
                     folder.toggle();
                 }
                 let (toggle, header, _) = folder.body(|ui| self.tree(ui, &path));

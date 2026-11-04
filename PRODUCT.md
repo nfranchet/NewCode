@@ -54,6 +54,8 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 ## Platform and boundaries
 
 - Linux desktop application using Rust and eframe/egui, with native filesystem operations and a PTY.
+- Support Compose-based Dev Containers directly through Docker and the Docker Compose plugin. The native editor keeps the bind-mounted files on the host while the shell, Git, Codex, and OpenCode execute with `docker exec` in the selected service. Do not require, install, or invoke Node.js or the Dev Container CLI. Containers remain running on editor exit; start, reconnect, stop, and rebuild are explicit toolbar actions.
+- Interpret only the Compose selection fields needed to connect (`dockerComposeFile`, `service`, `workspaceFolder`, and `remoteUser`). Dockerfiles and Compose define provisioning; Dev Container Features and lifecycle commands are not interpreted.
 - Git is required for Source Control; an installed, authenticated Codex CLI is required for the Codex panel. Both capabilities depend on their local tools and configuration.
 - Automatic Codex startup can be disabled in saved settings or with `--no-codex`; `--no-opencode` skips OpenCode startup. Visibility is independently controlled by the Assistants menu.
 - No extension marketplace, debugger, compiler-backed language services, Git history/branch-management UI, individual-line staging, or unsaved-buffer recovery is currently provided.
@@ -64,3 +66,11 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 Launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-codex`. Provide `--foreground` for terminal diagnostics. Append background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
 
 Use the native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
+
+## Diagnostics
+
+Default application logging to Info, reserving it for important lifecycle paths. Use Debug for discrete application actions, Warn for recovered failures/configuration issues, Error for fatal failures, and Trace for low-level metadata. Provide `--log-level LEVEL` and `--log-level=LEVEL`, preserve them across background launching, and keep their values out of workspace selection. Explicit levels override `RUST_LOG`; otherwise honor component filters and default dependencies to Warn. Include timestamp, level, PID, and component. Write stderr in the foreground and the existing launch log in the background. Exclude document/prompt/answer/terminal contents, raw payloads, credentials, and per-frame rendering noise.
+
+Dev Container failures use compact menu feedback with Retry; detailed bounded diagnostics go to the application log once per configuration or lifecycle failure, with credentials and build-command payloads redacted. Preserve stdout, stderr, and process status; emit separate timestamped records for diagnostic lines, keeping surrounding failure explanations and exit codes. Successful connection and shutdown use Info.
+
+Dev Container assistant authentication: install both native CLIs with official curl installers in the bundled image. Before container connection/reconnection, copy only host authentication files atomically with private permissions as the configured remote user; preserve package installations. Forward supported provider/server authentication environment variables by name. Keep history, databases, configuration, and refreshed container credentials independent. Missing host files retain container credentials with a warning; failed transfers fail connection without logging secrets.

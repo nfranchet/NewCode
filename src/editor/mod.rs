@@ -52,6 +52,7 @@ pub(crate) struct EditorApp {
     buffer: String,
     dirty: bool,
     top: Option<Terminal>,
+    dev_container: crate::dev_container::DevContainer,
     codex_ui: CodexUi,
     opencode_ui: crate::opencode_ui::OpenCodeUi,
     assistant_workspace: Option<PathBuf>,
@@ -83,16 +84,28 @@ impl EditorApp {
         let settings_path = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("focus-editor/settings.toml");
-        let settings: Settings = fs::read_to_string(&settings_path)
-            .ok()
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default();
+        let settings: Settings = match fs::read_to_string(&settings_path) {
+            Ok(text) => match toml::from_str(&text) {
+                Ok(settings) => settings,
+                Err(_) => {
+                    log::warn!("Invalid settings configuration; using defaults");
+                    Settings::default()
+                }
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Settings::default(),
+            Err(error) => {
+                log::warn!(
+                    "Could not read settings kind={:?}; using defaults",
+                    error.kind()
+                );
+                Settings::default()
+            }
+        };
         let args: Vec<_> = std::env::args_os().skip(1).collect();
         let no_codex = args.iter().any(|arg| arg == "--no-codex");
-        let directory_argument = args
-            .iter()
-            .find(|arg| !arg.to_string_lossy().starts_with('-'))
-            .map(PathBuf::from)
+        let directory_argument = crate::logging::Arguments::parse(args.clone())
+            .ok()
+            .and_then(|a| a.workspace)
             .filter(|p| p.is_dir());
         let mut settings = settings;
         // Older settings launched Codex as a shell command. Keep the terminal a normal shell.
@@ -106,6 +119,10 @@ impl EditorApp {
             .send_viewport_cmd(egui::ViewportCommand::Title(crate::launch::window_title(
                 settings.workspace.as_deref(),
             )));
+        log::info!(
+            "Workspace initialized selected={}",
+            settings.workspace.is_some()
+        );
         let cwd = settings.workspace.as_deref();
         let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
         let mut codex_ui = CodexUi::default();
@@ -153,6 +170,7 @@ impl EditorApp {
             buffer,
             dirty: false,
             top,
+            dev_container: Default::default(),
             codex_ui,
             opencode_ui,
             assistant_workspace,
@@ -181,13 +199,31 @@ impl EditorApp {
     }
 
     fn render(&mut self, ctx: &egui::Context) {
+        self.dev_container
+            .sync_workspace(self.settings.workspace.as_deref());
+        if self.dev_container.tick() {
+            let cwd = self.settings.workspace.clone();
+            self.top = Terminal::spawn_with_runtime(
+                "",
+                cwd.as_deref(),
+                self.dev_container.runtime(),
+                ctx.clone(),
+            )
+            .ok();
+            self.status = self
+                .dev_container
+                .label()
+                .map(|name| format!("Connected to {name}"))
+                .unwrap_or_else(|| "Dev Container stopped".into());
+        }
         let opened_find = self.editor_shortcuts(ctx);
         self.toolbar(ctx);
         self.update_window_title(ctx);
         self.update_assistants(ctx);
         self.status_bar(ctx);
         let cwd = self.settings.workspace.clone();
-        self.shell_panel(ctx, cwd.as_deref());
+        let runtime = self.dev_container.runtime().cloned();
+        self.shell_panel(ctx, cwd.as_deref(), runtime.as_ref());
         self.activity_bar(ctx);
         self.cancel_creation_for_workspace_change();
         self.sidebar(ctx);

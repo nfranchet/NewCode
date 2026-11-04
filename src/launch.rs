@@ -100,6 +100,23 @@ mod tests {
     use super::*;
     use std::ffi::OsStr;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn log_level_arguments_are_forwarded_to_background_child() {
+        let root = std::env::temp_dir().join(format!("focus-log-forward-{}", std::process::id()));
+        let args = vec![
+            OsString::from("--log-level"),
+            OsString::from("debug"),
+            OsString::from("project"),
+        ];
+        let command =
+            detached_command(Path::new("/bin/true"), &args, &root.join("launch.log")).unwrap();
+        let forwarded: Vec<_> = command.get_args().map(|a| a.to_owned()).collect();
+        assert_eq!(&forwarded[..3], args.as_slice());
+        assert_eq!(forwarded[3], CHILD_FLAG);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn foreground_and_child_flags_prevent_recursion() {
         assert!(should_detach(&[]));

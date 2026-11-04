@@ -5,8 +5,9 @@ use super::{
     fingerprint::FileVersion,
     patch::{AppliedPatch, PatchTask},
     patch_model::{self, Hunk},
-    repository::git,
+    repository::git_with,
 };
+use crate::dev_container::Runtime;
 use std::path::Path;
 
 pub(super) struct DiffView {
@@ -35,8 +36,9 @@ impl DiffView {
         staged: bool,
         id: u64,
         anchor: Option<usize>,
+        runtime: Option<&Runtime>,
     ) -> Result<Self, String> {
-        let version = FileVersion::read(root, path)?;
+        let version = FileVersion::read(root, path, runtime)?;
         let mut args = vec![
             "diff",
             "--no-color",
@@ -50,8 +52,8 @@ impl DiffView {
             args.push("--cached");
         }
         args.extend(["--", path]);
-        let bytes = git(root, &args)?;
-        if FileVersion::read(root, path)? != version {
+        let bytes = git_with(root, &args, runtime)?;
+        if FileVersion::read(root, path, runtime)? != version {
             return Err("The file changed while loading its diff. Reload diff.".into());
         }
         let mut parsed = patch_model::parse(&bytes, staged);

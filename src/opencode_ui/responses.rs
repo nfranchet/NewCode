@@ -3,6 +3,7 @@ use super::{OpenCodeUi, Operation, string};
 use serde_json::Value;
 impl OpenCodeUi {
     pub(super) fn reply(&mut self, id: u64, result: Result<Value, String>) {
+        log::debug!("OpenCode response id={id} success={}", result.is_ok());
         let Some(pending) = self.requests.remove(&id) else {
             return;
         };
@@ -24,6 +25,7 @@ impl OpenCodeUi {
                 {
                     return;
                 }
+                log::warn!("OpenCode request failed; details available in the panel");
                 self.error = Some(error.clone());
                 if let Operation::Send { previous_agent, .. } = &pending.operation {
                     self.busy = false;

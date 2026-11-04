@@ -23,6 +23,10 @@ impl NewEntry {
     }
 
     pub(super) fn create(&self) -> Result<PathBuf, String> {
+        log::debug!(
+            "Create filesystem entry requested directory={}",
+            self.is_dir
+        );
         if self.name.trim().is_empty()
             || matches!(self.name.as_str(), "." | "..")
             || self.name.contains(['/', '\\', '\0'])
@@ -39,14 +43,16 @@ impl NewEntry {
                 .open(&path)
                 .map(|_| ())
         };
-        result
-            .map(|_| path)
-            .map_err(|e| format!("Could not create entry: {e}"))
+        result.map(|_| path).map_err(|e| {
+            log::warn!("Filesystem entry creation failed kind={:?}", e.kind());
+            format!("Could not create entry: {e}")
+        })
     }
 }
 
 impl EditorApp {
     pub(super) fn create_entry(&mut self, is_dir: bool) {
+        log::debug!("Begin inline creation directory={is_dir}");
         let parent = self
             .active_file
             .as_deref()
@@ -109,6 +115,7 @@ impl EditorApp {
         if owns_keyboard
             && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
         {
+            log::debug!("Inline creation cancelled");
             ui.memory_mut(|m| m.surrender_focus(id));
             return;
         }
@@ -126,6 +133,7 @@ impl EditorApp {
                 }
             }
         } else if response.lost_focus() {
+            log::debug!("Inline creation cancelled after focus change");
             return;
         }
         if !entry.error.is_empty() {
