@@ -54,6 +54,8 @@ Focus Editor can use a Docker Compose development container without Node.js or t
 
 The built-in backend supports Compose-based configurations with `dockerComposeFile`, `service`, `workspaceFolder`, and optional `remoteUser`. It starts the service with Docker Compose, then runs the integrated shell, Source Control commands, Codex, and OpenCode with `docker exec` in that container. Explorer, search, editing, and saved files stay on the host bind mount.
 
+The launcher keeps the workspace root as Compose's project directory, so `context: .` and the `.` workspace bind mount stay at the repository root. If a relative Dockerfile is missing there, it checks beside the first Compose file. For conventional `Dockerfile`/`.Dockerfile` names, it can fall back to the existing `.devcontainer/Dockerfile` and logs a warning. It supplies only the resolved Dockerfile path through a temporary in-memory Compose override; configuration files are never rewritten. Valid configured Dockerfiles take priority; missing custom Dockerfile names remain errors.
+
 Docker Engine and the Docker Compose plugin are required. Node.js and `@devcontainers/cli` are not required or installed. The bundled image installs Codex and OpenCode using their official curl installers as `vscode`, with both commands available to noninteractive `docker exec`. Custom images must provide the tools you enable. Dev Container Features and lifecycle commands are not interpreted by Focus Editor; express required setup in the Dockerfile or Compose service instead.
 
 Skip automatic Codex startup for a launch:
