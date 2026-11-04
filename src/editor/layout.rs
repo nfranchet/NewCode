@@ -6,6 +6,21 @@ use eframe::egui::{self, Color32};
 use std::path::Path;
 
 impl EditorApp {
+    pub(super) fn update_window_title(&self, ctx: &egui::Context) {
+        let title = crate::launch::window_title(self.settings.workspace.as_deref());
+        let id = egui::Id::new("workspace_window_title");
+        let changed = ctx.data_mut(|data| {
+            if data.get_temp::<String>(id).as_ref() == Some(&title) {
+                return false;
+            }
+            data.insert_temp(id, title.clone());
+            true
+        });
+        if changed {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        }
+    }
+
     pub(super) fn editor_shortcuts(&mut self, ctx: &egui::Context) -> bool {
         let opened_find = ctx
             .input(|input| input.modifiers.command && input.key_pressed(egui::Key::F))
@@ -43,11 +58,14 @@ impl EditorApp {
                         self.choose_workspace();
                     }
                     if let Some(root) = self.settings.workspace.as_ref() {
+                        let root = crate::launch::workspace_display_path(root);
                         ui.add_sized(
                             [180.0, 24.0],
                             egui::Label::new(
                                 egui::RichText::new(
-                                    root.file_name().unwrap_or_default().to_string_lossy(),
+                                    root.file_name()
+                                        .unwrap_or(root.as_os_str())
+                                        .to_string_lossy(),
                                 )
                                 .color(theme::MUTED),
                             )

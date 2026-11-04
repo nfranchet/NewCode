@@ -10,6 +10,18 @@ Install a recent Rust toolchain and the system libraries required by eframe/wini
 cargo run --release
 ```
 
+The editor opens in the background and immediately releases the terminal. Each launch opens a separate instance. Its window title is **Focus Editor — workspace-name**, identifying the current workspace in Linux window lists that show window titles. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
+
+Keep the editor attached to the terminal for debugging:
+
+```sh
+cargo run --release -- --foreground
+# Or, for an installed executable:
+focus-editor --foreground
+```
+
+Background output and startup errors are appended to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, usually `~/.local/share/focus-editor/logs/launch.log`. Failures to create the log or spawn the editor are reported in the launching terminal. Errors after detachment are recorded in the log.
+
 Open a workspace directly:
 
 ```sh
@@ -87,6 +99,12 @@ Enter a message below the file groups, then click **Commit staged changes**. Onl
 
 Returning to Explorer or Search shows the active editor buffer without reloading it. Returning to Source Control can show its retained diff. Selecting a file tab or closing the preview dismisses the diff.
 
+## Shell keyboard input
+
+Click the terminal surface to give it keyboard focus. **Tab** performs shell completion; **Shift+Tab**, **Escape**, arrows, Home/End, Insert/Delete, Page Up/Down, and F1–F12 go to the terminal. Ctrl and Alt combinations reach the shell, including **Ctrl+C** to interrupt, **Ctrl+R** to search history, and **Ctrl+W** to delete the previous word. Editor shortcuts are suspended while the terminal owns focus. Click the editor or Codex to return keyboard input there.
+
+**Ctrl+V** remains clipboard paste. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The default shell remains Bash; running `zsh` inside the terminal supports completion and command-line editing. Shortcuts reserved by your Linux desktop remain controlled by the desktop.
+
 ## Codex
 
 The panel starts `codex app-server` and exchanges JSONL messages over stdio. **Start** and **Stop** control the connection; **Interrupt** stops an active turn. Header badges show **Ready**, **Running**, **Waiting for you**, or **Offline**, with additional details on hover.
@@ -137,6 +155,9 @@ Expand **Usage / status** for the session ID, model, account limits, session tok
 | Escape | New-entry field | Cancel creation |
 | Escape | Delete confirmation | Cancel deletion |
 | Space | Focused Source Control file row | Stage / unstage the file |
+| Tab / Shift+Tab, Escape, navigation, F1–F12 | Terminal | Send to the shell |
+| Ctrl+C / Ctrl+R / Ctrl+W | Terminal | Interrupt / history search / delete previous word |
+| Ctrl+V | Terminal | Paste |
 | Ctrl+Enter | Codex message box | Send |
 | Tab / Shift+Tab | Codex message box, while idle | Next / previous mode |
 
@@ -149,6 +170,6 @@ The application uses one crate with three feature module directories:
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 
-Other top-level modules provide the shared theme/icons, settings, terminal state, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
+Other top-level modules provide the shared theme/icons, settings, terminal state and input encoding, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.

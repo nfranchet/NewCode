@@ -34,3 +34,28 @@ fn themed_window_fits_compact_and_standard_sizes() {
         }
     }
 }
+
+#[test]
+fn native_title_tracks_workspace_changes_without_redundant_commands() {
+    let ctx = egui::Context::default();
+    let mut app = test_app();
+    for (workspace, expected) in [
+        (Some("/projects/first"), Some("Focus Editor — first")),
+        (Some("/projects/first"), None),
+        (Some("/projects/second"), Some("Focus Editor — second")),
+        (None, Some("Focus Editor")),
+    ] {
+        app.settings.workspace = workspace.map(Into::into);
+        let output = ctx.run(Default::default(), |ctx| app.update_window_title(ctx));
+        let titles: Vec<_> = output
+            .viewport_output
+            .values()
+            .flat_map(|viewport| viewport.commands.iter())
+            .filter_map(|command| match command {
+                egui::ViewportCommand::Title(title) => Some(title.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(titles, expected.into_iter().collect::<Vec<_>>());
+    }
+}

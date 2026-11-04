@@ -36,11 +36,26 @@ impl EditorApp {
                 (available.x / cell_w.max(1.0)).floor() as usize,
                 (available.y / line_h.max(1.0)).floor() as usize,
             );
-            let (rect, response) = ui.allocate_exact_size(available, egui::Sense::click());
+            let (_, rect) = ui.allocate_space(available);
+            let id = super::terminal_input::terminal_id();
+            let response = ui.interact(rect, id, egui::Sense::click());
+            ctx.data_mut(|data| data.insert_temp(id.with("rect"), rect));
             if response.clicked() {
                 response.request_focus();
             }
-            t.focused = response.has_focus();
+            if response.has_focus() {
+                ui.memory_mut(|memory| {
+                    memory.set_focus_lock_filter(
+                        id,
+                        egui::EventFilter {
+                            tab: true,
+                            horizontal_arrows: true,
+                            vertical_arrows: true,
+                            escape: true,
+                        },
+                    )
+                });
+            }
             ui.painter().rect_filled(rect, 0.0, theme::TERMINAL_BG);
             for (y, line) in t.cells.iter().enumerate() {
                 let mut job = LayoutJob::default();
@@ -63,7 +78,7 @@ impl EditorApp {
                     Color32::WHITE,
                 );
             }
-            if t.focused {
+            if response.has_focus() {
                 let cursor = egui::Rect::from_min_size(
                     rect.min + egui::vec2(t.cursor_x as f32 * cell_w, t.cursor_y as f32 * line_h),
                     egui::vec2(cell_w, line_h),
@@ -74,50 +89,6 @@ impl EditorApp {
                     egui::Stroke::new(1.0_f32, Color32::WHITE),
                     egui::StrokeKind::Inside,
                 );
-                for event in ui.input(|i| i.events.clone()) {
-                    match event {
-                        egui::Event::Text(s) | egui::Event::Paste(s) => t.send(s.as_bytes()),
-                        egui::Event::Key {
-                            key,
-                            pressed: true,
-                            modifiers,
-                            ..
-                        } => {
-                            let bytes: &[u8] = if modifiers.ctrl || modifiers.command {
-                                match key {
-                                    egui::Key::C => &[3],
-                                    egui::Key::D => &[4],
-                                    egui::Key::Z => &[26],
-                                    egui::Key::A => &[1],
-                                    egui::Key::E => &[5],
-                                    egui::Key::L => &[12],
-                                    _ => &[],
-                                }
-                            } else {
-                                match key {
-                                    egui::Key::Enter => b"\r",
-                                    egui::Key::Backspace => b"\x7f",
-                                    egui::Key::Tab => b"\t",
-                                    egui::Key::Escape => b"\x1b",
-                                    egui::Key::ArrowUp => b"\x1b[A",
-                                    egui::Key::ArrowDown => b"\x1b[B",
-                                    egui::Key::ArrowRight => b"\x1b[C",
-                                    egui::Key::ArrowLeft => b"\x1b[D",
-                                    egui::Key::Home => b"\x1b[H",
-                                    egui::Key::End => b"\x1b[F",
-                                    egui::Key::Delete => b"\x1b[3~",
-                                    egui::Key::PageUp => b"\x1b[5~",
-                                    egui::Key::PageDown => b"\x1b[6~",
-                                    _ => &[],
-                                }
-                            };
-                            if !bytes.is_empty() {
-                                t.send(bytes);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
             }
         } else {
             ui.colored_label(Color32::LIGHT_RED, "Terminal failed to start");

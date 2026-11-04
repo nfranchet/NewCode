@@ -25,7 +25,7 @@ pub(crate) struct Terminal {
     pub(crate) in_escape: bool,
     pub(crate) in_osc: bool,
     pub(crate) osc_escape: bool,
-    pub(crate) focused: bool,
+    pub(crate) input_modes: crate::terminal_input::InputModes,
     pub(crate) fg: Color32,
     pub(crate) bg: Color32,
 }
@@ -118,7 +118,7 @@ impl Terminal {
             in_escape: false,
             in_osc: false,
             osc_escape: false,
-            focused: false,
+            input_modes: Default::default(),
             fg: Color32::from_rgb(221, 232, 246),
             bg: crate::ui_theme::TERMINAL_BG,
         })
@@ -244,6 +244,7 @@ impl Terminal {
         }
     }
     fn apply_escape(&mut self) {
+        self.input_modes.update(&self.escape);
         if self.escape.starts_with('[') {
             let body = &self.escape[1..];
             let final_char = body.chars().last().unwrap_or(' ');

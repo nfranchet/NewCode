@@ -36,7 +36,7 @@ Run Git operations asynchronously and refresh status while the view is open. Pre
 
 ## Shell and Codex
 
-The bottom pane is a real PTY-backed interactive shell with a Restart action. The right pane is the Codex App Server client over JSONL stdio, with Start/Stop, visible connection/activity status, streaming turns, Interrupt, approval responses, and user-input responses.
+The bottom pane is a real PTY-backed interactive shell with a Restart action. While focused, it owns keyboard input before panel navigation or editor shortcuts: Tab/Shift+Tab, Escape, navigation, F1–F12, and Ctrl/Alt combinations go to the shell. Clicking another panel transfers focus normally. Ctrl+C interrupts and Ctrl+V pastes. Respect application-cursor and bracketed-paste modes for shells such as zsh. The right pane is the Codex App Server client over JSONL stdio, with Start/Stop, visible connection/activity status, streaming turns, Interrupt, approval responses, and user-input responses.
 
 Resume the latest workspace session at startup and allow choosing older sessions or creating a new one. Session labels are compact when closed and longer in the dropdown. Provide model, thinking-level, and mode selectors near Send, populated from Codex's catalog. Prefer Plan initially, with the first available mode as fallback. Support Ctrl+Enter to send and Tab/Shift+Tab to cycle modes in the idle composer.
 
@@ -51,3 +51,9 @@ After a successful completed plan, provide a Go action in Plan mode that selects
 - Automatic Codex startup can be disabled in saved settings or for one launch with `--no-codex`.
 - No extension marketplace, debugger, compiler-backed language services, Git history/branch-management UI, individual-line staging, or unsaved-buffer recovery is currently provided.
 - Renaming and moving use existing dialogs; new-entry naming and delete confirmation are handled inside the application.
+
+## Launch behavior
+
+Launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-codex`. Provide `--foreground` for terminal diagnostics. Append background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
+
+Use the native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.

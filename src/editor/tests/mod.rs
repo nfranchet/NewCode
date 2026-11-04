@@ -42,3 +42,5 @@ fn test_app() -> EditorApp {
         editor_layout_cache: Arc::new(Mutex::new(EditorLayoutCache::default())),
     }
 }
+
+mod terminal;

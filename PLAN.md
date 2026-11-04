@@ -13,7 +13,7 @@
 | Search and clipboard | Grouped workspace search, match navigation, Ctrl+F Find with highlights/count, clipboard and Edit actions |
 | Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
 | Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
-| Shell | Bottom interactive PTY-backed Bash terminal and Restart action |
+| Shell | Bottom interactive PTY-backed Bash terminal, Restart action, exclusive focused keyboard routing, zsh key encoding, application-cursor/bracketed-paste modes |
 | Codex sessions | JSONL App Server client, automatic latest-session resume, session picker/pagination, new session, Start/Stop, Interrupt |
 | Codex controls | Catalog-based model/thinking/mode choices, Plan-first startup fallback, Ctrl+Enter send, Tab/Shift+Tab mode cycling, wrapping controls |
 | Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
@@ -60,7 +60,7 @@ These checks remain manual acceptance tasks, rather than claims that every deskt
 - [ ] Review staged/unstaged/untracked/conflicting files; use Space and buttons; stage/unstage hunks without losing the comparison or scroll position; verify blue staged backgrounds and reverse actions; reload after external changes; commit and inspect failures.
 - [ ] Switch between Source Control, Explorer, Search, and editor tabs without replacing the active unsaved buffer with a diff.
 - [ ] Type a commit message through multiple automatic refreshes without focus loss or layout flicker.
-- [ ] Exercise shell input, resize, and Restart.
+- [ ] Exercise shell input, resize, and Restart; run zsh and check completion, history, Ctrl/Alt editing, interrupt, paste, and click-based focus transfer.
 - [ ] With Codex configured, resume/switch/create sessions; choose model/thinking/mode; verify keyboard shortcuts, streaming plans, completion, Interrupt, approvals, input requests, and usage refresh.
 
 ## Current limits
@@ -68,3 +68,11 @@ These checks remain manual acceptance tasks, rather than claims that every deskt
 The app does not recover unsaved buffers or caret/scroll positions on relaunch. Git history, branch switching, and individual-line staging are outside the implemented UI. Diff previews may need a file reselection after index changes. Codex choices and usage fields depend on the installed server/account, and reasoning cannot be displayed when the server supplies neither a readable summary nor content.
 
 Follow-up work should extend the implementation and its validation together; planned features should not be documented as already available.
+
+## Background launch and workspace title
+
+Implemented: Linux session detachment before GUI initialization, `--foreground`, append-only background launch logging, argument/directory/environment preservation, and dynamic workspace window titles. Launch handling lives in `src/launch.rs`. Tests cover detachment, redirected streams, argument preservation, recursion prevention, and workspace title changes.
+
+Manual desktop check: launch from a terminal, confirm the prompt returns while the window stays open, verify its workspace title in the Linux window list, switch workspaces, and check `--foreground` retains terminal diagnostics.
+
+Terminal keyboard routing runs through the pre-frame input hook before egui navigation and editor shortcuts. Encoding and terminal input modes are isolated in `src/terminal_input.rs`; tests cover focus transfer, exact byte sequences, mode updates, and a real zsh PTY when zsh is installed.

@@ -21,6 +21,7 @@ mod persistence;
 mod search;
 mod shell;
 mod sidebar;
+mod terminal_input;
 mod text_view;
 
 #[cfg(test)]
@@ -71,11 +72,11 @@ impl EditorApp {
             .ok()
             .and_then(|s| toml::from_str(&s).ok())
             .unwrap_or_default();
-        let args: Vec<String> = std::env::args().skip(1).collect();
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
         let no_codex = args.iter().any(|arg| arg == "--no-codex");
         let directory_argument = args
             .iter()
-            .find(|arg| !arg.starts_with('-'))
+            .find(|arg| !arg.to_string_lossy().starts_with('-'))
             .map(PathBuf::from)
             .filter(|p| p.is_dir());
         let mut settings = settings;
@@ -86,6 +87,10 @@ impl EditorApp {
         if let Some(directory) = directory_argument {
             settings.workspace = Some(directory);
         }
+        cc.egui_ctx
+            .send_viewport_cmd(egui::ViewportCommand::Title(crate::launch::window_title(
+                settings.workspace.as_deref(),
+            )));
         let cwd = settings.workspace.as_deref();
         let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
         let mut codex_ui = CodexUi::default();
@@ -127,6 +132,7 @@ impl EditorApp {
     fn render(&mut self, ctx: &egui::Context) {
         let opened_find = self.editor_shortcuts(ctx);
         self.toolbar(ctx);
+        self.update_window_title(ctx);
         self.status_bar(ctx);
         let cwd = self.settings.workspace.clone();
         self.shell_panel(ctx, cwd.as_deref());
@@ -142,6 +148,9 @@ impl EditorApp {
     }
 }
 impl eframe::App for EditorApp {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.route_terminal_input(ctx, raw);
+    }
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_settings();
     }

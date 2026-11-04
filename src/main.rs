@@ -4,17 +4,22 @@ mod app_server;
 mod codex_ui;
 mod editor;
 mod git_ui;
+mod launch;
 mod settings;
 mod syntax;
 mod terminal;
+mod terminal_input;
 mod ui_theme;
 
 use editor::EditorApp;
 use eframe::egui;
 
-fn main() -> eframe::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(target_os = "linux") {
         eprintln!("Focus Editor currently supports Linux only");
+        return Ok(());
+    }
+    if launch::detach()? {
         return Ok(());
     }
     let options = eframe::NativeOptions {
@@ -27,5 +32,6 @@ fn main() -> eframe::Result<()> {
         "Focus Editor",
         options,
         Box::new(|cc| Ok(Box::new(EditorApp::new(cc)))),
-    )
+    )?;
+    Ok(())
 }
