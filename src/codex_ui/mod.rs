@@ -10,6 +10,7 @@ mod conversation;
 mod events;
 mod header;
 mod messages;
+mod plan;
 mod reasoning;
 mod requests;
 mod responses;
@@ -43,6 +44,7 @@ pub(crate) struct CodexUi {
     messages: Vec<Message>,
     pending: Vec<PendingRequest>,
     answer: String,
+    plan: plan::PlanState,
 }
 
 impl Default for CodexUi {
@@ -72,6 +74,7 @@ impl Default for CodexUi {
             messages: Vec::new(),
             pending: Vec::new(),
             answer: String::new(),
+            plan: plan::PlanState::default(),
         }
     }
 }
@@ -87,6 +90,7 @@ impl CodexUi {
                     "clientInfo":{"name":"focus_editor","title":"Focus Editor","version":env!("CARGO_PKG_VERSION")},
                     "capabilities":{"experimentalApi":true}
                 })) { Ok(id) => Some(id), Err(e) => { self.status=e; return; } };
+                self.clear_plan();
                 self.requests.clear();
                 self.sessions.clear();
                 self.sessions_cursor = None;
@@ -105,6 +109,7 @@ impl CodexUi {
     }
 
     pub(crate) fn stop(&mut self) {
+        self.clear_plan();
         self.server = None;
         self.thread_id = None;
         self.busy = false;

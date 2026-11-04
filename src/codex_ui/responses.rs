@@ -31,6 +31,7 @@ impl CodexUi {
             self.status = "Finding previous session…".into();
         } else if let Some(method) = id.as_u64().and_then(|id| self.requests.remove(&id)) {
             if let Some(error) = error {
+                self.reject_go(id);
                 if method == "account/rateLimits/read" {
                     self.usage_error = error;
                 } else {
@@ -108,6 +109,9 @@ impl CodexUi {
                                     turn.get("id").and_then(Value::as_str).map(str::to_string);
                             }
                         }
+                    }
+                    if let Some(thread) = result.get("thread") {
+                        self.restore_plan(thread);
                     }
                     self.status = if self.busy {
                         "Codex is running…"

@@ -86,6 +86,42 @@ impl AppServer {
         })
     }
 
+    /// Local loopback transport for tests; never launches Codex or contacts a service.
+    #[cfg(test)]
+    pub(crate) fn capture_requests() -> (Self, Receiver<Value>) {
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let input = Arc::new(Mutex::new(child.stdin.take().unwrap()));
+        let stdout = child.stdout.take().unwrap();
+        let (capture_tx, captured) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Ok(value) = serde_json::from_str(&line) {
+                    let _ = capture_tx.send(value);
+                }
+            }
+        });
+        let (_, events) = mpsc::channel();
+        (
+            Self {
+                child,
+                input,
+                events,
+                next_id: 1,
+            },
+            captured,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn disconnect_capture(&mut self) {
+        self.child.kill().unwrap();
+        self.child.wait().unwrap();
+    }
+
     pub(crate) fn request(&mut self, method: &str, params: Value) -> Result<u64, String> {
         let id = self.next_id;
         self.next_id += 1;

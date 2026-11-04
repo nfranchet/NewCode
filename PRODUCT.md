@@ -42,6 +42,8 @@ Resume the latest workspace session at startup and allow choosing older sessions
 
 Show proposed plans as expanded message cards and retain them in restored history. Request automatic reasoning summaries, preserve streamed sections, and show supplied reasoning content when no summary is available. Keep readable reasoning and command details expandable; show Thinking while an empty reasoning item is running, hide empty completed items, and report turn completion in the conversation. Show available account limits and token/context usage; refresh account limits every minute and on request.
 
+After a successful completed plan, provide a Go action in Plan mode that selects Default and sends Go in the same session, preserving the selected model, thinking level, and unsent draft. Disable it during work, pending user responses, disconnected sessions, or unavailable Default mode; prevent duplicate submissions and allow explicit retry after submission failure.
+
 ## Platform and boundaries
 
 - Linux desktop application using Rust and eframe/egui, with native filesystem operations and a PTY.

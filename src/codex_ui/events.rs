@@ -29,6 +29,7 @@ impl CodexUi {
             return;
         }
         if event.get("_closed").is_some() {
+            self.clear_plan();
             self.status = "Codex App Server stopped".into();
             self.busy = false;
             self.finish_reasoning();
@@ -105,6 +106,7 @@ impl CodexUi {
             | "item/reasoning/textDelta"
             | "item/commandExecution/outputDelta" => self.append_delta(method, &params),
             "turn/started" => {
+                self.clear_plan();
                 self.turn_id = params
                     .pointer("/turn/id")
                     .and_then(Value::as_str)
@@ -113,6 +115,7 @@ impl CodexUi {
                 self.status = "Codex is running…".into();
             }
             "turn/completed" => {
+                self.complete_plan_turn(&params);
                 self.finish_reasoning();
                 self.busy = false;
                 self.turn_id = None;
@@ -143,7 +146,10 @@ impl CodexUi {
                     self.messages.push(Message::new("Error", error.into()));
                 }
             }
-            "item/started" | "item/completed" => self.update_item(method, &params),
+            "item/started" | "item/completed" => {
+                self.update_item(method, &params);
+                self.observe_plan_item(method, &params);
+            }
             _ => {}
         }
     }

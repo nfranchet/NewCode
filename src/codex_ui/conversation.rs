@@ -27,6 +27,7 @@ impl CodexUi {
                         ui.small("Pick a model, thinking level, and mode below.");
                     });
                 }
+                let mut go_clicked = false;
                 for (index, message) in self.messages.iter().enumerate() {
                     if message.kind == "Reasoning" && message.text.trim().is_empty() {
                         if !message.complete && self.busy {
@@ -96,10 +97,39 @@ impl CodexUi {
                                             .color(accent),
                                     );
                                     ui.add(egui::Label::new(&message.text).wrap().selectable(true));
+                                    if message.kind == "Proposed plan"
+                                        && self.go_plan_id() == Some(message.id.as_str())
+                                    {
+                                        let reason = self.go_unavailable_reason();
+                                        let response = ui
+                                            .add_enabled_ui(reason.is_none(), |ui| {
+                                                theme::button(
+                                                    ui,
+                                                    Icon::Send,
+                                                    "Go",
+                                                    theme::TEAL,
+                                                    true,
+                                                )
+                                            })
+                                            .inner
+                                            .on_hover_text(
+                                                reason.unwrap_or(
+                                                    "Switch to Default mode and send Go",
+                                                ),
+                                            );
+                                        go_clicked |= response.clicked();
+                                    }
                                 });
                         }
                     });
                     ui.add_space(10.0);
+                }
+                if go_clicked {
+                    if let Err(error) = self.go() {
+                        self.status = error.clone();
+                        self.messages
+                            .push(super::messages::Message::new("Error", error));
+                    }
                 }
                 for index in (0..self.pending.len()).rev() {
                     let pending_id = self.pending[index].id.clone();

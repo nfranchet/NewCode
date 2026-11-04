@@ -17,22 +17,26 @@ impl CodexUi {
 
     pub(super) fn send_turn(&mut self) {
         let text = self.input.trim().to_string();
-        let Some(thread_id) = self.thread_id.clone() else {
-            return;
-        };
         if text.is_empty() {
             return;
         }
-        self.messages.push(Message::new("You", text.clone()));
-        self.input.clear();
-        let params = self.turn_params(&thread_id, &text);
-        match self.send("turn/start", params) {
+        match self.submit_text(&text) {
             Ok(_) => {
-                self.busy = true;
-                self.status = "Codex is running…".into();
+                self.input.clear();
+                self.clear_plan();
             }
-            Err(e) => self.status = e,
+            Err(error) => self.status = error,
         }
+    }
+
+    pub(super) fn submit_text(&mut self, text: &str) -> Result<u64, String> {
+        let thread_id = self.thread_id.clone().ok_or("No active session")?;
+        let params = self.turn_params(&thread_id, text);
+        let id = self.send("turn/start", params)?;
+        self.messages.push(Message::new("You", text.into()));
+        self.busy = true;
+        self.status = "Codex is running…".into();
+        Ok(id)
     }
 
     pub(super) fn turn_params(&self, thread_id: &str, text: &str) -> Value {
@@ -81,6 +85,7 @@ impl CodexUi {
         };
         match self.send(method, params) {
             Ok(_) => {
+                self.clear_plan();
                 self.status = "Opening session…".into();
             }
             Err(e) => self.status = e,

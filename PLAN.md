@@ -19,7 +19,7 @@
 | Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
 | Codex usage | Available account limits with periodic/manual refresh, token/context updates, unavailable-data feedback |
 
-The application remains a single crate. `src/editor/mod.rs` owns application state and calls focused modules for layout, documents, text rendering, Explorer, creation/deletion, search, shell, sidebar routing, and persistence. `src/codex_ui/mod.rs` owns panel state and delegates to header, conversation, composer, catalog, usage, request, response, event, message, and reasoning-section modules. `src/git_ui/mod.rs` owns Source Control state and delegates repository/status handling, asynchronous actions/replies, panel controls, diff rendering, and presentation to focused sibling modules. Theme, settings, terminal, syntax, and App Server transport remain separate top-level modules.
+The application remains a single crate. `src/editor/mod.rs` owns application state and calls focused modules for layout, documents, text rendering, Explorer, creation/deletion, search, shell, sidebar routing, and persistence. `src/codex_ui/mod.rs` owns panel state and delegates to header, conversation, composer, catalog, usage, request, response, event, message, reasoning-section, and completed-plan/Go modules. `src/git_ui/mod.rs` owns Source Control state and delegates repository/status handling, asynchronous actions/replies, panel controls, diff rendering, and presentation to focused sibling modules. Theme, settings, terminal, syntax, and App Server transport remain separate top-level modules.
 
 The original monolithic editor, Codex UI, and Git UI source files have been replaced by these directories. Feature tests live under `src/editor/tests/` and in `src/codex_ui/tests.rs` with focused reasoning tests under `src/codex_ui/tests/`. Git tests remain in `src/git_ui/tests.rs`. Public entry types remain `editor::EditorApp`, `codex_ui::CodexUi`, and `git_ui::GitUi`; internal helpers use module-scoped visibility.
 
@@ -43,6 +43,7 @@ The current suite covers:
 - Git status parsing for partial changes, renames, unusual names, and conflicts; repository staging/unstaging/commit operations; commit draft/focus stability across refresh and failure.
 - Codex history conversion, thinking-level selection/fallback, startup mode preference/fallback, and usage-title formatting.
 - Codex event routing for streamed/final plans, preserved reasoning summaries, unknown item types, thread isolation, correlated responses, server questions, errors, and shutdown.
+- Go request payloads and mode changes, draft/model/thinking preservation, duplicate prevention, submission rejection/transport failure, restored and stale plan readiness, session changes, unavailable-action states, and narrow-panel button interaction.
 - Summary/content fallback in live and restored reasoning, indexed sections, empty completion preservation, summary preference without duplication, automatic-summary requests, and the Thinking/hidden-empty presentation states.
 
 Passing these checks does not establish full manual desktop or live Codex validation.

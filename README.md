@@ -114,6 +114,8 @@ Replies appear as message cards. Commands, file activity, and readable reasoning
 
 Proposed plans are displayed as expanded cards and restored with session history. Completion appears in the conversation as **Plan ready**, **Response complete**, or a failure/interruption message, in addition to the header status.
 
+When the latest plan has completed successfully and Plan mode is selected, **Go** appears beneath that plan. Click it to switch to the available Default mode and send exactly **Go** in the same session. The model, thinking level, and unsent draft are preserved. The button is disabled while busy, disconnected, awaiting your response, or when Default mode is unavailable. A failed submission restores the plan action for an explicit retry; it never resends automatically. The latest completed plan can also offer Go when reopening a saved session. Normal approval prompts still apply.
+
 Approval requests provide Allow, Allow this session, and Decline actions. Input requests provide a response field. Codex waits for your response before continuing where required.
 
 ### Usage
@@ -141,7 +143,7 @@ Expand **Usage / status** for the session ID, model, account limits, session tok
 The application uses one crate with three feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document and tab actions, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
-- `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, and indexed reasoning sections.
+- `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, diff/hunk controls, and presentation helpers. Git tests live in `src/git_ui/tests.rs`.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 

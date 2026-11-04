@@ -1,3 +1,4 @@
+mod plan;
 mod reasoning;
 
 use super::{
