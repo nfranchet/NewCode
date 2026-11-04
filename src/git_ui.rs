@@ -160,10 +160,12 @@ pub(crate) struct GitUi {
     commit: String,
     diff: Option<String>,
     diff_target: Option<(String, bool)>,
+    diff_hidden: bool,
 }
 impl GitUi {
     fn start(&mut self, action: Action, ctx: &egui::Context) {
         if let Action::Diff(path, staged) = &action {
+            self.diff_hidden = false;
             self.diff_target = Some((path.clone(), *staged));
         }
         let Some(workspace) = self.workspace.clone() else {
@@ -250,7 +252,14 @@ impl GitUi {
             ctx.request_repaint();
         });
     }
+    pub(crate) fn dismiss_diff(&mut self) {
+        self.diff_hidden = true;
+    }
+
     pub(crate) fn show_diff(&mut self, ui: &mut egui::Ui) -> bool {
+        if self.diff_hidden {
+            return false;
+        }
         let Some(diff) = &self.diff else {
             return false;
         };

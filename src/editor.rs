@@ -1105,14 +1105,17 @@ impl eframe::App for EditorApp {
                     });
                 });
                 if let Some(path) = switch_tab {
-                    self.open_file(path);
+                    self.git_ui.dismiss_diff();
+                    if self.active_file.as_ref() != Some(&path) {
+                        self.open_file(path);
+                    }
                 }
                 if let Some(path) = close_tab {
                     self.close_file(path);
                 }
                 ui.separator();
             }
-            if self.git_ui.show_diff(ui) {
+            if self.sidebar_mode == SidebarMode::Git && self.git_ui.show_diff(ui) {
                 return;
             }
             if self.active_file.is_some() {
