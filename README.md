@@ -170,7 +170,7 @@ Returning to Explorer or Search shows the active editor buffer without reloading
 
 Click the terminal surface to give it keyboard focus. **Tab** performs shell completion; **Shift+Tab**, **Escape**, arrows, Home/End, Insert/Delete, Page Up/Down, and F1–F12 go to the terminal. Ctrl and Alt combinations reach the shell, including **Ctrl+C** to interrupt, **Ctrl+R** to search history, and **Ctrl+W** to delete the previous word. Editor shortcuts are suspended while the terminal owns focus. Click the editor or Codex to return keyboard input there.
 
-**Ctrl+V** remains clipboard paste. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The default shell remains Bash; running `zsh` inside the terminal supports completion and command-line editing. Shortcuts reserved by your Linux desktop remain controlled by the desktop.
+**Ctrl+V** remains clipboard paste. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The terminal starts your configured shell (`$SHELL`, then your account shell, with `/bin/sh` as a fallback) interactively and loads its normal startup configuration, prompt, aliases, history, and completion. Dev Container terminals resolve the shell inside the container for the selected user. Shortcuts reserved by your Linux desktop remain controlled by the desktop.
 
 ## Assistants: Codex and OpenCode
 

@@ -75,7 +75,6 @@ pub(crate) enum Icon {
     File,
     Search,
     Git,
-    Terminal,
     Save,
     Copy,
     Paste,
@@ -152,11 +151,6 @@ pub(crate) fn paint_icon(ui: &Ui, rect: Rect, icon: Icon, color: Color32) {
             for (x, y) in [(5., 3.), (5., 17.), (14., 3.)] {
                 painter.circle_filled(p(x, y), rect.width() * 0.12, color);
             }
-        }
-        Icon::Terminal => {
-            box_at(1., 3., 18., 14.);
-            line(&[(5., 7.), (8., 10.), (5., 13.)]);
-            line(&[(11., 13.), (15., 13.)]);
         }
         Icon::Save => {
             box_at(3., 2., 14., 16.);

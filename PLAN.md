@@ -13,7 +13,7 @@
 | Search and clipboard | Grouped workspace search, match navigation, Ctrl+F Find with highlights/count, clipboard and Edit actions |
 | Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
 | Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
-| Shell | Bottom interactive PTY-backed Bash terminal, Restart action, exclusive focused keyboard routing, zsh key encoding, application-cursor/bracketed-paste modes |
+| Shell | Bottom interactive PTY-backed configured-shell terminal, Restart action, exclusive focused keyboard routing, zsh key encoding, application-cursor/bracketed-paste modes |
 | Assistant pane | Independent Codex/OpenCode enable switches, status tabs, hidden-client event processing, full editor width when both disabled, saved visibility and workspace state |
 | OpenCode | Native local HTTP/SSE client, session/history restore, provider/model/variant/agent catalogs, streaming messages/tools/reasoning, permissions/questions, interrupt, Plan-to-Build Go, reported usage |
 | Codex sessions | JSONL App Server client, automatic latest-session resume, session picker/pagination, new session, Start/Stop, Interrupt |
