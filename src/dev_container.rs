@@ -209,6 +209,10 @@ impl DevContainer {
     }
 
     pub(crate) fn menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if ui.button("Show logs").clicked() {
+            ctx.data_mut(|data| data.insert_temp(egui::Id::new("show_dev_container_logs"), true));
+            ui.close();
+        }
         let mut action = None;
         match &self.state {
             State::Unavailable => {

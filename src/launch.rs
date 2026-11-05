@@ -6,7 +6,7 @@ use std::{
 };
 #[cfg(target_os = "linux")]
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     process::{Command, Stdio},
 };
 
@@ -36,7 +36,7 @@ fn detached_command(executable: &Path, args: &[OsString], log: &Path) -> io::Res
         .parent()
         .ok_or_else(|| io::Error::other("Invalid launch log path"))?;
     fs::create_dir_all(parent)?;
-    let output = OpenOptions::new().create(true).append(true).open(log)?;
+    let output = crate::logging::session::fresh_file(log)?;
     let mut command = Command::new(executable);
     command
         .args(args)

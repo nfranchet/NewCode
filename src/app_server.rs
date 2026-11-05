@@ -87,9 +87,10 @@ impl AppServer {
             let _ = output_tx.send(json!({"_closed": true}));
         });
         thread::spawn(move || {
+            let _keep_channel_alive = tx;
             for line in BufReader::new(stderr).lines().flatten() {
                 if !line.trim().is_empty() {
-                    let _ = tx.send(json!({"_log": line}));
+                    crate::logging::process_line("focus_editor::app_server", &line);
                 }
             }
         });

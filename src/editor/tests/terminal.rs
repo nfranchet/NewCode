@@ -210,3 +210,41 @@ fn clicking_editor_transfers_typing_back_to_it() {
     assert!(h.app.buffer.contains("typed in editor"));
     assert!(h.capture.0.lock().unwrap().is_empty());
 }
+
+#[test]
+fn logs_tab_preserves_process_drains_output_and_does_not_capture_keys() {
+    let mut h = Harness::new();
+    h.frame(vec![]);
+    h.click(h.rect().center());
+    let process = h.app.top.as_ref().unwrap()._child.process_id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    h.app.top.as_mut().unwrap().rx = rx;
+    h.app.bottom_tab = super::super::logs::Tab::Logs;
+    let mut raw = egui::RawInput {
+        events: vec![
+            Event::Text("search logs".into()),
+            key(Key::Tab, Modifiers::NONE),
+        ],
+        ..Default::default()
+    };
+    h.app.route_terminal_input(&h.ctx, &mut raw);
+    assert_eq!(raw.events.len(), 2);
+    assert!(h.capture.0.lock().unwrap().is_empty());
+    tx.send(b"background output".to_vec()).unwrap();
+    h.frame(vec![]);
+    assert!(!h.focused());
+    let terminal = h.app.top.as_ref().unwrap();
+    assert_eq!(terminal._child.process_id(), process);
+    let text: String = terminal
+        .cells
+        .iter()
+        .flatten()
+        .map(|cell| cell.ch)
+        .collect();
+    assert!(text.contains("background output"));
+    h.app.bottom_tab = super::super::logs::Tab::Terminal;
+    h.frame(vec![]);
+    h.click(h.rect().center());
+    h.frame(vec![Event::Text("sent".into())]);
+    assert_eq!(*h.capture.0.lock().unwrap(), b"sent");
+}

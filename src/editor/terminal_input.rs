@@ -9,6 +9,9 @@ pub(super) fn terminal_id() -> egui::Id {
 
 impl EditorApp {
     pub(super) fn route_terminal_input(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if self.bottom_tab != super::logs::Tab::Terminal {
+            return;
+        }
         let id = terminal_id();
         let Some(terminal) = self.top.as_mut() else {
             return;

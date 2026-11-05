@@ -63,7 +63,7 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 
 ## Launch behavior
 
-On Linux, launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-codex`. Provide `--foreground` for terminal diagnostics. Append background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
+On Linux, launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-codex`. Provide `--foreground` for terminal diagnostics. Write current-session background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
 
 Use the native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
 
@@ -78,3 +78,7 @@ Dev Container assistant authentication: install both native CLIs with official c
 ## Release distribution
 
 Published GitHub releases and prereleases build the exact release tag for Linux amd64 and Linux arm64 on native hosted runners. Package Linux executables with installation notes and the Apache license in tar.gz archives. Publish both verified archives and SHA-256 checksums only after both builds pass; macOS builds and DMGs are skipped for automatic releases. Retain macOS source compatibility and manual app/DMG packaging. Use Cargo metadata for executable/bundle versions, tag-based download names, least-privilege GitHub tokens, and rerunnable uploads. Do not bundle external Git, Docker, or assistant installations. macOS starts its GUI and discovers common user/Homebrew tool paths when opened from Finder; Developer ID signing/notarization is outside this workflow. Linux background launching is unchanged.
+
+## Terminal and Logs panel
+
+Provide Terminal/Logs tabs in the shared resizable bottom panel, defaulting to Terminal. Keep the terminal alive and drain hidden output, but release its keyboard focus in Logs. Show selectable timestamped/severity-colored log records, a component selector (All, Editor, Git, Codex, OpenCode, Dev Container, Docker Compose, Terminal), search/severity filters, Copy visible logs, source-specific Clear, and Follow latest with manual scroll pause. The Dev Container menu opens its logs directly. Stream Compose diagnostics and sanitized assistant stderr without recording protocols, prompts, answers, or terminal contents. Maintain an empty process-local viewer per launch with a 10,000-record/8-MiB retention bound. Replace launch.log each startup with no rotation/history; keep foreground stderr too. Clearing viewer records does not erase the diagnostic file. Concurrent instances retain independent viewers/output handles; the file pathname points to the newest launch.

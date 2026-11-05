@@ -22,6 +22,7 @@ mod document_paths;
 mod documents;
 mod explorer;
 mod layout;
+mod logs;
 mod persistence;
 mod search;
 mod shell;
@@ -52,6 +53,8 @@ pub(crate) struct EditorApp {
     buffer: String,
     dirty: bool,
     top: Option<Terminal>,
+    bottom_tab: logs::Tab,
+    logs: logs::Logs,
     dev_container: crate::dev_container::DevContainer,
     codex_ui: CodexUi,
     opencode_ui: crate::opencode_ui::OpenCodeUi,
@@ -81,6 +84,7 @@ pub(crate) struct EditorApp {
 
 impl EditorApp {
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        crate::logging::session::attach(&cc.egui_ctx);
         let settings_path = dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("focus-editor/settings.toml");
@@ -170,6 +174,8 @@ impl EditorApp {
             buffer,
             dirty: false,
             top,
+            bottom_tab: Default::default(),
+            logs: Default::default(),
             dev_container: Default::default(),
             codex_ui,
             opencode_ui,

@@ -101,13 +101,35 @@ impl EditorApp {
         cwd: Option<&Path>,
         runtime: Option<&crate::dev_container::Runtime>,
     ) {
+        if let Some(terminal) = self.top.as_mut() {
+            terminal.poll();
+        }
         let top_height = self.settings.top_height;
         let top_response = egui::TopBottomPanel::bottom("top_terminal")
             .resizable(true)
             .default_height(top_height)
             .min_height(80.0)
             .show(ctx, |ui| {
-                Self::terminal_ui(ctx, ui, "Shell", &mut self.top, cwd, runtime);
+                ui.horizontal(|ui| {
+                    ui.selectable_value(
+                        &mut self.bottom_tab,
+                        super::logs::Tab::Terminal,
+                        "Terminal",
+                    );
+                    ui.selectable_value(&mut self.bottom_tab, super::logs::Tab::Logs, "Logs");
+                });
+                ui.separator();
+                if self.bottom_tab == super::logs::Tab::Terminal {
+                    Self::terminal_ui(ctx, ui, "Shell", &mut self.top, cwd, runtime);
+                } else {
+                    ctx.memory_mut(|memory| {
+                        memory.surrender_focus(super::terminal_input::terminal_id())
+                    });
+                    ctx.data_mut(|data| {
+                        data.remove::<egui::Rect>(super::terminal_input::terminal_id().with("rect"))
+                    });
+                    self.logs.ui(ui);
+                }
             });
         self.settings.top_height = top_response.response.rect.height().max(80.0);
     }
