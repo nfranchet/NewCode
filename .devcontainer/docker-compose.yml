@@ -3,7 +3,7 @@ services:
   devcontainer:
     build:
       context: .
-      dockerfile: .Dockerfile
+      dockerfile: "./vscode/Dockerfile"
     volumes:
       - .:/workspaces/NewCode
       - cargo-cache-newcode:/usr/local/cargo:rw
