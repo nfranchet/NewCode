@@ -24,11 +24,17 @@ The workflow needs no personal access token: its final upload job uses GitHub's 
 
 ## Build and run
 
-Install a recent Rust toolchain and the system libraries required by eframe/winit for your Linux distribution, or Xcode Command Line Tools on macOS. Git must be installed for Source Control. The Codex panel requires an installed, authenticated `codex` executable on your `PATH`. OpenCode requires an installed `opencode` executable with a configured provider; it is disabled by default.
+Install Rust 1.95 or newer and the system libraries required by eframe/winit for your Linux distribution, or Xcode Command Line Tools on macOS. Git must be installed for Source Control. The Codex panel requires an installed, authenticated `codex` executable on your `PATH`. OpenCode requires an installed `opencode` executable with a configured provider; it is disabled by default.
+
+The terminal uses the existing `egui_tty` widget and Ghostty VT engine. Building requires **Zig 0.15.2** on `PATH`; the development container and release workflow install it automatically. To install it into a dedicated build directory:
 
 ```sh
+python3 scripts/install-zig.py /tmp/focus-zig
+export PATH="/tmp/focus-zig:$PATH"
 cargo run --release
 ```
+
+The first build downloads the pinned Ghostty source and Zig packages. Subsequent builds reuse Cargo's build directory. For a network-free build, prefetch the pinned source and Zig packages and supply `GHOSTTY_SOURCE_DIR` and `GHOSTTY_ZIG_SYSTEM_DIR` as described by `libghostty-vt-sys`. `cargo --offline` alone does not prevent its native build script from fetching missing sources. Release binaries link the VT engine statically; users do not need Zig or the Ghostty application installed.
 
 On Linux, the editor opens in the background and immediately releases the terminal. macOS uses the normal application lifecycle. Each launch opens a separate instance. Its window title is **Focus Editor — workspace-name**, identifying the current workspace in Linux window lists that show window titles. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
 
@@ -166,11 +172,15 @@ Enter a message below the file groups, then click **Commit staged changes**. Onl
 
 Returning to Explorer or Search shows the active editor buffer without reloading it. Returning to Source Control can show its retained diff. Selecting a file tab or closing the preview dismisses the diff.
 
-## Shell keyboard input
+## Terminal
+
+The bottom panel embeds `egui_tty`, backed by Ghostty’s VT engine, with 10,000 lines of scrollback. Drag to select text, double-click for a word, and triple-click for a line. The mouse wheel scrolls history or goes to a full-screen program when it requests mouse reporting. Resize the panel normally; full-screen programs use their own alternate screen and restore the shell on exit.
+
+The terminal uses an installed monospace font with Nerd/symbol fallbacks, independently of other panels. Prompt symbols such as `✗` use the installed font coverage.
 
 Click the terminal surface to give it keyboard focus. **Tab** performs shell completion; **Shift+Tab**, **Escape**, arrows, Home/End, Insert/Delete, Page Up/Down, and F1–F12 go to the terminal. Ctrl and Alt combinations reach the shell, including **Ctrl+C** to interrupt, **Ctrl+R** to search history, and **Ctrl+W** to delete the previous word. Editor shortcuts are suspended while the terminal owns focus. Click the editor or Codex to return keyboard input there.
 
-**Ctrl+V** remains clipboard paste. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The terminal starts your configured shell (`$SHELL`, then your account shell, with `/bin/sh` as a fallback) interactively and loads its normal startup configuration, prompt, aliases, history, and completion. Dev Container terminals resolve the shell inside the container for the selected user. Shortcuts reserved by your Linux desktop remain controlled by the desktop.
+**Ctrl+C** interrupts even with a selection. **Ctrl+Shift+C** copies the terminal selection; **Ctrl+V** and **Ctrl+Shift+V** paste. On macOS, Command+C/V use the clipboard. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The terminal starts your configured shell (`$SHELL`, then your account shell, with `/bin/sh` as a fallback) interactively and loads its normal startup configuration, prompt, aliases, history, and completion. Dev Container terminals resolve the shell inside the container for the selected user. Shortcuts reserved by your Linux desktop remain controlled by the desktop. Restart is the icon at the right of the Terminal/Logs title row. Logs keeps the shell running without capturing its keys. Shell exit preserves the screen with an exit notice; startup failures stay visible and can be retried with Restart. Restart, workspace/container changes, and application shutdown close the old terminal session without stopping the container.
 
 ## Assistants: Codex and OpenCode
 
@@ -246,7 +256,8 @@ Switching tabs continues processing both backends. Stream reconnects reload auth
 | Space | Focused Source Control file row | Stage / unstage the file |
 | Tab / Shift+Tab, Escape, navigation, F1–F12 | Terminal | Send to the shell |
 | Ctrl+C / Ctrl+R / Ctrl+W | Terminal | Interrupt / history search / delete previous word |
-| Ctrl+V | Terminal | Paste |
+| Ctrl+V / Ctrl+Shift+V | Terminal | Paste |
+| Ctrl+Shift+C | Terminal | Copy terminal selection |
 | Ctrl+Enter | Codex or OpenCode message box | Send |
 | Tab / Shift+Tab | Idle assistant message box | Next / previous Codex mode or OpenCode agent |
 
@@ -260,6 +271,6 @@ The application uses one crate with focused feature module directories:
 - `src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/editor/assistants.rs` coordinates the shared pane and independent workspace states.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 
-Other top-level modules provide the shared theme/icons, settings, terminal state and input encoding, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
+Other top-level modules provide the shared theme/icons, settings, terminal process lifecycle and system font discovery, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.

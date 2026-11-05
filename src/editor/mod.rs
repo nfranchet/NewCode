@@ -53,6 +53,7 @@ pub(crate) struct EditorApp {
     buffer: String,
     dirty: bool,
     top: Option<Terminal>,
+    terminal_error: Option<String>,
     bottom_tab: logs::Tab,
     logs: logs::Logs,
     dev_container: crate::dev_container::DevContainer,
@@ -128,7 +129,10 @@ impl EditorApp {
             settings.workspace.is_some()
         );
         let cwd = settings.workspace.as_deref();
-        let top = Terminal::spawn("", cwd, cc.egui_ctx.clone()).ok();
+        let (top, terminal_error) = match Terminal::spawn("", cwd, cc.egui_ctx.clone()) {
+            Ok(terminal) => (Some(terminal), None),
+            Err(error) => (None, Some(format!("Terminal failed to start: {error}"))),
+        };
         let mut codex_ui = CodexUi::default();
         if settings.codex_enabled && settings.codex_app_server && !no_codex {
             codex_ui.start(cwd, cc.egui_ctx.clone());
@@ -174,6 +178,7 @@ impl EditorApp {
             buffer,
             dirty: false,
             top,
+            terminal_error,
             bottom_tab: Default::default(),
             logs: Default::default(),
             dev_container: Default::default(),
@@ -204,37 +209,46 @@ impl EditorApp {
         }
     }
 
-    fn render(&mut self, ctx: &egui::Context) {
+    fn render(&mut self, root: &mut egui::Ui) {
+        let context = root.ctx().clone();
+        let ctx = &context;
         self.dev_container
             .sync_workspace(self.settings.workspace.as_deref());
         if self.dev_container.tick() {
             let cwd = self.settings.workspace.clone();
-            self.top = Terminal::spawn_with_runtime(
-                "",
+            self.restart_terminal(
+                ctx,
                 cwd.as_deref(),
-                self.dev_container.runtime(),
-                ctx.clone(),
-            )
-            .ok();
+                self.dev_container.runtime().cloned().as_ref(),
+            );
             self.status = self
                 .dev_container
                 .label()
                 .map(|name| format!("Connected to {name}"))
                 .unwrap_or_else(|| "Dev Container stopped".into());
         }
-        let opened_find = self.editor_shortcuts(ctx);
-        self.toolbar(ctx);
-        self.update_window_title(ctx);
-        self.update_assistants(ctx);
-        self.status_bar(ctx);
         let cwd = self.settings.workspace.clone();
         let runtime = self.dev_container.runtime().cloned();
-        self.shell_panel(ctx, cwd.as_deref(), runtime.as_ref());
-        self.activity_bar(ctx);
+        if self
+            .top
+            .as_ref()
+            .is_some_and(|terminal| !terminal.matches_context(cwd.as_deref(), runtime.as_ref()))
+        {
+            self.restart_terminal(ctx, cwd.as_deref(), runtime.as_ref());
+        }
+        let opened_find = self.editor_shortcuts(ctx);
+        self.toolbar(root);
+        self.update_window_title(ctx);
+        self.update_assistants(ctx);
+        self.status_bar(root);
+        let cwd = self.settings.workspace.clone();
+        let runtime = self.dev_container.runtime().cloned();
+        self.shell_panel(root, cwd.as_deref(), runtime.as_ref());
+        self.activity_bar(root);
         self.cancel_creation_for_workspace_change();
-        self.sidebar(ctx);
-        self.assistant_panel(ctx, cwd.as_deref());
-        self.document_panel(ctx, opened_find);
+        self.sidebar(root);
+        self.assistant_panel(root, cwd.as_deref());
+        self.document_panel(root, opened_find);
         self.rename_dialog(ctx);
         self.close_dialog(ctx);
         self.deletion_dialog(ctx);
@@ -248,7 +262,7 @@ impl eframe::App for EditorApp {
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_settings();
     }
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.render(ctx);
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.render(ui);
     }
 }

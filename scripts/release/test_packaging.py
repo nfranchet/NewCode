@@ -23,7 +23,7 @@ class PackagingTests(unittest.TestCase):
             output = root / "release.tar.gz"
             package_linux(binary, output, stage)
             with tarfile.open(output) as archive:
-                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE"})
+                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt"})
                 self.assertEqual(archive.extractfile("LICENSE").read(), Path("LICENSE").read_bytes())
                 self.assertTrue(archive.getmember("focus-editor").mode & 0o111)
                 self.assertEqual(archive.extractfile("focus-editor").read(), binary.read_bytes())

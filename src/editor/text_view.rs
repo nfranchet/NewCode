@@ -54,7 +54,7 @@ impl EditorApp {
             let mut job = colored_job(source, &extension);
             highlight_find_matches(&mut job, source, &find_query, find_active);
             job.wrap.max_width = f32::INFINITY;
-            let galley = ui.fonts(|fonts| fonts.layout_job(job));
+            let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
             let mut cached = layout_cache.lock().unwrap();
             cached.text = source.to_owned();
             cached.extension = extension.clone();
@@ -81,8 +81,8 @@ impl EditorApp {
                     .count()
                     .saturating_sub(usize::from(self.buffer.ends_with('\n')))
                     .max(1);
-                let row_height = ui.fonts(|f| f.row_height(&FontId::monospace(14.0)));
-                let digit_width = ui.fonts(|f| {
+                let row_height = ui.fonts_mut(|f| f.row_height(&FontId::monospace(14.0)));
+                let digit_width = ui.fonts_mut(|f| {
                     f.layout_no_wrap("0".into(), FontId::monospace(14.0), Color32::WHITE)
                         .size()
                         .x

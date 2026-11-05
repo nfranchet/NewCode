@@ -246,7 +246,8 @@ fn go_button_can_be_clicked_in_narrow_and_standard_conversation_panels() {
         let ctx = egui::Context::default();
         theme::apply(&ctx);
         let frame = |codex: &mut CodexUi, events: Vec<egui::Event>| {
-            ctx.run(
+            crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -255,8 +256,8 @@ fn go_button_can_be_clicked_in_narrow_and_standard_conversation_panels() {
                     events,
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
                         codex.show_conversation(ui);
                         assert!(ui.min_rect().right() <= ui.clip_rect().right() + 1.0);
                     });

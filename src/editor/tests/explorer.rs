@@ -24,7 +24,8 @@ fn folder_context_menu_opens_delete_confirmation_when_closed_or_open() {
         theme::apply(&ctx);
         let mut app = test_app();
         let frame = |app: &mut EditorApp, events: Vec<egui::Event>| {
-            let _ = ctx.run(
+            let _ = crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -33,18 +34,18 @@ fn folder_context_menu_opens_delete_confirmation_when_closed_or_open() {
                     events,
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
+                |root_ui| {
+                    egui::CentralPanel::default().show(root_ui, |ui| {
                         let id = ui.make_persistent_id(("folder", &folder));
                         let mut state =
                             egui::collapsing_header::CollapsingState::load_with_default_open(
-                                ctx, id, false,
+                                &ctx, id, false,
                             );
                         state.set_open(expanded);
-                        state.store(ctx);
+                        state.store(&ctx);
                         app.tree(ui, &root);
                     });
-                    app.deletion_dialog(ctx);
+                    app.deletion_dialog(&ctx);
                 },
             );
         };
@@ -125,7 +126,8 @@ fn deletion_confirmation_cancels_and_preserves_symlink_targets() {
     let ctx = egui::Context::default();
     theme::apply(&ctx);
     let frame = |app: &mut EditorApp, events: Vec<egui::Event>| {
-        let _ = ctx.run(
+        let _ = crate::test_frame(
+            &ctx,
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -134,7 +136,7 @@ fn deletion_confirmation_cancels_and_preserves_symlink_targets() {
                 events,
                 ..Default::default()
             },
-            |ctx| app.deletion_dialog(ctx),
+            |ctx| app.deletion_dialog(&ctx),
         );
     };
     app.deletion = Some(Deletion {
@@ -203,7 +205,8 @@ fn inline_creation_submits_cancels_and_never_overwrites() {
     app.settings.workspace = Some(root.clone());
     app.active_file = None;
     let frame = |app: &mut EditorApp, events: Vec<egui::Event>| {
-        let _ = ctx.run(
+        let _ = crate::test_frame(
+            &ctx,
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -212,7 +215,7 @@ fn inline_creation_submits_cancels_and_never_overwrites() {
                 events,
                 ..Default::default()
             },
-            |ctx| app.render(ctx),
+            |root_ui| app.render(root_ui),
         );
     };
     let key = |key| egui::Event::Key {

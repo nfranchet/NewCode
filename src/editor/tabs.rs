@@ -46,7 +46,7 @@ impl EditorApp {
                                                 ..Default::default()
                                             },
                                         );
-                                        let galley = ui.fonts(|fonts| fonts.layout_job(job));
+                                        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
                                         let close_width = 26.0;
                                         let padding = 12.0;
                                         let size = egui::vec2(

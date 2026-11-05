@@ -21,6 +21,7 @@ struct Harness {
     app: EditorApp,
     ctx: egui::Context,
     capture: Capture,
+    output: std::sync::mpsc::Sender<Vec<u8>>,
 }
 impl Harness {
     fn new() -> Self {
@@ -29,11 +30,16 @@ impl Harness {
         let mut app = test_app();
         let capture = Capture::default();
         let mut terminal = Terminal::spawn("exec /bin/cat", None, ctx.clone()).unwrap();
-        terminal.input = Box::new(capture.clone());
+        let output = terminal.capture_output(Box::new(capture.clone()));
         app.top = Some(terminal);
-        Self { app, ctx, capture }
+        Self {
+            app,
+            ctx,
+            capture,
+            output,
+        }
     }
-    fn frame(&mut self, events: Vec<Event>) {
+    fn frame(&mut self, events: Vec<Event>) -> egui::FullOutput {
         let modifiers = events
             .iter()
             .rev()
@@ -43,16 +49,17 @@ impl Harness {
             })
             .unwrap_or_default();
         let mut input = egui::RawInput {
-            modifiers,
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(1000.0, 700.0),
             )),
-            events,
+            events: std::iter::once(Event::ModifiersChanged(modifiers))
+                .chain(events)
+                .collect(),
             ..Default::default()
         };
         eframe::App::raw_input_hook(&mut self.app, &self.ctx, &mut input);
-        let _ = self.ctx.run(input, |ctx| self.app.render(ctx));
+        crate::test_frame(&self.ctx, input, |root| self.app.render(root))
     }
     fn rect(&self) -> egui::Rect {
         self.ctx
@@ -64,16 +71,7 @@ impl Harness {
         self.frame(vec![pointer(pos, false)]);
     }
     fn focused(&self) -> bool {
-        self.ctx
-            .memory(|m| m.has_focus(super::super::terminal_input::terminal_id()))
-    }
-}
-impl Drop for Harness {
-    fn drop(&mut self) {
-        if let Some(terminal) = &mut self.app.top {
-            let _ = terminal._child.kill();
-            let _ = terminal._child.wait();
-        }
+        super::super::terminal_input::focused(&self.ctx)
     }
 }
 fn key(key: Key, modifiers: Modifiers) -> Event {
@@ -107,8 +105,9 @@ fn terminal_captures_keys_from_first_tab_without_editor_actions() {
         key(Key::ArrowUp, Modifiers::NONE),
         key(Key::ArrowLeft, Modifiers::NONE),
     ] {
+        let description = format!("{event:?}");
         h.frame(vec![event]);
-        assert!(h.focused(), "terminal lost focus");
+        assert!(h.focused(), "terminal lost focus for {description}");
     }
     let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
     h.frame(vec![
@@ -119,12 +118,10 @@ fn terminal_captures_keys_from_first_tab_without_editor_actions() {
     assert!(!h.app.find_open);
     assert!(h.app.close_confirmation.is_none());
     assert_eq!(h.app.open_files.len(), 1);
-    h.frame(vec![
-        Event::Text("abc é".into()),
-        Event::Copy,
-        Event::Cut,
-        Event::Paste("pasted".into()),
-    ]);
+    h.frame(vec![Event::Text("abc é".into())]);
+    h.frame(vec![Event::Copy]);
+    h.frame(vec![Event::Cut]);
+    h.frame(vec![Event::Paste("pasted".into())]);
     assert_eq!(
         *h.capture.0.lock().unwrap(),
         b"\t\x1b[Z\x1b\x1b[A\x1b[D\x06\x17\x13abc \xc3\xa9\x03\x18pasted"
@@ -139,60 +136,38 @@ fn terminal_captures_keys_from_first_tab_without_editor_actions() {
 }
 
 #[test]
-fn outside_click_and_keyboard_focus_release_restore_editor_shortcuts() {
+fn outside_click_restores_editor_shortcuts() {
     let mut h = Harness::new();
     h.frame(vec![]);
     h.click(h.rect().center());
-    let outside = egui::pos2(h.rect().left(), h.rect().top() - 50.0);
-    let ctrl = Modifiers::CTRL | Modifiers::COMMAND;
-    let mut raw = egui::RawInput {
-        events: vec![
-            key(Key::Tab, Modifiers::NONE),
-            pointer(outside, true),
-            key(Key::F, ctrl),
-        ],
-        ..Default::default()
-    };
-    h.app.route_terminal_input(&h.ctx, &mut raw);
-    assert_eq!(*h.capture.0.lock().unwrap(), b"\t");
-    assert_eq!(raw.events.len(), 2);
-    let mut opened_find = false;
-    raw.modifiers = ctrl;
-    let _ = h
+    let editor = h
         .ctx
-        .run(raw, |ctx| opened_find = h.app.editor_shortcuts(ctx));
-    assert!(opened_find);
-    h.ctx
-        .memory_mut(|m| m.request_focus(egui::Id::new("main_editor_text")));
-    let mut raw = egui::RawInput {
-        modifiers: ctrl,
-        events: vec![key(Key::W, ctrl)],
-        ..Default::default()
-    };
-    h.app.route_terminal_input(&h.ctx, &mut raw);
-    assert_eq!(raw.events.len(), 1);
-    let _ = h.ctx.run(raw, |ctx| {
-        h.app.editor_shortcuts(ctx);
-    });
-    assert!(h.app.close_confirmation.is_some());
+        .read_response(h.app.editor_id())
+        .unwrap()
+        .rect
+        .center();
+    h.click(editor);
+    assert!(!h.focused());
+    h.frame(vec![key(Key::F, Modifiers::CTRL | Modifiers::COMMAND)]);
+    assert!(h.app.find_open);
 }
 
 #[test]
 fn terminal_output_updates_input_modes_even_across_reads() {
     let mut h = Harness::new();
-    let terminal = h.app.top.as_mut().unwrap();
-    let (tx, rx) = std::sync::mpsc::channel();
-    terminal.rx = rx;
-    for chunk in [b"\x1b[?1;20".as_slice(), b"04h"] {
-        tx.send(chunk.to_vec()).unwrap();
-        terminal.poll();
-    }
-    assert!(terminal.input_modes.application_cursor);
-    assert!(terminal.input_modes.bracketed_paste);
-    tx.send(b"\x1b[?1;2004l".to_vec()).unwrap();
-    terminal.poll();
-    assert!(!terminal.input_modes.application_cursor);
-    assert!(!terminal.input_modes.bracketed_paste);
+    h.frame(vec![]);
+    h.click(h.rect().center());
+    h.output.send(b"\x1b[?1;20".to_vec()).unwrap();
+    h.frame(vec![]);
+    h.output.send(b"04h".to_vec()).unwrap();
+    h.frame(vec![
+        key(Key::ArrowUp, Modifiers::NONE),
+        Event::Paste("hello".into()),
+    ]);
+    assert_eq!(
+        *h.capture.0.lock().unwrap(),
+        b"\x1bOA\x1b[200~hello\x1b[201~"
+    );
 }
 
 #[test]
@@ -216,9 +191,7 @@ fn logs_tab_preserves_process_drains_output_and_does_not_capture_keys() {
     let mut h = Harness::new();
     h.frame(vec![]);
     h.click(h.rect().center());
-    let process = h.app.top.as_ref().unwrap()._child.process_id();
-    let (tx, rx) = std::sync::mpsc::channel();
-    h.app.top.as_mut().unwrap().rx = rx;
+    let process = h.app.top.as_ref().unwrap().process_id();
     h.app.bottom_tab = super::super::logs::Tab::Logs;
     let mut raw = egui::RawInput {
         events: vec![
@@ -230,21 +203,115 @@ fn logs_tab_preserves_process_drains_output_and_does_not_capture_keys() {
     h.app.route_terminal_input(&h.ctx, &mut raw);
     assert_eq!(raw.events.len(), 2);
     assert!(h.capture.0.lock().unwrap().is_empty());
-    tx.send(b"background output".to_vec()).unwrap();
+    h.output.send(b"background output".to_vec()).unwrap();
     h.frame(vec![]);
     assert!(!h.focused());
-    let terminal = h.app.top.as_ref().unwrap();
-    assert_eq!(terminal._child.process_id(), process);
-    let text: String = terminal
-        .cells
-        .iter()
-        .flatten()
-        .map(|cell| cell.ch)
-        .collect();
-    assert!(text.contains("background output"));
+    let terminal = h.app.top.as_mut().unwrap();
+    assert_eq!(terminal.process_id(), process);
+    assert!(
+        terminal
+            .view
+            .visible_text()
+            .unwrap()
+            .contains("background output")
+    );
     h.app.bottom_tab = super::super::logs::Tab::Terminal;
     h.frame(vec![]);
     h.click(h.rect().center());
     h.frame(vec![Event::Text("sent".into())]);
     assert_eq!(*h.capture.0.lock().unwrap(), b"sent");
+}
+
+#[test]
+fn scrollback_stays_put_when_background_output_arrives() {
+    let mut h = Harness::new();
+    h.frame(vec![]);
+    let lines: String = (0..100)
+        .map(|number| format!("line {number}\r\n"))
+        .collect();
+    h.output.send(lines.into_bytes()).unwrap();
+    h.frame(vec![]);
+    let latest = h.app.top.as_mut().unwrap().view.visible_text().unwrap();
+    h.frame(vec![
+        Event::PointerMoved(h.rect().center()),
+        Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, 12.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        },
+    ]);
+    // Let egui finish smoothing this wheel gesture before comparing the viewport.
+    for _ in 0..20 {
+        h.frame(vec![]);
+    }
+    let scrolled = h.app.top.as_mut().unwrap().view.visible_text().unwrap();
+    assert_ne!(scrolled.lines().next(), latest.lines().next());
+    h.output
+        .send(b"more background output\r\n".to_vec())
+        .unwrap();
+    h.frame(vec![]);
+    let after = h.app.top.as_mut().unwrap().view.visible_text().unwrap();
+    assert_eq!(after.lines().next(), scrolled.lines().next());
+}
+
+#[test]
+fn restarting_and_switching_workspace_replace_the_owned_session() {
+    let mut h = Harness::new();
+    h.frame(vec![]);
+    let old = h.app.top.as_ref().unwrap().process_id().unwrap();
+    h.app.top.as_mut().unwrap().command = "exec /bin/cat".into();
+    h.app.restart_terminal(&h.ctx, None, None);
+    assert_ne!(h.app.top.as_ref().unwrap().process_id(), Some(old));
+    // SAFETY: signal 0 only checks whether our reaped child still exists.
+    assert_eq!(unsafe { libc::kill(old as i32, 0) }, -1);
+    let restarted = h.app.top.as_ref().unwrap().process_id().unwrap();
+    h.app.settings.workspace = Some(std::env::temp_dir());
+    h.frame(vec![]);
+    assert_ne!(h.app.top.as_ref().unwrap().process_id(), Some(restarted));
+    assert!(
+        h.app
+            .top
+            .as_ref()
+            .unwrap()
+            .matches_context(h.app.settings.workspace.as_deref(), None)
+    );
+}
+
+#[test]
+fn selecting_text_copies_with_shift_and_ctrl_c_still_interrupts() {
+    let mut h = Harness::new();
+    h.frame(vec![]);
+    h.output.send(b"copy me".to_vec()).unwrap();
+    h.frame(vec![]);
+    let font = crate::terminal_fonts::font_id();
+    let (width, height) = h
+        .ctx
+        .fonts_mut(|fonts| (fonts.glyph_width(&font, 'M'), fonts.row_height(&font)));
+    let start = h.rect().min + egui::vec2(6.0 + width * 0.1, 6.0 + height * 0.5);
+    let end = start + egui::vec2(width * 7.0, 0.0);
+    h.frame(vec![Event::PointerMoved(start), pointer(start, true)]);
+    h.frame(vec![Event::PointerMoved(end)]);
+    h.frame(vec![pointer(end, false)]);
+    assert_eq!(
+        h.app
+            .top
+            .as_ref()
+            .unwrap()
+            .view
+            .selected_text()
+            .as_deref()
+            .map(str::trim),
+        Some("copy me")
+    );
+    let output = h.frame(vec![
+        Event::ModifiersChanged(Modifiers::CTRL | Modifiers::SHIFT),
+        Event::Copy,
+    ]);
+    assert!(output.platform_output.commands.iter().any(
+        |command| matches!(command, egui::OutputCommand::CopyText(text) if text.trim() == "copy me")
+    ));
+    assert!(h.capture.0.lock().unwrap().is_empty());
+    h.frame(vec![Event::Copy]);
+    assert_eq!(*h.capture.0.lock().unwrap(), b"\x03");
 }

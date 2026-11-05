@@ -1,16 +1,36 @@
 use super::*;
+use eframe::egui::{self, Event, Key, Modifiers};
 use std::time::{Duration, Instant};
 
 struct Session(Terminal);
 impl Session {
     fn new(command: &str, cwd: Option<&Path>) -> Self {
-        Self(Terminal::spawn(command, cwd, eframe::egui::Context::default()).unwrap())
+        Self(Terminal::spawn(command, cwd, egui::Context::default()).unwrap())
     }
 }
-impl Drop for Session {
-    fn drop(&mut self) {
-        let _ = self.0._child.kill();
-        let _ = self.0._child.wait();
+fn wait_for(terminal: &mut Terminal, expected: &str) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        terminal.poll();
+        if terminal.view.visible_text().unwrap().contains(expected) {
+            return;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    panic!(
+        "Missing {expected:?}: {}",
+        terminal.view.visible_text().unwrap()
+    );
+}
+#[derive(Clone, Default)]
+struct Capture(Arc<Mutex<Vec<u8>>>);
+impl Write for Capture {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
@@ -25,34 +45,65 @@ fn configured_shell_selection_and_fallback() {
 }
 
 #[test]
-fn output_preserves_split_unicode_and_handles_invalid_bytes() {
+fn streaming_unicode_charset_selection_queries_and_alternate_screen() {
     let mut session = Session::new("exec /bin/cat", None);
-    let t = &mut session.0;
-    t.receive(&[0xc3]);
-    assert_eq!(t.cursor_x, 0);
-    t.receive(&[0xa9, 0xff, b'A']);
-    assert_eq!(t.cells[0][0].ch, 'é');
-    assert_eq!(t.cells[0][1].ch, '\u{fffd}');
-    assert_eq!(t.cells[0][2].ch, 'A');
-    assert!(t.pending_utf8.is_empty());
+    let capture = Capture::default();
+    let output = session.0.capture_output(Box::new(capture.clone()));
+    let view = &mut session.0.view;
+    // Every byte arrives independently, including UTF-8 and ESC ( B from the reported artifact.
+    for byte in "before\x1b(Bé✗界e\u{301}after".as_bytes() {
+        output.send(vec![*byte]).unwrap();
+        view.poll();
+    }
+    let text = view.visible_text().unwrap();
+    assert!(text.starts_with("beforeé✗界"), "{text:?}");
+    assert!(text.contains("after"));
+    assert!(!text.contains('B'));
+    output.send(b"\x1b[6n".to_vec()).unwrap();
+    view.poll();
+    let reply = capture.0.lock().unwrap().clone();
+    assert!(reply.starts_with(b"\x1b[1;"));
+    assert!(reply.ends_with(b"R"));
+    output
+        .send(b"\x1b[?1049h\x1b[2J\x1b[Hfullscreen".to_vec())
+        .unwrap();
+    view.poll();
+    assert!(view.visible_text().unwrap().starts_with("fullscreen"));
+    output.send(b"\x1b[?1049l".to_vec()).unwrap();
+    view.poll();
+    assert_eq!(view.visible_text().unwrap(), text);
 }
 
 #[test]
-fn wide_combining_overwrite_wrap_and_erase() {
-    let mut session = Session::new("exec /bin/cat", None);
-    let t = &mut session.0;
-    t.receive("界e\u{301}".as_bytes());
-    assert_eq!(t.cursor_x, 3);
-    assert_eq!(t.cells[0][0].width, 2);
-    assert_eq!(t.cells[0][1].width, 0);
-    assert_eq!(t.cells[0][2].combining, "\u{301}");
-    t.receive(b"\rX");
-    assert_eq!(t.cells[0][1].width, 1);
-    t.receive(b"\x1b[80G");
-    t.receive("界".as_bytes());
-    assert_eq!((t.cursor_x, t.cursor_y), (2, 1));
-    t.receive(b"\x1b[80Gx\x1b[K\x1b[1K");
-    assert_eq!(t.cells[1][79].ch, ' ');
+fn session_drop_reaps_child_even_when_output_queue_is_full() {
+    let session = Session::new("exec /bin/sh -c 'while :; do printf output; done'", None);
+    let pid = session.0.process_id().unwrap();
+    thread::sleep(Duration::from_millis(80));
+    let start = Instant::now();
+    drop(session);
+    assert!(start.elapsed() < Duration::from_secs(2));
+    // SAFETY: signal 0 only queries whether our reaped child still exists.
+    assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);
+}
+
+#[test]
+fn output_is_retained_after_shell_exit() {
+    let mut session = Session::new("printf EXIT_MARKER", None);
+    wait_for(&mut session.0, "EXIT_MARKER");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !session.0.view.has_exited() && Instant::now() < deadline {
+        session.0.poll();
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(session.0.view.has_exited());
+    assert!(
+        session
+            .0
+            .view
+            .visible_text()
+            .unwrap()
+            .contains("EXIT_MARKER")
+    );
 }
 
 #[test]
@@ -68,17 +119,7 @@ fn container_shell_script_resolves_an_interactive_tty_shell() {
     session
         .0
         .send(b"test -t 0 && test -t 1 && printf 'TTY_%s_END\\n' yes\r");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let mut output = Vec::new();
-    while Instant::now() < deadline {
-        if let Ok(bytes) = session.0.rx.recv_timeout(Duration::from_millis(20)) {
-            output.extend(bytes);
-            if String::from_utf8_lossy(&output).contains("TTY_yes_END") {
-                return;
-            }
-        }
-    }
-    panic!("No TTY confirmation: {}", String::from_utf8_lossy(&output));
+    wait_for(&mut session.0, "TTY_yes_END");
 }
 
 #[test]
@@ -91,20 +132,8 @@ fn configured_shell_loads_startup_and_preserves_workspace() {
             .0
             .send(b"printf 'CONFIG_%s_DIR_%s_END\\n' \"$FOCUS_STARTUP_MARKER\" \"$PWD\"\r");
         let expected = format!("CONFIG_loaded_DIR_{}_END", root.display());
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut output = Vec::new();
-        while Instant::now() < deadline {
-            if let Ok(bytes) = session.0.rx.recv_timeout(Duration::from_millis(20)) {
-                output.extend(bytes);
-                if String::from_utf8_lossy(&output).contains(&expected) {
-                    return;
-                }
-            }
-        }
-        panic!(
-            "configured startup/cwd not observed: {}",
-            String::from_utf8_lossy(&output)
-        );
+        wait_for(&mut session.0, &expected);
+        return;
     }
     let root = std::env::temp_dir().join(format!("focus-shell-startup-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
@@ -145,78 +174,64 @@ fn configured_shell_loads_startup_and_preserves_workspace() {
 }
 
 #[test]
-fn prompt_insert_delete_and_wide_resize_keep_cell_positions() {
-    let mut session = Session::new("exec /bin/cat", None);
-    let t = &mut session.0;
-    t.receive(b"abc\r\x1b[C\x1b[@X");
-    assert_eq!(
-        t.cells[0][..4].iter().map(|c| c.ch).collect::<String>(),
-        "aXbc"
-    );
-    t.receive(b"\r\x1b[C\x1b[P");
-    assert_eq!(
-        t.cells[0][..3].iter().map(|c| c.ch).collect::<String>(),
-        "abc"
-    );
-    t.receive("\r界".as_bytes());
-    t.receive(b"\x1b[2G\x1b[K");
-    assert_eq!(t.cells[0][0].ch, ' ');
-    t.receive("\rA界".as_bytes());
-    t.resize(2, 24);
-    assert_eq!(t.cells[0][1].width, 1);
-    assert_eq!(t.cells[0][1].ch, ' ');
-}
-
-#[test]
-fn escape_intermediates_never_leak_into_terminal_text() {
-    let mut session = Session::new("exec /bin/cat", None);
-    let t = &mut session.0;
-    for sequence in [
-        b"\x1b(B".as_slice(),
-        b"\x1b)B",
-        b"\x1b*B",
-        b"\x1b+B",
-        b"\x1b-A",
-        b"\x1b.A",
-        b"\x1b/A",
-        b"\x1b(0",
-        b"\x1b#8",
-        b"\x1b%G",
-        b"\x1b F",
-        b"\x1b !0",
-    ] {
-        for split in 0..=sequence.len() {
-            t.receive(b"\x1b[2J\x1b[Hbefore");
-            t.receive(&sequence[..split]);
-            t.receive(&sequence[split..]);
-            assert_eq!((t.cursor_x, t.cursor_y), (6, 0), "{sequence:?} at {split}");
-            t.receive(b"\x1b[31mafter\x1b[0m");
-            assert_eq!(
-                t.cells[0][..11]
-                    .iter()
-                    .map(|cell| cell.ch)
-                    .collect::<String>(),
-                "beforeafter",
-                "{sequence:?} at {split}"
-            );
-            assert_eq!(t.cells[0][6].fg, ansi_color(1, false));
-            assert_eq!((t.cursor_x, t.cursor_y), (11, 0));
-            assert!(!t.in_escape);
-        }
+fn zsh_widget_completion_history_editing_and_interrupt() {
+    if !Path::new("/bin/zsh").is_file() {
+        return;
     }
-}
-
-#[test]
-fn incomplete_escape_sequences_can_be_replaced_or_cancelled() {
-    let mut session = Session::new("exec /bin/cat", None);
-    let t = &mut session.0;
-    for bytes in [b"\x1b(\x1b[31mX".as_slice(), b"\x1b(\x18X", b"\x1b(\x1aX"] {
-        t.receive(b"\x1b[2J\x1b[H");
-        for byte in bytes {
-            t.receive(&[*byte]);
-        }
-        assert_eq!(t.cells[0][0].ch, 'X');
-        assert_eq!((t.cursor_x, t.cursor_y), (1, 0));
-        assert!(!t.in_escape);
-    }
+    let root = std::env::temp_dir().join(format!("focus-zsh-widget-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("unique_completion_file.txt"), "").unwrap();
+    let ctx = egui::Context::default();
+    let mut session = Session::new("exec zsh -f", Some(&root));
+    session.0.view.request_focus();
+    let mut frame = |events: Vec<Event>| {
+        crate::test_frame(
+            &ctx,
+            egui::RawInput {
+                events,
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(800.0, 400.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                session.0.view.ui(ui, &egui_tty::TerminalStyle::default());
+            },
+        )
+        .drop_without_applying_deltas();
+    };
+    frame(vec![]);
+    let key = |key, modifiers| Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers,
+    };
+    frame(vec![Event::Text(
+        "PROMPT='READY> '; RPROMPT=''; bindkey -e".into(),
+    )]);
+    frame(vec![key(Key::Enter, Modifiers::NONE)]);
+    thread::sleep(Duration::from_millis(100));
+    frame(vec![Event::Text("print -r -- unique_comp".into())]);
+    frame(vec![key(Key::Tab, Modifiers::NONE)]);
+    frame(vec![key(Key::Enter, Modifiers::NONE)]);
+    wait_for(&mut session.0, "unique_completion_file.txt");
+    // Separate frames allow the foreground shell to consume each command.
+    crate::test_frame(&ctx, Default::default(), |ui| {
+        session.0.view.ui(ui, &egui_tty::TerminalStyle::default());
+    })
+    .drop_without_applying_deltas();
+    session.0.send(b"print -r -- EDIT_$((6*7)) discard\x17\r");
+    wait_for(&mut session.0, "EDIT_42");
+    session.0.send(b"sleep 30\r");
+    thread::sleep(Duration::from_millis(100));
+    session.0.send(&[3]);
+    session.0.send(b"print -r -- INTERRUPT_$((6*7))\r");
+    wait_for(&mut session.0, "INTERRUPT_42");
+    session.0.send(b"\x1b[A\r");
+    wait_for(&mut session.0, "INTERRUPT_42");
+    drop(session);
+    std::fs::remove_dir_all(root).unwrap();
 }

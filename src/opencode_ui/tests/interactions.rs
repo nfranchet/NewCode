@@ -1,6 +1,7 @@
 use super::*;
 fn frame(ui: &mut OpenCodeUi, ctx: &egui::Context, events: Vec<egui::Event>) -> egui::FullOutput {
-    ctx.run(
+    crate::test_frame(
+        &ctx,
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -9,8 +10,8 @@ fn frame(ui: &mut OpenCodeUi, ctx: &egui::Context, events: Vec<egui::Event>) -> 
             events,
             ..Default::default()
         },
-        |ctx| {
-            egui::CentralPanel::default().show(ctx, |panel| ui.show(panel, ctx));
+        |root| {
+            egui::CentralPanel::default().show(root, |panel| ui.show(panel, ctx));
         },
     )
 }
@@ -70,13 +71,14 @@ fn composer_cycles_agents_and_ctrl_enter_submits_once() {
     ui.input = "hello".into();
     let mut id = egui::Id::NULL;
     let draw = |ui: &mut OpenCodeUi, events: Vec<egui::Event>, id: &mut egui::Id| {
-        let _ = ctx.run(
+        let _ = crate::test_frame(
+            &ctx,
             egui::RawInput {
                 events,
                 ..Default::default()
             },
-            |ctx| {
-                egui::CentralPanel::default().show(ctx, |panel| {
+            |root| {
+                egui::CentralPanel::default().show(root, |panel| {
                     *id = panel.make_persistent_id("opencode_composer");
                     ui.composer(panel);
                 });

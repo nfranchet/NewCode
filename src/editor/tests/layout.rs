@@ -11,22 +11,23 @@ fn themed_window_fits_compact_and_standard_sizes() {
         for sidebar in [SidebarMode::Explorer, SidebarMode::Search, SidebarMode::Git] {
             app.sidebar_mode = sidebar;
             for _ in 0..3 {
-                let _ = ctx.run(
+                let _ = crate::test_frame(
+                    &ctx,
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
                         ..Default::default()
                     },
-                    |ctx| {
-                        app.render(ctx);
+                    |root| {
+                        app.render(root);
                         assert!(
-                            ctx.used_rect().right() <= size.x + 1.0,
+                            ctx.globally_used_rect().right() <= size.x + 1.0,
                             "Window overflows horizontally: {:?}",
-                            ctx.used_rect()
+                            ctx.globally_used_rect()
                         );
                         assert!(
-                            ctx.used_rect().bottom() <= size.y + 1.0,
+                            ctx.globally_used_rect().bottom() <= size.y + 1.0,
                             "Window overflows vertically: {:?}",
-                            ctx.used_rect()
+                            ctx.globally_used_rect()
                         );
                     },
                 );
@@ -46,7 +47,9 @@ fn native_title_tracks_workspace_changes_without_redundant_commands() {
         (None, Some("Focus Editor")),
     ] {
         app.settings.workspace = workspace.map(Into::into);
-        let output = ctx.run(Default::default(), |ctx| app.update_window_title(ctx));
+        let output = crate::test_frame(&ctx, Default::default(), |root| {
+            app.update_window_title(root.ctx())
+        });
         let titles: Vec<_> = output
             .viewport_output
             .values()

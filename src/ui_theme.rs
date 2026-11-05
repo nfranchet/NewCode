@@ -12,11 +12,11 @@ pub(crate) const AMBER: Color32 = Color32::from_rgb(146, 88, 8);
 pub(crate) const RED: Color32 = Color32::from_rgb(180, 49, 64);
 pub(crate) const BORDER: Color32 = Color32::from_rgb(213, 224, 237);
 pub(crate) const SURFACE: Color32 = Color32::from_rgb(245, 248, 253);
-pub(crate) const TERMINAL_BG: Color32 = Color32::from_rgb(19, 29, 46);
 pub(crate) const NAVY: Color32 = Color32::from_rgb(27, 45, 71);
 
 pub(crate) fn apply(ctx: &egui::Context) {
-    let mut style = (*ctx.style()).clone();
+    crate::terminal_fonts::apply(ctx);
+    let mut style = (*ctx.style_of(egui::Theme::Light)).clone();
     style.visuals = egui::Visuals::light();
     style.visuals.override_text_color = Some(INK);
     style.visuals.panel_fill = SURFACE;
@@ -66,7 +66,8 @@ pub(crate) fn apply(ctx: &egui::Context) {
     style
         .text_styles
         .insert(egui::TextStyle::Monospace, FontId::monospace(14.0));
-    ctx.set_style(style);
+    ctx.set_theme(egui::Theme::Light);
+    ctx.set_style_of(egui::Theme::Light, style);
 }
 
 #[derive(Clone, Copy)]
@@ -429,13 +430,14 @@ mod tests {
         let mut button_id = egui::Id::NULL;
         let mut clicked = false;
         let mut frame = |enabled: bool, events: Vec<egui::Event>| {
-            let _ = ctx.run(
+            let _ = crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     events,
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
                         let response = ui
                             .add_enabled_ui(enabled, |ui| {
                                 button(ui, Icon::Save, "Save", BLUE, true)

@@ -23,7 +23,8 @@ fn disabled_panels_reclaim_editor_width_and_preserve_saved_pane_width() {
         app.settings.opencode_enabled = open;
         app.settings.selected_assistant = selected;
         for _ in 0..3 {
-            let _ = ctx.run(
+            let _ = crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -31,10 +32,10 @@ fn disabled_panels_reclaim_editor_width_and_preserve_saved_pane_width() {
                     )),
                     ..Default::default()
                 },
-                |ctx| {
-                    app.render(ctx);
-                    assert!(ctx.used_rect().right() <= 1001.0);
-                    assert!(ctx.used_rect().bottom() <= 751.0);
+                |root| {
+                    app.render(root);
+                    assert!(ctx.globally_used_rect().right() <= 1001.0);
+                    assert!(ctx.globally_used_rect().bottom() <= 751.0);
                 },
             );
         }

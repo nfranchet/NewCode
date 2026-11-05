@@ -5,95 +5,92 @@ use crate::{
     terminal::Terminal,
     ui_theme::{self as theme, Icon},
 };
-use eframe::egui::{self, Color32, FontId};
+use eframe::egui::{self, Color32};
 use std::path::Path;
 
 impl EditorApp {
-    pub(super) fn terminal_ui(ctx: &egui::Context, ui: &mut egui::Ui, term: &mut Option<Terminal>) {
-        if let Some(t) = term {
-            t.poll();
-            let available = ui.available_size().max(egui::vec2(80.0, 40.0));
-            let font = FontId::monospace(14.0);
-            let (cell_w, line_h) = ui.fonts(|f| {
-                let g = f.layout_no_wrap("M".into(), font.clone(), Color32::WHITE);
-                (g.size().x, g.size().y)
-            });
-            t.resize(
-                (available.x / cell_w.max(1.0)).floor() as usize,
-                (available.y / line_h.max(1.0)).floor() as usize,
-            );
-            let (_, rect) = ui.allocate_space(available);
-            let id = super::terminal_input::terminal_id();
-            let response = ui.interact(rect, id, egui::Sense::click());
-            ctx.data_mut(|data| data.insert_temp(id.with("rect"), rect));
-            if response.clicked() {
-                response.request_focus();
+    pub(super) fn terminal_ui(ui: &mut egui::Ui, term: &mut Option<Terminal>, error: Option<&str>) {
+        if let Some(terminal) = term {
+            let style = egui_tty::TerminalStyle {
+                font: crate::terminal_fonts::font_id(),
+                scheme: egui_tty::ColorScheme::Dark,
+                ..Default::default()
+            };
+            terminal.poll();
+            terminal.view.set_color_scheme(style.scheme);
+            if let Ok((_, background)) = terminal.view.drawn_colors() {
+                ui.painter()
+                    .rect_filled(ui.available_rect_before_wrap(), 0.0, background);
             }
+            let response = terminal.view.ui(ui, &style);
+            let id = super::terminal_input::terminal_id();
+            ui.ctx().data_mut(|data| {
+                data.insert_temp(id.with("widget"), response.id);
+                data.insert_temp(id.with("rect"), response.rect);
+            });
             if response.has_focus() {
-                ui.memory_mut(|memory| {
-                    memory.set_focus_lock_filter(
-                        id,
-                        egui::EventFilter {
-                            tab: true,
-                            horizontal_arrows: true,
-                            vertical_arrows: true,
-                            escape: true,
-                        },
-                    )
+                // The widget has encoded these; do not let another panel handle them again.
+                ui.input_mut(|input| {
+                    input.events.retain(|event| {
+                        !matches!(
+                            event,
+                            egui::Event::Key { .. }
+                                | egui::Event::Text(_)
+                                | egui::Event::Copy
+                                | egui::Event::Cut
+                                | egui::Event::Paste(_)
+                                | egui::Event::Ime(_)
+                        )
+                    })
                 });
             }
-            ui.painter().rect_filled(rect, 0.0, theme::TERMINAL_BG);
-            let painter = ui.painter().with_clip_rect(rect);
-            for (y, line) in t.cells.iter().enumerate() {
-                for (x, cell) in line.iter().enumerate() {
-                    let pos = rect.min + egui::vec2(x as f32 * cell_w, y as f32 * line_h);
-                    painter.rect_filled(
-                        egui::Rect::from_min_size(pos, egui::vec2(cell_w, line_h)),
-                        0.0,
-                        cell.bg,
-                    );
-                }
-                for (x, cell) in line.iter().enumerate().filter(|(_, cell)| cell.width > 0) {
-                    let pos = rect.min + egui::vec2(x as f32 * cell_w, y as f32 * line_h);
-                    let text = format!("{}{}", cell.ch, cell.combining);
-                    painter.text(pos, egui::Align2::LEFT_TOP, text, font.clone(), cell.fg);
-                }
-            }
-            if response.has_focus() {
-                let cursor = egui::Rect::from_min_size(
-                    rect.min
-                        + egui::vec2(
-                            t.cursor_x.min(t.cols as usize - 1) as f32 * cell_w,
-                            t.cursor_y as f32 * line_h,
-                        ),
-                    egui::vec2(cell_w, line_h),
-                );
-                painter.rect_stroke(
-                    cursor,
-                    0.0,
-                    egui::Stroke::new(1.0_f32, Color32::WHITE),
-                    egui::StrokeKind::Inside,
-                );
-            }
         } else {
-            ui.colored_label(Color32::LIGHT_RED, "Terminal failed to start");
+            ui.colored_label(
+                Color32::LIGHT_RED,
+                error.unwrap_or("Terminal failed to start"),
+            );
         }
     }
-    pub(super) fn shell_panel(
+    pub(super) fn restart_terminal(
         &mut self,
         ctx: &egui::Context,
         cwd: Option<&Path>,
         runtime: Option<&crate::dev_container::Runtime>,
     ) {
+        let command = self
+            .top
+            .as_ref()
+            .map(|terminal| terminal.command.clone())
+            .unwrap_or_default();
+        drop(self.top.take());
+        match Terminal::spawn_with_runtime(&command, cwd, runtime, ctx.clone()) {
+            Ok(terminal) => {
+                self.top = Some(terminal);
+                self.terminal_error = None;
+            }
+            Err(error) => {
+                log::warn!("Terminal startup failed");
+                self.terminal_error = Some(format!("Terminal failed to start: {error}"));
+            }
+        }
+    }
+    pub(super) fn shell_panel(
+        &mut self,
+        root: &mut egui::Ui,
+        cwd: Option<&Path>,
+        runtime: Option<&crate::dev_container::Runtime>,
+    ) {
+        let context = root.ctx().clone();
+        let ctx = &context;
         if let Some(terminal) = self.top.as_mut() {
             terminal.poll();
         }
         let top_height = self.settings.top_height;
-        let top_response = egui::TopBottomPanel::bottom("top_terminal")
+        let top_response = egui::Panel::bottom("top_terminal")
             .resizable(true)
-            .default_height(top_height)
-            .min_height(80.0)
-            .show(ctx, |ui| {
+            .default_size(top_height)
+            .min_size(80.0)
+            .show(root, |ui| {
                 ui.horizontal(|ui| {
                     ui.selectable_value(
                         &mut self.bottom_tab,
@@ -107,29 +104,23 @@ impl EditorApp {
                                 .on_hover_text("Restart terminal")
                                 .clicked()
                             {
-                                let command = self
-                                    .top
-                                    .as_ref()
-                                    .map(|terminal| terminal.command.clone())
-                                    .unwrap_or_default();
-                                self.top = Terminal::spawn_with_runtime(
-                                    &command,
-                                    cwd,
-                                    runtime,
-                                    ctx.clone(),
-                                )
-                                .ok();
+                                self.restart_terminal(ctx, cwd, runtime);
                             }
                         });
                     }
                 });
                 ui.separator();
                 if self.bottom_tab == super::logs::Tab::Terminal {
-                    Self::terminal_ui(ctx, ui, &mut self.top);
+                    Self::terminal_ui(ui, &mut self.top, self.terminal_error.as_deref());
                 } else {
-                    ctx.memory_mut(|memory| {
-                        memory.surrender_focus(super::terminal_input::terminal_id())
+                    let widget_id = ctx.data(|data| {
+                        data.get_temp::<egui::Id>(
+                            super::terminal_input::terminal_id().with("widget"),
+                        )
                     });
+                    if let Some(id) = widget_id {
+                        ctx.memory_mut(|memory| memory.surrender_focus(id));
+                    }
                     ctx.data_mut(|data| {
                         data.remove::<egui::Rect>(super::terminal_input::terminal_id().with("rect"))
                     });

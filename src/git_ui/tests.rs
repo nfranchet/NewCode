@@ -27,7 +27,8 @@ fn commit_focus_survives_refresh_and_failure() {
     };
     let id = egui::Id::new(("git_commit_message", &git_ui.workspace));
     let frame = |git_ui: &mut GitUi, events: Vec<egui::Event>| {
-        let _ = ctx.run(
+        let _ = crate::test_frame(
+            &ctx,
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -36,8 +37,8 @@ fn commit_focus_survives_refresh_and_failure() {
                 events,
                 ..Default::default()
             },
-            |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            |root| {
+                egui::CentralPanel::default().show(root, |ui| {
                     git_ui.ui(ui, Some(&workspace), None);
                 });
             },

@@ -75,7 +75,7 @@ impl EditorApp {
         let mut cancel = false;
         let mut confirm = false;
         let modal = egui::Modal::new(egui::Id::new("delete_confirmation")).show(ctx, |ui| {
-            ui.set_width(380.0_f32.min(ctx.screen_rect().width() - 40.0));
+            ui.set_width(380.0_f32.min(ctx.viewport_rect().width() - 40.0));
             theme::heading(ui, Icon::Warning, "Delete this entry?", theme::RED);
             ui.label(
                 egui::RichText::new(

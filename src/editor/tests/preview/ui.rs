@@ -22,7 +22,8 @@ impl Harness {
     }
     fn frame(&mut self, events: Vec<Event>) -> egui::FullOutput {
         self.time += 0.03;
-        self.ctx.run(
+        crate::test_frame(
+            &self.ctx,
             egui::RawInput {
                 time: Some(self.time),
                 events,
@@ -32,7 +33,7 @@ impl Harness {
                 )),
                 ..Default::default()
             },
-            |ctx| self.app.render(ctx),
+            |root| self.app.render(root),
         )
     }
     fn explorer(&self, name: &str) -> egui::Id {

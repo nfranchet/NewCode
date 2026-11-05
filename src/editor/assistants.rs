@@ -134,21 +134,23 @@ impl EditorApp {
             }
         }
     }
-    pub(super) fn assistant_panel(&mut self, ctx: &egui::Context, cwd: Option<&Path>) {
+    pub(super) fn assistant_panel(&mut self, root: &mut egui::Ui, cwd: Option<&Path>) {
+        let context = root.ctx().clone();
+        let ctx = &context;
         if !self.settings.codex_enabled && !self.settings.opencode_enabled {
             return;
         }
-        let response = egui::SidePanel::right("codex_terminal")
+        let response = egui::Panel::right("codex_terminal")
             .resizable(true)
-            .default_width(self.settings.right_width)
-            .width_range(260.0..=700.0)
+            .default_size(self.settings.right_width)
+            .size_range(260.0..=700.0)
             .frame(
                 egui::Frame::new()
                     .fill(egui::Color32::from_rgb(242, 250, 248))
                     .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
                     .inner_margin(8),
             )
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 if self.settings.codex_enabled && self.settings.opencode_enabled {
                     ui.horizontal_wrapped(|ui| {
                         for (assistant, name, state) in [

@@ -13,7 +13,7 @@
 | Search and clipboard | Grouped workspace search, match navigation, Ctrl+F Find with highlights/count, clipboard and Edit actions |
 | Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
 | Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
-| Shell | Bottom interactive PTY-backed configured-shell terminal, Restart action, exclusive focused keyboard routing, zsh key encoding, application-cursor/bracketed-paste modes |
+| Shell | Bottom PTY-backed configured-shell terminal using egui_tty/Ghostty, title-row Restart, exclusive focus, system symbol fonts, selection, scrollback, mouse reporting, and alternate screens |
 | Assistant pane | Independent Codex/OpenCode enable switches, status tabs, hidden-client event processing, full editor width when both disabled, saved visibility and workspace state |
 | OpenCode | Native local HTTP/SSE client, session/history restore, provider/model/variant/agent catalogs, streaming messages/tools/reasoning, permissions/questions, interrupt, Plan-to-Build Go, reported usage |
 | Codex sessions | JSONL App Server client, automatic latest-session resume, session picker/pagination, new session, Start/Stop, Interrupt |
@@ -78,7 +78,7 @@ Implemented: Linux session detachment before GUI initialization, `--foreground`,
 
 Manual desktop check: launch from a terminal, confirm the prompt returns while the window stays open, verify its workspace title in the Linux window list, switch workspaces, and check `--foreground` retains terminal diagnostics.
 
-Terminal keyboard routing runs through the pre-frame input hook before egui navigation and editor shortcuts. Encoding and terminal input modes are isolated in `src/terminal_input.rs`; tests cover focus transfer, exact byte sequences, mode updates, and a real zsh PTY when zsh is installed.
+Terminal rendering, VT parsing, screen state, selection, and input encoding belong to `egui_tty` and Ghostty. `src/terminal.rs` owns PTY/session lifecycle; the editor pre-frame hook handles clipboard policy, while the widget owns shell keys. `src/terminal_fonts.rs` discovers installed monospace and symbol fonts. Builds use egui/eframe 0.36.2 and Zig 0.15.2 with the statically linked Ghostty 0.2.2 bindings. Tests cover focus, real zsh startup/completion/editing/interrupts, streaming output, terminal queries, alternate screens, and process cleanup.
 
 ## OpenCode integration validation
 

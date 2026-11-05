@@ -5,13 +5,13 @@ use crate::ui_theme::{self as theme, Icon};
 use eframe::egui;
 
 impl EditorApp {
-    pub(super) fn sidebar(&mut self, ctx: &egui::Context) {
+    pub(super) fn sidebar(&mut self, root: &mut egui::Ui) {
         let left_width = self.settings.explorer_width;
-        let left_response = egui::SidePanel::left("explorer")
+        let left_response = egui::Panel::left("explorer")
             .resizable(true)
-            .default_width(left_width)
-            .width_range(150.0..=500.0)
-            .show(ctx, |ui| {
+            .default_size(left_width)
+            .size_range(150.0..=500.0)
+            .show(root, |ui| {
                 if self.sidebar_mode == SidebarMode::Explorer {
                     ui.horizontal_wrapped(|ui| {
                         theme::icon(ui, Icon::Folder, theme::BLUE);
