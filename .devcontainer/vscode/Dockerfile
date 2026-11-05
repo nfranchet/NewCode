@@ -7,6 +7,8 @@ RUN rustup update stable && \
     sudo apt install -y tig zsh-antigen curl ca-certificates unzip && \
     cargo +stable install --locked grcov
 
+COPY ./vscode/files/toto.txt /tmp/toto.txt
+
 USER vscode
 ENV PATH=/home/vscode/.local/bin:/home/vscode/.opencode/bin:${PATH}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

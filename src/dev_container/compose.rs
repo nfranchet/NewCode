@@ -1,10 +1,7 @@
-//! Compose execution and runtime-only Dockerfile path resolution.
+//! Resolve build paths using Compose-file semantics while retaining workspace mounts.
 use super::{Configuration, diagnostics};
 use serde_json::{Value, json};
-use std::{
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::process::{Command, Stdio};
 
 pub(super) fn compose<I, S>(configuration: &Configuration, args: I) -> Result<Vec<u8>, String>
 where
@@ -22,74 +19,64 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
-    let bytes = compose(configuration, ["config", "--format", "json"])?;
+    // Compose normally resolves build contexts from the first Compose file.
+    // The runtime uses the host workspace as its project directory for stable
+    // project identity and workspace bind mounts. Resolve builds separately so
+    // that adjusting the Dockerfile alone cannot break COPY/ADD or .dockerignore.
+    let directory = configuration
+        .compose_files
+        .first()
+        .and_then(|file| file.parent())
+        .ok_or("No Compose file directory is configured")?
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve Compose directory: {error}"))?;
+    let mut build_configuration = configuration.clone();
+    build_configuration.workspace = directory;
+    // Keep COMPOSE_PROJECT_NAME interpolation stable even during path resolution.
+    let runtime_bytes = compose(configuration, ["config", "--format", "json"])?;
+    let runtime: Value = serde_json::from_slice(&runtime_bytes)
+        .map_err(|_| "Could not parse runtime Docker Compose configuration")?;
+    let project_name = runtime["name"]
+        .as_str()
+        .ok_or("Docker Compose did not resolve the project name")?;
+    let bytes = compose(
+        &build_configuration,
+        ["--project-name", project_name, "config", "--format", "json"],
+    )?;
     let resolved: Value = serde_json::from_slice(&bytes)
         .map_err(|_| "Could not parse resolved Docker Compose configuration")?;
-    let override_config = dockerfile_override(configuration, &resolved)?;
+    let override_config = build_override(configuration, &resolved)?;
     execute(configuration, args, override_config.as_ref())
 }
 
-fn dockerfile_override(
+fn build_override(
     configuration: &Configuration,
     resolved: &Value,
 ) -> Result<Option<Value>, String> {
-    let service = &resolved["services"][&configuration.service];
-    if service.is_null() {
+    let services = resolved["services"]
+        .as_object()
+        .ok_or("Docker Compose did not resolve services")?;
+    if !services.contains_key(&configuration.service) {
         return Err(format!(
             "Compose service {} is not defined",
             configuration.service
         ));
     }
-    let build = &service["build"];
-    if build.is_null() || build.get("dockerfile_inline").is_some() {
-        return Ok(None);
-    }
-    let context = build["context"]
-        .as_str()
-        .map(Path::new)
-        .ok_or("Docker Compose did not resolve the build context")?;
-    // Remote Git/URL contexts are resolved by Docker, never against the host.
-    if !context.is_dir() {
-        return Ok(None);
-    }
-    let dockerfile = build["dockerfile"].as_str().unwrap_or("Dockerfile");
-    if context.join(dockerfile).is_file() {
-        return Ok(None);
-    }
-    let compose_directory = configuration
-        .compose_files
-        .first()
-        .and_then(|file| file.parent());
-    let configured = compose_directory.map(|directory| directory.join(dockerfile));
-    let mut path = configured.filter(|path| path.is_file());
-    if path.is_none() && matches!(dockerfile, "Dockerfile" | ".Dockerfile" | "./Dockerfile") {
-        path = compose_directory
-            .map(|directory| directory.join("Dockerfile"))
-            .filter(|path| path.is_file())
-            .or_else(|| {
-                let path = configuration.workspace.join(".devcontainer/Dockerfile");
-                path.is_file().then_some(path)
-            });
-        if path.is_some() {
-            log::warn!(
-                "Configured Dockerfile was not found; using the existing Dev Container Dockerfile for service {}",
-                configuration.service
-            );
+    let mut overrides = serde_json::Map::new();
+    for (name, service) in services {
+        if let Some(build) = service.get("build").filter(|build| !build.is_null()) {
+            overrides.insert(name.clone(), json!({"build": build}));
         }
     }
-    let path = path.ok_or_else(|| {
-        format!("Dockerfile {dockerfile} was not found in the build context or Compose directory")
-    })?;
-    let path = path
-        .canonicalize()
-        .map_err(|error| format!("Cannot resolve Dockerfile: {error}"))?;
-    log::debug!(
-        "Using Compose-directory Dockerfile for Dev Container service {}",
-        configuration.service
-    );
-    Ok(Some(
-        json!({"services": {&configuration.service: {"build": {"dockerfile": path}}}}),
-    ))
+    if overrides.is_empty() {
+        Ok(None)
+    } else {
+        log::debug!(
+            "Using Compose-directory build settings for {} Dev Container services",
+            overrides.len()
+        );
+        Ok(Some(json!({"services": overrides})))
+    }
 }
 
 fn execute<I, S>(
@@ -131,7 +118,7 @@ where
             .ok_or("Compose override input unavailable")
             .and_then(|mut input| {
                 serde_json::to_writer(&mut input, value)
-                    .map_err(|_| "Could not send Compose Dockerfile override")
+                    .map_err(|_| "Could not send Compose build override")
             });
         if let Err(error) = result {
             let _ = child.kill();
