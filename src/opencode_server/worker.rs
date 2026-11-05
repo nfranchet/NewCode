@@ -87,11 +87,11 @@ fn serve(
                 }
             }
         });
-        std::thread::spawn(
-            move || {
-                for _ in BufReader::new(stderr).lines().map_while(Result::ok) {}
-            },
-        );
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                crate::logging::process_line("focus_editor::opencode_server", &line);
+            }
+        });
     }
     let deadline = Instant::now() + Duration::from_secs(15);
     let url = loop {

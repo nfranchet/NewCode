@@ -1,5 +1,8 @@
 //! Logging configuration and launch argument parsing. Never accept content payloads.
 use std::{ffi::OsString, io::Write, path::PathBuf, str::FromStr};
+pub(crate) mod process;
+pub(crate) mod redaction;
+pub(crate) mod session;
 
 #[derive(Default, Debug)]
 pub(crate) struct Arguments {
@@ -58,137 +61,74 @@ fn filter(level: Option<log::LevelFilter>, environment: Option<String>) -> Strin
     }
 }
 pub(crate) fn init(arguments: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
+    init_at(arguments, &session::log_path()?)
+}
+
+fn init_at(
+    arguments: &Arguments,
+    path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let filter = filter(arguments.level, std::env::var("RUST_LOG").ok());
+    let detached = std::env::args_os().any(|a| a == "--focus-editor-detached");
+    let disk = if detached {
+        None
+    } else {
+        Some(session::fresh_file(path)?)
+    };
+    let disk = std::sync::Mutex::new(disk);
     let mut logger = env_logger::Builder::new();
     logger
         .parse_filters(&filter)
         .target(env_logger::Target::Stderr)
-        .format(|buffer, record| {
-            writeln!(
-                buffer,
-                "{} {:5} pid={} [{}] {}",
-                buffer.timestamp_millis(),
-                record.level(),
-                std::process::id(),
-                record.target(),
-                record.args()
-            )
+        .format(move |buffer, record| {
+            let timestamp = buffer.timestamp_millis().to_string();
+            let source = session::Source::from_target(record.target());
+            for message in redaction::sanitize(&record.args().to_string()) {
+                let text = format!(
+                    "{} {:5} pid={} [{}] {}",
+                    timestamp,
+                    record.level(),
+                    std::process::id(),
+                    record.target(),
+                    message
+                );
+                session::push(session::Entry {
+                    timestamp: timestamp.clone(),
+                    level: record.level(),
+                    source,
+                    text: text.clone(),
+                });
+                if let Some(file) = disk.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    if let Err(error) = writeln!(file, "{text}").and_then(|_| file.flush()) {
+                        eprintln!("Could not write current-session application log: {error}");
+                    }
+                }
+                writeln!(buffer, "{text}")?;
+            }
+            Ok(())
         });
     logger.try_init()?;
     Ok(())
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn version_flags_do_not_start_a_workspace_and_respect_separator() {
-        for flag in ["--version", "-V"] {
-            let parsed = Arguments::parse([flag.into()]).unwrap();
-            assert!(parsed.version);
-            assert!(parsed.workspace.is_none());
-        }
-        let parsed = Arguments::parse(["--".into(), "--version".into()]).unwrap();
-        assert!(!parsed.version);
-        assert_eq!(parsed.workspace, Some("--version".into()));
+
+/// Subprocess diagnostics are never protocol payloads or terminal contents.
+pub(crate) fn process_line(target: &str, line: &str) {
+    if line.trim().is_empty() {
+        return;
     }
-    #[test]
-    fn levels_do_not_become_workspace_arguments() {
-        for args in [
-            vec!["--log-level", "debug", "project"],
-            vec!["project", "--log-level=debug"],
-            vec![
-                "--foreground",
-                "--log-level",
-                "debug",
-                "--no-codex",
-                "--focus-editor-detached",
-                "project",
-            ],
-        ] {
-            let parsed = Arguments::parse(args.into_iter().map(Into::into)).unwrap();
-            assert_eq!(parsed.level, Some(log::LevelFilter::Debug));
-            assert_eq!(parsed.workspace, Some("project".into()));
-        }
-        assert!(Arguments::parse(["--log-level".into()]).is_err());
-        assert!(Arguments::parse(["--log-level=oops".into()]).is_err());
-        assert!(Arguments::parse(["--log-level=".into()]).is_err());
-        assert_eq!(
-            Arguments::parse(["--".into(), "--log-level=debug".into()])
-                .unwrap()
-                .workspace,
-            Some("--log-level=debug".into())
-        );
-    }
-    #[test]
-    fn precedence_and_quiet_dependency_defaults() {
-        assert_eq!(filter(None, None), "warn,focus_editor=info");
-        assert_eq!(
-            filter(Some(log::LevelFilter::Off), None),
-            "off,focus_editor=off"
-        );
-        assert_eq!(
-            filter(Some(log::LevelFilter::Error), None),
-            "error,focus_editor=error"
-        );
-        assert_eq!(
-            filter(None, Some("focus_editor=trace,reqwest=debug".into())),
-            "focus_editor=trace,reqwest=debug"
-        );
-        assert_eq!(
-            filter(Some(log::LevelFilter::Debug), Some("off".into())),
-            "warn,focus_editor=debug"
-        );
-    }
-    #[test]
-    fn filters_enable_expected_levels_without_dependency_debug_noise() {
-        use log::{Level, LevelFilter, Log, Metadata};
-        let build = |level| {
-            let mut builder = env_logger::Builder::new();
-            builder.parse_filters(&filter(level, None));
-            builder.build()
-        };
-        let default = build(None);
-        assert!(
-            default.enabled(
-                &Metadata::builder()
-                    .target("focus_editor::editor")
-                    .level(Level::Info)
-                    .build()
-            )
-        );
-        assert!(
-            !default.enabled(
-                &Metadata::builder()
-                    .target("focus_editor::editor")
-                    .level(Level::Debug)
-                    .build()
-            )
-        );
-        assert!(
-            !default.enabled(
-                &Metadata::builder()
-                    .target("reqwest")
-                    .level(Level::Info)
-                    .build()
-            )
-        );
-        let debug = build(Some(LevelFilter::Debug));
-        assert!(
-            debug.enabled(
-                &Metadata::builder()
-                    .target("focus_editor::git_ui")
-                    .level(Level::Debug)
-                    .build()
-            )
-        );
-        let off = build(Some(LevelFilter::Off));
-        assert!(
-            !off.enabled(
-                &Metadata::builder()
-                    .target("focus_editor")
-                    .level(Level::Error)
-                    .build()
-            )
-        );
+    let lower = line.to_ascii_lowercase();
+    let level = if lower.contains("error") || lower.contains("failed") {
+        log::Level::Error
+    } else if lower.contains("warn") {
+        log::Level::Warn
+    } else {
+        log::Level::Info
+    };
+    // Sanitize before the facade too: alternate/test loggers must not see secrets.
+    for text in redaction::sanitize(line) {
+        log::log!(target: target, level, "{text}");
     }
 }
+
+#[cfg(test)]
+mod tests;

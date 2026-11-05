@@ -40,7 +40,7 @@ cargo run --release -- --foreground
 focus-editor --foreground
 ```
 
-On Linux, background output and startup errors are appended to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, usually `~/.local/share/focus-editor/logs/launch.log`. Failures to create the log or spawn the editor are reported in the launching terminal. Errors after detachment are recorded in the log.
+Each launch starts a fresh diagnostic file at `$XDG_DATA_HOME/focus-editor/logs/launch.log`, usually `~/.local/share/focus-editor/logs/launch.log`. Failures to create the log or spawn the editor are reported in the launching terminal. Errors after detachment are recorded in the log.
 
 Open a workspace directly:
 
@@ -76,6 +76,12 @@ Assistant launches forward present `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_
 
 Dev Container failure details are written to the application log at **Warn** level. Its toolbar menu shows a short failure message and retains **Retry**; opening the menu does not repeat diagnostics. Configuration, start/rebuild/reconnect, and stop errors include operation context. Failure records include the Compose exit status and captured stdout/stderr, with long output bounded while retaining its tail. Each diagnostic line gets its own timestamped record. Sensitive values and build-command payloads are redacted while surrounding failure explanations and exit codes remain visible.
 
+The bottom panel has **Terminal** and **Logs** tabs. Switching to Logs leaves the terminal running and processing output, while keyboard input belongs to the log controls. Select **All**, **Editor**, **Git**, **Codex**, **OpenCode**, **Dev Container**, **Docker Compose**, or **Terminal** to view a component. Use search and severity filters, select/copy text, **Copy visible logs**, **Clear**, and **Follow latest**. Scrolling upward pauses following. **Dev Container → Show logs** opens the viewer with that source selected.
+
+Logs are current-session only: every editor launch starts an empty viewer and replaces `launch.log`; no previous records are loaded and no rotated history is kept. Each running editor's viewer is independent. The file path represents the newest launch; older running instances keep their own output handle. The viewer retains up to 10,000 records or 8 MiB and discards oldest records when full. **Clear** removes records for the selected source (or all sources) from the viewer; it leaves the current-session diagnostic file intact. Viewer filters do not change which levels are captured.
+
+Docker Compose build/start/stop output streams live into its section, including successful progress. Codex and OpenCode process diagnostics appear in their sections; terminal input/output and assistant protocol payloads are excluded. Credentials are redacted before either log sink.
+
 Logging defaults to **Info**. Change it easily for a launch:
 
 ```sh
@@ -90,9 +96,9 @@ Supported levels are `trace`, `debug`, `info`, `warn`, `error`, and `off`. Both 
 - **Info:** important application, workspace, assistant, Dev Container, and session lifecycle events; successful commits, deletion, and path changes.
 - **Warn:** recoverable operation failures, configuration fallbacks, and connection recovery. **Error** records fatal application failure. **Trace** adds low-level event metadata.
 
-Records contain a timestamp, level, process ID, and component. Foreground launches write to the terminal's stderr; background launches append to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, normally `~/.local/share/focus-editor/logs/launch.log`.
+Records contain a timestamp, level, process ID, and component. Foreground launches write to both the terminal's stderr and the current-session file; background launches write to `$XDG_DATA_HOME/focus-editor/logs/launch.log`, normally `~/.local/share/focus-editor/logs/launch.log`.
 
-For component filters, use `RUST_LOG`, for example `RUST_LOG=warn,focus_editor::git_ui=debug focus-editor .`. An explicit `--log-level` takes precedence over `RUST_LOG`. With neither set, application Info and dependency Warn are enabled. Log files retain the existing append behavior without rotation.
+For component filters, use `RUST_LOG`, for example `RUST_LOG=warn,focus_editor::git_ui=debug focus-editor .`. An explicit `--log-level` takes precedence over `RUST_LOG`. With neither set, application Info and dependency Warn are enabled. Only the current launch is retained; the next launch replaces the file without creating history or rotated backups.
 
 ## Layout and appearance
 

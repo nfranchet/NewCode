@@ -99,7 +99,14 @@ where
     if override_config.is_some() {
         command.args(["-f", "-"]);
     }
-    command.args(args.into_iter().map(|arg| arg.as_ref().to_owned()));
+    let args: Vec<String> = args
+        .into_iter()
+        .map(|arg| arg.as_ref().to_owned())
+        .collect();
+    let live = args
+        .first()
+        .is_some_and(|arg| matches!(arg.as_str(), "up" | "build" | "stop"));
+    command.args(&args);
     command
         .stdin(if override_config.is_some() {
             Stdio::piped()
@@ -111,6 +118,14 @@ where
     let mut child = command
         .spawn()
         .map_err(|error| format!("Could not run Docker Compose: {error}"))?;
+    let stdout = crate::logging::process::capture(
+        child.stdout.take().ok_or("Compose stdout unavailable")?,
+        live,
+    );
+    let stderr = crate::logging::process::capture(
+        child.stderr.take().ok_or("Compose stderr unavailable")?,
+        live,
+    );
     if let Some(value) = override_config {
         let result = child
             .stdin
@@ -126,9 +141,22 @@ where
             return Err(error.into());
         }
     }
-    let output = child
-        .wait_with_output()
+    let status = child
+        .wait()
         .map_err(|error| format!("Could not wait for Docker Compose: {error}"))?;
+    let stdout = stdout
+        .join()
+        .map_err(|_| "Compose stdout reader stopped")?
+        .map_err(|e| e.to_string())?;
+    let stderr = stderr
+        .join()
+        .map_err(|_| "Compose stderr reader stopped")?
+        .map_err(|e| e.to_string())?;
+    let output = std::process::Output {
+        status,
+        stdout,
+        stderr,
+    };
     if output.status.success() {
         Ok(output.stdout)
     } else {

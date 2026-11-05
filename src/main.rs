@@ -32,15 +32,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("focus-editor {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    logging::init(&arguments)?;
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return Err("Focus Editor supports Linux and macOS".into());
     }
-    log::debug!("Launch arguments validated");
     if launch::detach()? {
-        log::debug!("Background editor spawned; returning shell prompt");
         return Ok(());
     }
+    logging::init(&arguments)?;
+    log::debug!("Launch arguments validated");
     log::info!("Application starting version={}", env!("CARGO_PKG_VERSION"));
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

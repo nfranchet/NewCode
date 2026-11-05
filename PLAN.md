@@ -74,7 +74,7 @@ Follow-up work should extend the implementation and its validation together; pla
 
 ## Background launch and workspace title
 
-Implemented: Linux session detachment before GUI initialization, `--foreground`, append-only background launch logging, argument/directory/environment preservation, and dynamic workspace window titles. Launch handling lives in `src/launch.rs`. Tests cover detachment, redirected streams, argument preservation, recursion prevention, and workspace title changes.
+Implemented: Linux session detachment before GUI initialization, `--foreground`, current-session background launch logging, argument/directory/environment preservation, and dynamic workspace window titles. Launch handling lives in `src/launch.rs`. Tests cover detachment, redirected streams, argument preservation, recursion prevention, and workspace title changes.
 
 Manual desktop check: launch from a terminal, confirm the prompt returns while the window stays open, verify its workspace title in the Linux window list, switch workspaces, and check `--foreground` retains terminal diagnostics.
 
@@ -109,3 +109,9 @@ Earlier validation passed: actionlint, 89 Rust tests (one optional integration t
 Resolve build settings with the first Compose file's directory and the existing project name, then pass only those service build definitions to the workspace-root Compose invocation through stdin. This preserves Dockerfile/COPY/ADD/.dockerignore resolution together, including dependent services, without changing workspace mounts or user files. Start and Rebuild share this path. Tests cover nested Dockerfile/COPY paths, unchanged mounts/files/project-name interpolation, image-only services, inline/remote contexts, and dependency builds. Optional Compose checks discover the configured Dockerfile dynamically; a separate ignored test runs the real configured image build without recreating containers.
 
 Validated this fix with 91 passing regression tests, both explicit Compose configuration checks, and a successful build of the current configured Dev Container image through the launcher (including its nested COPY source). Compilation, formatting, and whitespace checks passed. The configured Dockerfile and COPY source stayed in place; no running container was recreated.
+
+## Integrated session logs
+
+The bottom Terminal/Logs panel uses a bounded thread-safe process-local record store and the existing log facade/filter rules. Formatting redacts messages before viewer/file output, categorizes record targets, and requests GUI repaints for worker records. Linux detachment creates one fresh atomic file and passes its output handle to the GUI; foreground/macOS logging owns a fresh file plus stderr. No prior logs are read or rotated. Compose drains stdout/stderr concurrently with live diagnostics and bounded failure capture; config JSON stays outside logs. Tests cover fresh file replacement/concurrent writers, dual-sink logger startup/redaction/live delivery in isolated subprocesses, source/severity/search filters, retention bounds, narrow layouts, and hidden-terminal process/output/focus behavior. Explicit Compose config checks exercise overrides without container recreation.
+
+Validation passed: 97 regression tests (four optional integration tests skipped), both explicit Compose configuration checks, Linux compilation, macOS arm64 compile-only tests, formatting, and whitespace checks. The isolated logger test also verified live process delivery before completion and sanitized records in both session sinks. No Dev Container configuration was changed and no container was recreated.

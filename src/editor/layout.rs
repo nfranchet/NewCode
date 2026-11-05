@@ -74,6 +74,15 @@ impl EditorApp {
                     }
                     ui.separator();
                     ui.menu_button("Dev Container", |ui| self.dev_container.menu(ui, ctx));
+                    if ctx
+                        .data_mut(|data| {
+                            data.remove_temp::<bool>(egui::Id::new("show_dev_container_logs"))
+                        })
+                        .unwrap_or(false)
+                    {
+                        self.bottom_tab = super::logs::Tab::Logs;
+                        self.logs.source = Some(crate::logging::session::Source::DevContainer);
+                    }
                     self.assistants_menu(ui, ctx);
                     ui.menu_button("Edit", |ui| {
                         if ui
