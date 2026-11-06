@@ -24,6 +24,7 @@ mod patch_model;
 mod presentation;
 mod repository;
 mod review;
+mod stats;
 #[cfg(test)]
 mod tests;
 

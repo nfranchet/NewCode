@@ -156,12 +156,15 @@ The Source Control sidebar has one repository/branch header and a Refresh icon. 
 | Group | Contents | Actions |
 | --- | --- | --- |
 | Conflicts | Files requiring resolution | Resolve in the editor, then stage the resolved file |
-| Staged Changes | Content included in the next commit | **−** unstages a file or the group |
-| Changes | Saved changes excluded from the next commit, including **New** files | **+** stages a file or the group |
+| Staged Changes | Content included in the next commit | Unstage through the row context menu, Space, or the group **−** button |
+| Changes | Tracked changes excluded from the next commit | Stage through the row context menu, Space, or the group **+** button |
+| Untracked | New files not yet added to Git | Stage through double-click, the context menu, Space, or the group **+** button |
 
-Only nonempty groups are shown. A clean repository shows **Working tree clean**. Each row shows the filename with its status and parent directory beneath it. Hover for the full path, rename source, and addition/deletion counts; wider panels show counts inline. A partially staged file appears in both Staged Changes and Changes.
+Only nonempty groups are shown. A clean repository shows **Working tree clean**. Each compact row has four columns: **status letter**, **repository-relative path**, **+added lines**, and **-deleted lines**. Both line counts are green and aligned on the right. Status letters are M (modified), A (added), D (deleted), R (renamed), C (copied), T (type changed), U (conflict), and N (new/untracked). Hover for the full path, status description, rename source, and complete counts. A partially staged file appears in both Staged Changes and Changes with the counts for each side.
 
-Select a file to view its aligned **Before / After** comparison in the center. Use the inline **+ / −** buttons or press **Space** on the focused row to stage/unstage it. Group buttons apply to that group; conflicts have no bulk-stage button. Right-click a row for **Open file**, **Stage file**, or **Unstage file**. Untracked files and unsupported text comparisons explain which actions are available.
+New text files show all their lines as additions and zero deletions, including a final line without a newline. Counts are calculated in the background. Binary, unreadable, and unsupported files show **+— -—**, with an explanatory tooltip.
+
+Select a file to view its aligned **Before / After** comparison in the center. The numeric **+ / -** columns are counts; clicking them selects the file. Double-click a row or press **Space** on the focused row to stage/unstage it, or right-click for **Open file**, **Stage file**, or **Unstage file**. Group buttons apply to that group; conflicts have no bulk-stage button. Untracked files and unsupported text comparisons explain which actions are available.
 
 For eligible tracked text modifications, each hunk has a **Stage hunk** or **Unstage hunk** action. Both sides remain visible in place after the action. Staged hunks have a blue background and a **Staged** label; red/green text still identifies removed/added lines. Reversing a staged hunk applies the original patch in reverse and preserves unrelated staged content.
 
@@ -266,7 +269,7 @@ The application uses one crate with focused feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
 - `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
-- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
+- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, numeric diff statistics and new-file line counting (`stats`), independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
 - `src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/editor/assistants.rs` coordinates the shared pane and independent workspace states.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 

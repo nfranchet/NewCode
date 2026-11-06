@@ -1,14 +1,15 @@
-//! Collapsible change groups, file selection, and inline index actions.
+//! Collapsible change groups, compact file rows, and index actions.
 use super::{
     GitUi,
     actions::Action,
     model::{Group, Selection},
     presentation::{fixed_label, group_color},
-    repository::Change,
+    repository::{Change, Snapshot},
+    stats::LineStats,
 };
 use crate::ui_theme::{self as theme, Icon};
 use eframe::egui::{self, Color32, RichText};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 impl GitUi {
     pub(super) fn change_groups(&mut self, ui: &mut egui::Ui) -> Option<PathBuf> {
         let Some(snapshot) = &self.snapshot else {
@@ -20,6 +21,7 @@ impl GitUi {
             return None;
         };
         let busy = self.busy();
+        let count_widths = count_widths(ui, snapshot);
         let mut action = None;
         let mut open = None;
         egui::ScrollArea::vertical()
@@ -116,21 +118,21 @@ impl GitUi {
                             ui.push_id((&self.workspace, group, &change.path), |ui| {
                                 let row_id =
                                     egui::Id::new(("git_file_row", &self.workspace, &selection));
-                                let (row, quick_action) = file_row(
+                                let row = file_row(
                                     ui,
                                     change,
                                     group,
                                     selected,
-                                    busy,
                                     row_id,
                                     snapshot.counts[group.side().counts_index()]
                                         .get(&change.path)
-                                        .map(String::as_str)
-                                        .unwrap_or(""),
+                                        .copied()
+                                        .unwrap_or_default(),
+                                    count_widths,
                                 );
                                 if row.clicked() {
                                     row.request_focus();
-                                    if !busy {
+                                    if !busy && !row.double_clicked() {
                                         action = Some(Action::Diff(selection));
                                     }
                                 }
@@ -153,7 +155,7 @@ impl GitUi {
                                         }
                                         pressed
                                     });
-                                if !busy && (space || quick_action) {
+                                if !busy && (space || row.double_clicked()) {
                                     action = Some(Action::Index {
                                         paths: change.paths(),
                                         stage: !group.side().is_staged(),
@@ -209,103 +211,117 @@ fn file_row(
     change: &Change,
     group: Group,
     selected: bool,
-    busy: bool,
     row_id: egui::Id,
-    counts: &str,
-) -> (egui::Response, bool) {
+    counts: LineStats,
+    count_widths: [f32; 2],
+) -> egui::Response {
     let side = group.side();
-    let path = Path::new(&change.path);
-    let name = path
-        .file_name()
-        .map(|name| name.to_string_lossy())
-        .unwrap_or_else(|| change.path.as_str().into());
-    let parent = path
-        .parent()
-        .filter(|path| !path.as_os_str().is_empty())
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| ".".into());
     let status = change.status(side);
+    let count_text = count_text(counts);
     let mut tooltip = format!("{}\n{status}", change.path);
     if let Some(old) = &change.old {
         tooltip.push_str(&format!("\nRenamed from {old}"));
     }
-    if !counts.is_empty() {
-        tooltip.push_str(&format!("\n{counts}"));
+    tooltip.push_str(&format!("\n{} {}", count_text[0], count_text[1]));
+    match counts {
+        LineStats::Binary => tooltip.push_str("\nBinary file: line counts unavailable."),
+        LineStats::Unavailable => tooltip.push_str("\nLine counts unavailable for this file."),
+        LineStats::Text { .. } => {}
     }
-    let mut quick_action = false;
-    let response = ui
-        .horizontal(|ui| {
-            let width = (ui.available_width() - 28.0 - ui.spacing().item_spacing.x).max(1.0);
-            let fill = if selected {
-                theme::BLUE_SOFT
-            } else {
-                Color32::TRANSPARENT
-            };
-            let contents = egui::Frame::new()
-                .fill(fill)
-                .inner_margin(3)
-                .show(ui, |ui| {
-                    ui.set_width((width - 6.0).max(1.0));
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 0.0;
-                        fixed_label(
-                            ui,
-                            [ui.available_width(), 18.0],
-                            egui::Label::new(
-                                RichText::new(name.as_ref()).strong().color(theme::INK),
-                            )
-                            .selectable(false)
-                            .halign(egui::Align::Min)
-                            .truncate(),
-                        );
-                        let subtitle = if width >= 220.0 && !counts.is_empty() {
-                            format!("{status} · {parent} · {counts}")
-                        } else {
-                            format!("{status} · {parent}")
-                        };
-                        fixed_label(
-                            ui,
-                            [ui.available_width(), 15.0],
-                            egui::Label::new(RichText::new(subtitle).size(12.0).color(
-                                if group == Group::Conflicts {
+    tooltip.push_str("\nDouble-click, Space, or right-click to stage/unstage.");
+    let width = ui.available_width();
+    let contents = egui::Frame::new()
+        .fill(if selected {
+            theme::BLUE_SOFT
+        } else {
+            Color32::TRANSPARENT
+        })
+        .inner_margin(3)
+        .show(ui, |ui| {
+            ui.set_width((width - 6.0).max(1.0));
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), 22.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let status_width = 16.0;
+                    let available = ui.available_width() - status_width - 18.0;
+                    // Keep a filename column even with large counts in a narrow panel.
+                    let limit = ((available - 24.0) / 2.0).max(1.0);
+                    let counts = count_widths.map(|width| width.min(limit));
+                    let name_width = (available - counts[0] - counts[1]).max(1.0);
+                    fixed_label(
+                        ui,
+                        [status_width, 22.0],
+                        egui::Label::new(
+                            RichText::new(change.status_letter(side).to_string())
+                                .monospace()
+                                .color(if group == Group::Conflicts {
                                     theme::RED
                                 } else {
                                     theme::MUTED
-                                },
-                            ))
+                                }),
+                        )
+                        .selectable(false)
+                        .truncate(),
+                    );
+                    fixed_label(
+                        ui,
+                        [name_width, 22.0],
+                        egui::Label::new(RichText::new(&change.path).strong().color(theme::INK))
                             .selectable(false)
-                            .halign(egui::Align::Min)
                             .truncate(),
+                    );
+                    for (text, width) in count_text.iter().zip(counts) {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(width, 22.0),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.set_min_size(egui::vec2(width, 22.0));
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(text).monospace().color(theme::GREEN),
+                                    )
+                                    .selectable(false)
+                                    .truncate(),
+                                );
+                            },
                         );
-                    });
-                });
+                    }
+                },
+            );
+        });
+    let row = ui.interact(contents.response.rect, row_id, egui::Sense::click());
+    if row.has_focus() {
+        ui.painter().rect_stroke(
+            row.rect,
+            3.0,
+            egui::Stroke::new(1.0_f32, theme::BLUE),
+            egui::StrokeKind::Inside,
+        );
+    }
+    row.on_hover_text(tooltip)
+}
 
-            let row = ui.interact(contents.response.rect, row_id, egui::Sense::click());
-            if row.has_focus() {
-                ui.painter().rect_stroke(
-                    row.rect,
-                    3.0,
-                    egui::Stroke::new(1.0_f32, theme::BLUE),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            quick_action = ui
-                .add_enabled(
-                    !busy,
-                    egui::Button::new(if side.is_staged() { "−" } else { "+" })
-                        .small()
-                        .min_size(egui::vec2(24.0, 24.0)),
-                )
-                .on_hover_text(if side.is_staged() {
-                    "Unstage file"
-                } else if group == Group::Conflicts {
-                    "Stage resolved file"
-                } else {
-                    "Stage file"
-                })
-                .clicked();
-            row.on_hover_text(tooltip)
-        })
-        .inner;
-    (response, quick_action)
+fn count_text(counts: LineStats) -> [String; 2] {
+    match counts {
+        LineStats::Text { added, deleted } => [format!("+{added}"), format!("-{deleted}")],
+        LineStats::Binary | LineStats::Unavailable => ["+—".into(), "-—".into()],
+    }
+}
+
+fn count_widths(ui: &egui::Ui, snapshot: &Snapshot) -> [f32; 2] {
+    let mut widths = [28.0_f32; 2];
+    for counts in snapshot.counts.iter().flat_map(|side| side.values()) {
+        for (width, text) in widths.iter_mut().zip(count_text(*counts)) {
+            let measured = ui.fonts_mut(|fonts| {
+                fonts
+                    .layout_no_wrap(text, egui::FontId::monospace(14.0), theme::GREEN)
+                    .size()
+                    .x
+            });
+            *width = width.max(measured.ceil());
+        }
+    }
+    widths
 }

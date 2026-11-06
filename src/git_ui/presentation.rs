@@ -35,6 +35,7 @@ pub(super) fn group_color(group: super::model::Group) -> Color32 {
         super::model::Group::Conflicts => crate::ui_theme::RED,
         super::model::Group::Staged => crate::ui_theme::GREEN,
         super::model::Group::Changes => crate::ui_theme::INK,
+        super::model::Group::Untracked => crate::ui_theme::BLUE,
     }
 }
 

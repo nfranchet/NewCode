@@ -89,9 +89,17 @@ fn one_model_classifies_partial_new_renamed_deleted_and_conflicted_files() {
             .iter()
             .map(|file| file.path.as_str())
             .collect::<Vec<_>>(),
-        ["deleted", "new", "partial"]
+        ["deleted", "partial"]
     );
     assert_eq!(snapshot.group(Group::Conflicts).len(), 1);
+    assert_eq!(
+        snapshot
+            .group(Group::Untracked)
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["new"]
+    );
     assert_eq!(snapshot.files[1].status(Side::Working), "New");
     assert_eq!(snapshot.files[2].paths(), ["renamed", "old"]);
     assert_eq!(

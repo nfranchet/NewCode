@@ -40,14 +40,21 @@ pub(super) enum Group {
     Conflicts,
     Staged,
     Changes,
+    Untracked,
 }
 impl Group {
-    pub(super) const ALL: [Self; 3] = [Self::Conflicts, Self::Staged, Self::Changes];
+    pub(super) const ALL: [Self; 4] = [
+        Self::Conflicts,
+        Self::Staged,
+        Self::Changes,
+        Self::Untracked,
+    ];
     pub(super) fn title(self) -> &'static str {
         match self {
             Self::Conflicts => "Conflicts",
             Self::Staged => "Staged Changes",
             Self::Changes => "Changes",
+            Self::Untracked => "Untracked",
         }
     }
     pub(super) fn side(self) -> Side {
@@ -61,7 +68,8 @@ impl Group {
         match self {
             Self::Conflicts => conflict(change),
             Self::Staged => change.has_staged(),
-            Self::Changes => change.has_working() && !conflict(change),
+            Self::Changes => change.has_working() && change.index != '?' && !conflict(change),
+            Self::Untracked => change.index == '?',
         }
     }
 }
@@ -92,6 +100,22 @@ impl Change {
             } else {
                 self.work
             })
+        }
+    }
+    pub(super) fn status_letter(&self, side: Side) -> char {
+        if conflict(self) {
+            'U'
+        } else if self.index == '?' {
+            'N'
+        } else {
+            match if side.is_staged() {
+                self.index
+            } else {
+                self.work
+            } {
+                code @ ('M' | 'A' | 'D' | 'R' | 'C' | 'T') => code,
+                _ => 'X',
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ use super::{
     GitUi,
     actions::{Pending, RefreshReply},
     repository::{Snapshot, changes, conflict, git, snapshot},
+    stats::LineStats,
 };
 use crate::ui_theme as theme;
 use eframe::egui;
@@ -136,8 +137,20 @@ fn repository_staging_diff_commit_and_unstage() {
         std::fs::write(root.join("file [1].txt"), "one\ntwo\nthree\n").unwrap();
         let state = snapshot(&root)?;
         assert_eq!((state.files[0].index, state.files[0].work), ('M', 'M'));
-        assert_eq!(state.counts[0]["file [1].txt"], "+1 −0");
-        assert_eq!(state.counts[1]["file [1].txt"], "+1 −0");
+        assert_eq!(
+            state.counts[0]["file [1].txt"],
+            LineStats::Text {
+                added: 1,
+                deleted: 0
+            }
+        );
+        assert_eq!(
+            state.counts[1]["file [1].txt"],
+            LineStats::Text {
+                added: 1,
+                deleted: 0
+            }
+        );
         git(&root, &["reset", "-q", "--", "file [1].txt"])?;
         assert_eq!(snapshot(&root)?.files[0].index, ' ');
         Ok::<_, String>(())
@@ -151,3 +164,4 @@ mod review;
 
 mod panel;
 mod state;
+mod stats;
