@@ -48,7 +48,9 @@ impl EditorApp {
         }
         if self.close_confirmation.as_deref().is_some_and(affected) {
             self.close_confirmation = None;
+            self.close_queue.clear();
         }
+        self.close_queue.retain(|path| !affected(path));
         if self
             .creation
             .as_ref()

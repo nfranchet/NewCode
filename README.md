@@ -123,7 +123,7 @@ Choose a workspace from the toolbar. **Single-click** a file in Explorer to open
 
 Edit in the center and use **Save**, **Ctrl+S**, or **Edit → Save** to write changes to disk. Source lines stay unwrapped; use horizontal scrolling for long lines. Syntax coloring uses a lightweight built-in tokenizer rather than compiler-backed language services.
 
-Tabs remain in one horizontally scrollable row. Use the **⌄** open-files menu to search and select any open tab. Close a tab with **×** or **Ctrl+W**; closing a modified file offers **Save**, **Discard**, and **Cancel**, including inactive tabs. Unsaved contents and Undo histories stay with their file while switching tabs. Search results and Source Control’s **Open file** action open permanent tabs.
+Tabs remain in one horizontally scrollable row. Use the **⌄** open-files menu to search and select any open tab. Right-click a tab title for **Close file**, **Close others**, or **Close all**. Close others keeps the right-clicked tab. You can also close a tab with **×** or **Ctrl+W**; closing a modified file offers **Save**, **Discard**, and **Cancel**, including inactive tabs. Bulk closing asks for each modified file in tab order; Cancel stops the remaining closes, and failed saves leave the file and question open. Unsaved contents and Undo histories stay with their file while switching tabs. Search results and Source Control’s **Open file** action open permanent tabs.
 
 ### Create files and folders inline
 

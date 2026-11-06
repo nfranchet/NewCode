@@ -17,7 +17,7 @@ A coordinated light theme uses blue navigation, teal Codex controls, semantic Gi
 - Create on Enter only. Escape, focus loss, sidebar changes, or workspace changes cancel without filesystem writes. Validate names, preserve failed drafts for correction, and never overwrite existing entries.
 - Provide right-click Rename, Move, and Delete actions. Deletion requires an in-app confirmation, warns about folder contents and unsaved edits, and removes affected tabs only on success. Deleting a symbolic link preserves its target.
 - Edit/save text with lightweight extension-based syntax coloring. Keep source lines unwrapped and horizontally scrollable.
-- Keep tabs on one scrollable row with close controls and a searchable open-files menu. Closing a modified file asks whether to save, discard, or cancel.
+- Keep tabs on one scrollable row with close controls and a searchable open-files menu. Right-click a tab title for Close file, Close others (keeping that tab), or Close all. Closing modified files asks Save, Discard, or Cancel for each file in tab order. Cancel stops the remaining closes; failed saves preserve the file and confirmation.
 - Preserve unsaved contents and separate Undo state per open file during tab switches. Modified indicators and close confirmations cover inactive files too; Save targets the file being closed. Keep preview and document state synchronized during rename, move, and deletion.
 - Restore all tabs as permanent, including the last preview; restore workspace, tab order, and active file on relaunch, skipping missing/unreadable files. A different launch workspace does not inherit unrelated tabs. Restore saved disk contents, not unsaved buffers or caret/scroll positions.
 

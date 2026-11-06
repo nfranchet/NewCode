@@ -1,5 +1,6 @@
 //! File tab rendering and activation without reloading unsaved buffers.
 use super::EditorApp;
+use super::close_dialog::CloseTabs;
 use crate::ui_theme as theme;
 use eframe::egui::{self, Color32, FontId};
 impl EditorApp {
@@ -129,6 +130,33 @@ impl EditorApp {
                                         };
                                         let select = select.on_hover_text(tooltip);
                                         let close = close.on_hover_text("Close file (Ctrl+W)");
+                                        select.context_menu(|ui| {
+                                            ui.add_enabled_ui(
+                                                self.close_confirmation.is_none(),
+                                                |ui| {
+                                                    if ui.button("Close file").clicked() {
+                                                        close_tab =
+                                                            Some(CloseTabs::File(p.clone()));
+                                                        ui.close();
+                                                    }
+                                                    if ui
+                                                        .add_enabled(
+                                                            open_files.len() > 1,
+                                                            egui::Button::new("Close others"),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        close_tab =
+                                                            Some(CloseTabs::Others(p.clone()));
+                                                        ui.close();
+                                                    }
+                                                    if ui.button("Close all").clicked() {
+                                                        close_tab = Some(CloseTabs::All);
+                                                        ui.close();
+                                                    }
+                                                },
+                                            );
+                                        });
                                         if select.double_clicked() {
                                             pin_tab = Some(p.clone());
                                         }
@@ -136,7 +164,7 @@ impl EditorApp {
                                             switch_tab = Some(p.clone());
                                         }
                                         if close.clicked() {
-                                            close_tab = Some(p.clone());
+                                            close_tab = Some(CloseTabs::File(p.clone()));
                                         }
                                         if active {
                                             active_tab_rect = Some(rect);
@@ -215,8 +243,8 @@ impl EditorApp {
             if let Some(path) = pin_tab {
                 self.keep_preview(&path);
             }
-            if let Some(path) = close_tab {
-                self.close_file(path);
+            if let Some(action) = close_tab {
+                self.close_tabs(action);
             }
             ui.separator();
         }

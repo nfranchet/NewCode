@@ -50,6 +50,7 @@ fn test_app() -> EditorApp {
         find_query_snapshot: String::new(),
         find_active: None,
         close_confirmation: None,
+        close_queue: Default::default(),
         open_file_filter: String::new(),
         reveal_active_tab: true,
         editor_layout_cache: Arc::new(Mutex::new(EditorLayoutCache::default())),
