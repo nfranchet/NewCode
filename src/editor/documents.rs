@@ -49,6 +49,7 @@ impl EditorApp {
     }
 
     fn open_document(&mut self, path: PathBuf, mode: OpenMode) -> bool {
+        self.addons.detail = false;
         log::debug!("Open document path={} mode={mode:?}", path.display());
         if self.active_file.as_ref() == Some(&path) {
             if mode == OpenMode::Permanent || self.dirty {
@@ -129,6 +130,10 @@ impl EditorApp {
         }
     }
     pub(super) fn save_document(&mut self, path: &Path) -> bool {
+        if self.addons.worktree_busy() {
+            self.status = "Wait for the Git operation before saving files".into();
+            return false;
+        }
         log::debug!("Save document path={}", path.display());
         let active = self.active_file.as_deref() == Some(path);
         let content = if active {

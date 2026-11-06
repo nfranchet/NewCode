@@ -14,6 +14,8 @@ Publishing a GitHub release (including a prerelease) builds the tagged source an
 
 Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer, an X11 or Wayland desktop, and working OpenGL/EGL libraries. They are dynamically linked; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
 
+Run `python3 install-addons.py` from the extracted archive to install its GitHub addon (Python 3.11 or newer). Restart the editor after installation. The installer preserves non-secret addon state and installs addons beside logs.
+
 Automatic releases currently publish Linux binaries only. macOS arm64 builds and DMGs are skipped. macOS remains available to build from source; its app packaging script remains available for manual use.
 
 Finder launches retain the inherited PATH and add `~/.local/bin`, `~/.opencode/bin`, `/opt/homebrew/bin`, and `/usr/local/bin` for external tools. Git, Docker, Codex, and OpenCode are separate installations; authenticate assistants with their CLI first. Run `focus-editor --version` (or the app's executable path with `--version`) to check the version without opening a window.
@@ -54,6 +56,39 @@ Open a workspace directly:
 cargo run --release -- ~/projects/my-app
 ```
 
+## Addons and GitHub
+
+Addons compile independently from the editor and run as separate executables. The main Rust process renders their native panels. Install a trusted addon through **Addons → Install local addon…** by choosing its manifest; the menu also enables/disables addons, restarts them, and manages credentials. Installation does not load code from the open repository.
+
+Installed addons live beside the logs directory:
+
+```text
+~/.local/share/focus-editor/
+├── logs/
+└── addons/github/
+```
+
+Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. The editor loads installed addons only from this shared application data root. Build and install GitHub from source separately:
+
+```sh
+python3 scripts/addons.py --release --install
+cargo run --release -- .
+```
+
+For an isolated Linux development installation, use `--data-root "$PWD/target/dev-data/focus-editor"` and launch the editor with `XDG_DATA_HOME="$PWD/target/dev-data"`. A plain `cargo build` builds the editor and SDK, without compiling the GitHub executable. See the [addon SDK contract](crates/addon-sdk/README.md) to develop another addon.
+
+The GitHub icon opens **Issues** and **Pull requests** for the active workspace's GitHub.com remotes, preferring `origin`. Select a repository, filter loaded items, load more results, or open Markdown details. The panel provides:
+
+- **Create issue branch & checkout** (`gcmr`): links an `issue-N` branch to its issue, with editable base/name and explicit existing-branch reuse.
+- **Push & create PR** (`gpc`): previews editable title/body and the destination before pushing; associates known issue branches with `Closes #N` and recognizes existing PRs.
+- **Auto-merge (squash)** (`gpma`): respects checks/protections and merge queues. **Delete branches after merge** is unchecked by default. Selected cleanup waits for a confirmed merge, preserves new commits and occupied worktrees, and resumes when the addon runs again. GitHub's own repository deletion setting still applies.
+
+GitHub uses installed `gh` and its existing login. If `gh` is absent it uses GitHub's HTTPS REST/GraphQL APIs. New personal access tokens are entered through the native credential dialog and stored only in Linux Secret Service or macOS Keychain. A locked/unavailable keyring produces an error instead of a plaintext credential file. Credentials stay on the host, including when Git commands run in a Dev Container. Existing SSH agents and Git credential helpers remain supported. Anonymous API reads can work for public repositories; private reads and writes require appropriate access.
+
+Git mutations share Source Control's operation lock. Checkout prompts to save unsaved editor buffers and refuses worktree conflicts. Addon diagnostic messages appear under **Logs → Addons**, with protocol payloads and credentials excluded.
+
+PR creation uses the selected repository's configured remote. If that remote has a different push repository, configure/select a remote with matching fetch and push destinations before using this workflow.
+
 ## Dev Containers
 
 Focus Editor can use a Docker Compose development container without Node.js or the Dev Container CLI. With a workspace open, use **Dev Container** in the toolbar to start the service defined by `.devcontainer/devcontainer.json`. The container stays running when the editor closes; use **Stop** or **Rebuild** from the same menu when needed.
@@ -82,7 +117,7 @@ Assistant launches forward present `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_
 
 Dev Container failure details are written to the application log at **Warn** level. Its toolbar menu shows a short failure message and retains **Retry**; opening the menu does not repeat diagnostics. Configuration, start/rebuild/reconnect, and stop errors include operation context. Failure records include the Compose exit status and captured stdout/stderr, with long output bounded while retaining its tail. Each diagnostic line gets its own timestamped record. Sensitive values and build-command payloads are redacted while surrounding failure explanations and exit codes remain visible.
 
-The bottom panel has **Terminal** and **Logs** tabs. Switching to Logs leaves the terminal running and processing output, while keyboard input belongs to the log controls. Select **All**, **Editor**, **Git**, **Codex**, **OpenCode**, **Dev Container**, **Docker Compose**, or **Terminal** to view a component. Use search and severity filters, select/copy text, **Copy visible logs**, **Clear**, and **Follow latest**. Scrolling upward pauses following. **Dev Container → Show logs** opens the viewer with that source selected.
+The bottom panel has **Terminal** and **Logs** tabs. Switching to Logs leaves the terminal running and processing output, while keyboard input belongs to the log controls. Select **All**, **Editor**, **Git**, **Codex**, **OpenCode**, **Dev Container**, **Docker Compose**, **Terminal**, or **Addons** to view a component. Use search and severity filters, select/copy text, **Copy visible logs**, **Clear**, and **Follow latest**. Scrolling upward pauses following. **Dev Container → Show logs** opens the viewer with that source selected.
 
 Logs are current-session only: every editor launch starts an empty viewer and replaces `launch.log`; no previous records are loaded and no rotated history is kept. Each running editor's viewer is independent. The file path represents the newest launch; older running instances keep their own output handle. The viewer retains up to 10,000 records or 8 MiB and discards oldest records when full. **Clear** removes records for the selected source (or all sources) from the viewer; it leaves the current-session diagnostic file intact. Viewer filters do not change which levels are captured.
 

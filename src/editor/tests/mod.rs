@@ -42,6 +42,7 @@ fn test_app() -> EditorApp {
         status: "Ready".into(),
         sidebar_mode: SidebarMode::Explorer,
         git_ui: crate::git_ui::GitUi::default(),
+        addons: crate::addons::Addons::default(),
         search_query: String::new(),
         search_results: Vec::new(),
         pending_editor_cursor: None,

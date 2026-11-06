@@ -57,6 +57,17 @@ impl GitUi {
     }
     fn busy(&self) -> bool {
         self.pending.is_some()
+            || self
+                .workspace
+                .as_deref()
+                .is_some_and(crate::repository_jobs::busy)
+    }
+    pub(crate) fn external_change(&mut self) {
+        self.data_generation = self.data_generation.wrapping_add(1);
+        self.refresh = None;
+        self.review_request = None;
+        self.diff = None;
+        self.refresh_requested = true;
     }
     fn sync_workspace(&mut self, workspace: Option<&Path>, runtime: Option<&Runtime>) {
         if self.workspace.as_deref() != workspace || self.runtime.as_ref() != runtime {

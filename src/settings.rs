@@ -17,6 +17,7 @@ pub(crate) struct Settings {
     pub(crate) opencode_enabled: bool,
     pub(crate) selected_assistant: Assistant,
     pub(crate) opencode_sessions: std::collections::HashMap<PathBuf, String>,
+    pub(crate) disabled_addons: Vec<String>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -34,6 +35,7 @@ impl Default for Settings {
             opencode_enabled: false,
             selected_assistant: Assistant::Codex,
             opencode_sessions: Default::default(),
+            disabled_addons: Vec::new(),
         }
     }
 }

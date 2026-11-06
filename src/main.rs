@@ -1,3 +1,5 @@
+mod addons;
+mod app_paths;
 mod app_server;
 mod assistant_ui;
 mod codex_ui;
@@ -9,6 +11,7 @@ mod logging;
 mod opencode_server;
 mod opencode_ui;
 mod platform;
+mod repository_jobs;
 mod settings;
 mod syntax;
 mod terminal;

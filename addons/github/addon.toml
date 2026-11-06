@@ -1,0 +1,13 @@
+id = "github"
+name = "GitHub"
+version = "0.1.0"
+protocol = 1
+executable = "focus-addon-github"
+icon = "icon.png"
+
+[credential]
+origin = "https://api.github.com"
+program = "gh"
+environment = "GH_TOKEN"
+git_origin = "https://github.com"
+instructions = "Use an existing gh login, or a token with repository Contents and Pull requests write access and Issues read access. Select the repositories the token may access."
