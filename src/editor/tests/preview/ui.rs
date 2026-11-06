@@ -172,3 +172,72 @@ fn undo_in_another_file_does_not_restore_the_previous_files_contents() {
         "the original file should retain its own Undo history"
     );
 }
+
+#[test]
+fn tab_context_menu_closes_clicked_others_and_all_with_unsaved_confirmation() {
+    fn choose(h: &mut Harness, name: &str, action: &str) {
+        h.time += 0.5;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let pos = h.ctx.read_response(h.tab(name)).unwrap().rect.center();
+        for pressed in [true, false] {
+            h.frame(vec![
+                Event::PointerMoved(pos),
+                Event::PointerButton {
+                    pos,
+                    pressed,
+                    button: egui::PointerButton::Secondary,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+        }
+        let output = h.frame(vec![]);
+        assert!(
+            h.ctx
+                .read_response(h.tab(name))
+                .unwrap()
+                .context_menu_opened(),
+            "wrong context target {name} at {pos:?}"
+        );
+        let pos = output
+            .shapes
+            .iter()
+            .find_map(|shape| match &shape.shape {
+                egui::Shape::Text(text) if text.galley.job.text == action => {
+                    Some(text.visual_bounding_rect().center())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing context action {action}"));
+        for pressed in [true, false] {
+            h.frame(vec![
+                Event::PointerMoved(pos),
+                Event::PointerButton {
+                    pos,
+                    pressed,
+                    button: egui::PointerButton::Primary,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]);
+        }
+    }
+    let mut h = Harness::new();
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        h.app.open_file(h.project.file(name));
+    }
+    h.frame(vec![]);
+    choose(&mut h, "a.txt", "Close file");
+    assert!(!h.app.open_files.contains(&h.project.file("a.txt")));
+    assert_eq!(h.app.active_file, Some(h.project.file("c.txt")));
+    choose(&mut h, "b.txt", "Close others");
+    assert_eq!(h.app.open_files, [h.project.file("b.txt")]);
+    assert_eq!(h.app.active_file, Some(h.project.file("b.txt")));
+    h.app.buffer = "unsaved b".into();
+    h.app.mark_modified();
+    h.frame(vec![]);
+    choose(&mut h, "b.txt", "Close all");
+    assert_eq!(h.app.close_confirmation, Some(h.project.file("b.txt")));
+    assert_eq!(h.app.open_files, [h.project.file("b.txt")]);
+    let output = h.frame(vec![]);
+    assert!(output.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Text(text) if text.galley.job.text.contains("Save changes to") && text.galley.job.text.contains("b.txt"))));
+}

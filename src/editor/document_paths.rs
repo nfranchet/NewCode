@@ -16,6 +16,9 @@ impl EditorApp {
         for path in &mut self.open_files {
             *path = remap(path);
         }
+        for path in &mut self.close_queue {
+            *path = remap(path);
+        }
         for path in [
             &mut self.active_file,
             &mut self.preview_file,

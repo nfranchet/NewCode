@@ -1,5 +1,6 @@
 use super::{EditorApp, test_app};
 use std::{fs, path::PathBuf};
+mod closing;
 mod lifecycle;
 mod ui;
 

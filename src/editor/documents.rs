@@ -161,11 +161,7 @@ impl EditorApp {
             path.display(),
             self.file_is_dirty(&path)
         );
-        if self.file_is_dirty(&path) {
-            self.close_confirmation = Some(path);
-        } else {
-            self.finish_close_file(path);
-        }
+        self.close_tabs(super::close_dialog::CloseTabs::File(path));
     }
     pub(super) fn finish_close_file(&mut self, path: PathBuf) {
         let Some(index) = self.open_files.iter().position(|open| *open == path) else {

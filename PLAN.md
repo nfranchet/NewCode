@@ -131,3 +131,7 @@ Validation passed: 22 Source Control tests, 119 Rust tests in the full suite (fo
 ### Separate Untracked group and double-click staging
 
 Untracked files have their own group after tracked Changes, with a count and bulk Stage action. Double-click stages working or untracked files and unstages staged files; single-click previews remain available, as do Space and context actions. Double-click uses the serialized index-operation path and takes priority over another diff load. Regression tests cover exclusive group membership and transitions for new and partially staged files. Validation passed: 23 Source Control tests, 120 tests in the full suite (four optional tests skipped), debug compilation, formatting, and whitespace checks.
+
+### File-tab close menu
+
+Right-clicking a tab title offers Close file, Close others, and Close all; Close others keeps and activates the clicked tab. Bulk actions use a tab-order queue and pause for Save, Discard, or Cancel on each modified file. Cancel clears the remaining queue, failed saves keep the question and contents intact, and another close cannot replace the pending question. The modal identifies the file by its full path. Queued paths follow renames and deletion cleanup. Tests cover active/inactive tabs, retained unsaved content, mixed clean/modified tabs, sequential choices, cancellation, failed writes, and actual menu activation. Validation passed: 124 tests (four optional tests skipped), Linux debug compilation, formatting, and whitespace checks.
