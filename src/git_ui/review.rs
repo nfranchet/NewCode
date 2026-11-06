@@ -10,6 +10,14 @@ use super::{
 use crate::dev_container::Runtime;
 use std::path::Path;
 
+#[derive(Default, Debug)]
+pub(super) enum ReviewStatus {
+    #[default]
+    Idle,
+    Loading,
+    Failed(String),
+}
+
 pub(super) struct DiffView {
     pub(super) id: u64,
     pub(super) path: String,
@@ -60,6 +68,15 @@ impl DiffView {
         if version.is_symlink() {
             parsed.hunk_actions = false;
             parsed.notice = Some("Symbolic link: use whole-file Stage/Unstage actions.".into());
+        }
+        if bytes.is_empty() {
+            let untracked = git_with(root, &["ls-files", "--", path], runtime)
+                .is_ok_and(|files| files.is_empty());
+            parsed.notice = Some(if untracked {
+                "New, untracked file. Open the file to review its contents, or stage it from Changes."
+            } else {
+                "No text changes on this side. Choose the other group or open the file."
+            }.into());
         }
         let selected_hunk = anchor.and_then(|line| {
             parsed
@@ -113,7 +130,8 @@ impl GitUi {
     pub(super) fn accept_review(&mut self, update: ReviewUpdate) {
         match update {
             ReviewUpdate::Loaded(view) if view.id == self.review_generation => {
-                self.diff = Some(*view)
+                self.diff = Some(*view);
+                self.review_status = ReviewStatus::Idle;
             }
             ReviewUpdate::Applied(applied) => {
                 if let Some(view) = self

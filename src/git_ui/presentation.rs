@@ -1,6 +1,20 @@
-//! Shared status labels, group colors, row text, and input cursor styling.
+//! Shared status labels, group colors, fixed label layout, and input styling.
 
 use eframe::egui::{self, Color32};
+
+pub(super) fn fixed_label(ui: &mut egui::Ui, size: [f32; 2], label: egui::Label) -> egui::Response {
+    let size = egui::vec2(size[0], size[1]);
+    // add_sized centers labels, including labels with left-aligned text.
+    ui.allocate_ui_with_layout(
+        size,
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_size(size);
+            ui.add(label)
+        },
+    )
+    .inner
+}
 
 pub(super) fn label(code: char) -> &'static str {
     match code {
@@ -16,64 +30,35 @@ pub(super) fn label(code: char) -> &'static str {
     }
 }
 
-pub(super) fn group_colors(group: usize, dark: bool) -> (Color32, Color32) {
-    let (light_accent, dark_accent, light_fill, dark_fill) = match group {
-        0 => ([135, 82, 0], [245, 190, 85], [255, 248, 231], [49, 41, 25]),
-        1 => (
-            [25, 91, 158],
-            [110, 180, 250],
-            [237, 246, 255],
-            [25, 38, 53],
-        ),
-        2 => (
-            [30, 112, 58],
-            [110, 210, 145],
-            [237, 249, 240],
-            [25, 44, 33],
-        ),
-        _ => (
-            [169, 40, 45],
-            [250, 125, 130],
-            [255, 240, 240],
-            [53, 29, 32],
-        ),
-    };
-    let accent = if dark { dark_accent } else { light_accent };
-    let fill = if dark { dark_fill } else { light_fill };
-    (
-        Color32::from_rgb(accent[0], accent[1], accent[2]),
-        Color32::from_rgb(fill[0], fill[1], fill[2]),
-    )
+pub(super) fn group_color(group: super::model::Group) -> Color32 {
+    match group {
+        super::model::Group::Conflicts => crate::ui_theme::RED,
+        super::model::Group::Staged => crate::ui_theme::GREEN,
+        super::model::Group::Changes => crate::ui_theme::INK,
+    }
 }
 
-pub(super) fn file_row_text(
-    title: &str,
-    counts: &str,
-    foreground: Color32,
-    dark: bool,
-) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::default();
-    let font = egui::FontId::proportional(14.0);
-    job.append(
-        title,
-        0.0,
-        egui::TextFormat::simple(font.clone(), foreground),
-    );
-    for count in counts.split_whitespace() {
-        let color = if count.starts_with('+') {
-            group_colors(2, dark).0
-        } else if count.starts_with('−') {
-            group_colors(3, dark).0
-        } else {
-            foreground
-        };
-        job.append(
-            &format!("  {count}"),
-            0.0,
-            egui::TextFormat::simple(font.clone(), color),
-        );
+#[derive(Clone, Debug)]
+pub(super) struct Notice {
+    pub(super) title: String,
+    pub(super) details: Option<String>,
+    pub(super) error: bool,
+}
+impl Notice {
+    pub(super) fn success(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            details: None,
+            error: false,
+        }
     }
-    job
+    pub(super) fn error(title: impl Into<String>, details: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            details: Some(details.into()),
+            error: true,
+        }
+    }
 }
 
 pub(super) fn configure_input_style(ui: &mut egui::Ui) {

@@ -4,9 +4,9 @@ use super::super::{
     review::{DiffView, ReviewUpdate},
 };
 
-struct Repo(std::path::PathBuf);
+pub(super) struct Repo(pub(super) std::path::PathBuf);
 impl Repo {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
             "focus-review-{}-{}",
             std::process::id(),
@@ -26,10 +26,10 @@ impl Repo {
         }
         Self(path)
     }
-    fn write(&self, name: &str, text: &str) {
+    pub(super) fn write(&self, name: &str, text: &str) {
         std::fs::write(self.0.join(name), text).unwrap();
     }
-    fn run(&self, args: &[&str]) -> Vec<u8> {
+    pub(super) fn run(&self, args: &[&str]) -> Vec<u8> {
         git(&self.0, args).unwrap()
     }
 }

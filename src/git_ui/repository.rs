@@ -39,7 +39,7 @@ pub(super) fn git_with(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Change {
     pub(super) path: String,
     pub(super) old: Option<String>,
@@ -73,12 +73,11 @@ pub(super) fn changes(bytes: &[u8]) -> Vec<Change> {
     result
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Snapshot {
     pub(super) root: PathBuf,
     pub(super) branch: String,
     pub(super) files: Vec<Change>,
-    pub(super) staged: String,
-    pub(super) unstaged: String,
     pub(super) counts: [HashMap<String, String>; 2],
 }
 
@@ -109,16 +108,6 @@ pub(super) fn snapshot_with(
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
         runtime,
     )?);
-    let stats = |cached: bool| -> Result<String, String> {
-        let args = if cached {
-            vec!["diff", "--cached", "--shortstat"]
-        } else {
-            vec!["diff", "--shortstat"]
-        };
-        Ok(String::from_utf8_lossy(&git_with(&root, &args, runtime)?)
-            .trim()
-            .to_owned())
-    };
     let counts = |cached: bool| -> Result<HashMap<String, String>, String> {
         let mut args = vec!["diff", "--numstat", "-z", "--no-renames"];
         if cached {
@@ -145,8 +134,6 @@ pub(super) fn snapshot_with(
     };
     Ok(Snapshot {
         counts: [counts(true)?, counts(false)?],
-        staged: stats(true)?,
-        unstaged: stats(false)?,
         root,
         branch,
         files,

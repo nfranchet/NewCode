@@ -151,26 +151,25 @@ Files are read from disk, and restored tabs are permanent, including the last pr
 
 ## Source Control
 
-Open Source Control to see branch/upstream information and saved changes. Status refreshes automatically while the view is open, and Refresh requests an immediate update. Git author configuration is required to commit.
+The Source Control sidebar has one repository/branch header and a Refresh icon. The commit message and **Commit staged** button stay above the scrolling file list. Status refreshes automatically every three seconds while the panel is open; background reads keep controls enabled and preserve focus, selection, group expansion, and scrolling.
 
-| Group | Color | Meaning |
+| Group | Contents | Actions |
 | --- | --- | --- |
-| Unstaged | Amber | Tracked changes excluded from the next commit |
-| Untracked | Blue | New files not yet staged |
-| Staged | Green | Changes included in the next commit |
-| Conflicts | Red | Files needing resolution before committing |
+| Conflicts | Files requiring resolution | Resolve in the editor, then stage the resolved file |
+| Staged Changes | Content included in the next commit | **−** unstages a file or the group |
+| Changes | Saved changes excluded from the next commit, including **New** files | **+** stages a file or the group |
 
-Select a file row to preview its aligned **Before / After** comparison in the center. Use **Stage file** or **Unstage file** for the selection, **Stage all** or **Unstage all** for a group, and **Open file** to edit it. A partially staged file appears in both applicable groups. Counts show additions and removals; renames, conflicts, and binary changes are identified where available.
+Only nonempty groups are shown. A clean repository shows **Working tree clean**. Each row shows the filename with its status and parent directory beneath it. Hover for the full path, rename source, and addition/deletion counts; wider panels show counts inline. A partially staged file appears in both Staged Changes and Changes.
 
-With a file row focused, **Space** stages or unstages the whole file according to its group. It does not affect typing in the commit message or another panel. The shortcut is disabled while a Git operation is pending.
+Select a file to view its aligned **Before / After** comparison in the center. Use the inline **+ / −** buttons or press **Space** on the focused row to stage/unstage it. Group buttons apply to that group; conflicts have no bulk-stage button. Right-click a row for **Open file**, **Stage file**, or **Unstage file**. Untracked files and unsupported text comparisons explain which actions are available.
 
-For eligible tracked text modifications, each hunk has a **Stage hunk** or **Unstage hunk** action. Both sides stay visible in the same position after the action. Staged hunks have a blue background and a **Staged** label; red/green text still identifies removed/added lines. The reverse action applies the original hunk in reverse, preserving other staged changes.
+For eligible tracked text modifications, each hunk has a **Stage hunk** or **Unstage hunk** action. Both sides remain visible in place after the action. Staged hunks have a blue background and a **Staged** label; red/green text still identifies removed/added lines. Reversing a staged hunk applies the original patch in reverse and preserves unrelated staged content.
 
-The comparison is a retained review snapshot. **Reload diff** loads the current changes; external file/index changes and whole-file operations require a reload before further hunk actions. New files, deletions, renames, mode changes, symlinks, conflicts, and binary changes use whole-file actions. An empty diff may mean the file is untracked or has no available text diff.
+The comparison is a retained review snapshot. **Reload diff** loads current changes. External file/index changes and whole-file operations mark the review stale before further hunk actions. New files, deletions, renames, mode changes, symbolic links, conflicts, and binary changes use whole-file actions. Loading or failing to load a comparison keeps the center pane in review mode; it does not briefly expose the editor. Reloading the same comparison retains its scroll position.
 
-Enter a message below the file groups, then click **Commit staged changes**. Only staged content is committed; save editor edits before staging. Commits are disabled when nothing is staged, the message is empty, or conflicts remain. A successful commit clears the message; failures preserve it and report the error.
+Enter a message at the top and click **Commit staged**. Only staged content is committed; save editor edits before staging. The panel explains when committing is unavailable: missing message, no staged files, conflicts, or a Git operation in progress. Git author configuration is required. Success clears the submitted message, while preserving any new draft typed during the commit. Failure preserves the draft and displays a short notice; **…** opens selectable Git error details.
 
-Returning to Explorer or Search shows the active editor buffer without reloading it. Returning to Source Control can show its retained diff. Selecting a file tab or closing the preview dismisses the diff.
+Returning to Explorer or Search shows the active editor buffer without reloading it. Returning to Source Control can show its retained diff. Selecting a file tab or closing the comparison dismisses the review.
 
 ## Terminal
 
@@ -267,7 +266,7 @@ The application uses one crate with focused feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
 - `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
-- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, background actions and replies, panel rendering, comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
+- `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
 - `src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/editor/assistants.rs` coordinates the shared pane and independent workspace states.
 - Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
 
