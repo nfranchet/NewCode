@@ -139,6 +139,11 @@ fn configured_shell_loads_startup_and_preserves_workspace() {
     }
     let root = std::env::temp_dir().join(format!("focus-shell-startup-{}", std::process::id()));
     std::fs::create_dir_all(&root).unwrap();
+    // Ubuntu's /etc/zsh/zshrc runs compinit before the user's .zshrc and can
+    // block on a security prompt for runner-owned completion directories.
+    // Its documented opt-out must be set in .zshenv, which loads first.
+    // This fixture tests user startup and cwd, independently of system completions.
+    std::fs::write(root.join(".zshenv"), "skip_global_compinit=1\n").unwrap();
     std::fs::write(
         root.join(".bashrc"),
         "export FOCUS_STARTUP_MARKER=loaded\nPS1='READY> '\n",
