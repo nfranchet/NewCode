@@ -128,11 +128,13 @@ fn configured_shell_loads_startup_and_preserves_workspace() {
     if std::env::var_os(CHILD).is_some() {
         let root = PathBuf::from(std::env::var_os("FOCUS_SHELL_TEST_ROOT").unwrap());
         let mut session = Session::new("", Some(&root));
+        // Interactive shells can discard typeahead while initializing their line editor.
+        // The fixture prompt confirms that startup files have finished loading.
+        wait_for(&mut session.0, "READY>");
         session
             .0
-            .send(b"printf 'CONFIG_%s_DIR_%s_END\\n' \"$FOCUS_STARTUP_MARKER\" \"$PWD\"\r");
-        let expected = format!("CONFIG_loaded_DIR_{}_END", root.display());
-        wait_for(&mut session.0, &expected);
+            .send(b"test \"$FOCUS_STARTUP_MARKER\" = loaded && test \"$PWD\" = \"$FOCUS_SHELL_TEST_ROOT\" && printf 'CONFIG_%s_END\\n' verified\r");
+        wait_for(&mut session.0, "CONFIG_verified_END");
         return;
     }
     let root = std::env::temp_dir().join(format!("focus-shell-startup-{}", std::process::id()));
@@ -162,12 +164,14 @@ fn configured_shell_loads_startup_and_preserves_workspace() {
             .env("SHELL", shell)
             .env("ZDOTDIR", &root)
             .env("HOME", &root)
+            .env_remove("FOCUS_STARTUP_MARKER")
             .output()
             .unwrap();
         assert!(
             output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stdout)
+            "Shell {shell} failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
     }
     std::fs::remove_dir_all(&root).unwrap();
