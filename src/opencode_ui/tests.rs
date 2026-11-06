@@ -158,7 +158,8 @@ fn opencode_ui_fits_narrow_and_standard_panels() {
             parts: vec![json!({"id":"text","type":"text","text":"a_very_long_line_".repeat(80)})],
         });
         for _ in 0..3 {
-            let _ = ctx.run(
+            let _ = crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -166,17 +167,17 @@ fn opencode_ui_fits_narrow_and_standard_panels() {
                     )),
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |panel| ui.show(panel, ctx));
+                |root| {
+                    egui::CentralPanel::default().show(root, |panel| ui.show(panel, &ctx));
                     assert!(
-                        ctx.used_rect().right() <= width + 1.0,
+                        ctx.globally_used_rect().right() <= width + 1.0,
                         "OpenCode overflows: {:?}",
-                        ctx.used_rect()
+                        ctx.globally_used_rect()
                     );
                     assert!(
-                        ctx.used_rect().bottom() <= 651.0,
+                        ctx.globally_used_rect().bottom() <= 651.0,
                         "OpenCode overflows vertically: {:?}",
-                        ctx.used_rect()
+                        ctx.globally_used_rect()
                     );
                 },
             );

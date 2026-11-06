@@ -40,7 +40,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libx11-dev libxkbcommon-dev \
             libxkbcommon-x11-dev libwayland-dev libegl1-mesa-dev libgl1-mesa-dev \
-            libxcursor-dev libxi-dev libxrandr-dev zsh
+            libxcursor-dev libxi-dev libxrandr-dev zsh fonts-dejavu-core
       - name: Install stable Rust
         env:
           TARGET: ${{ matrix.target }}
@@ -48,6 +48,10 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt
           rustup default stable
           rustup target add "$TARGET"
+      - name: Install pinned Zig toolchain for Ghostty
+        run: |
+          python3 scripts/install-zig.py "$RUNNER_TEMP/focus-zig"
+          echo "$RUNNER_TEMP/focus-zig" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@2201cc584a476d1b508be977bbe4b7d1c7a52e9c # v2.9.3
         with:
           key: release-${{ matrix.target }}

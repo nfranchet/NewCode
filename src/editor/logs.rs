@@ -94,7 +94,7 @@ impl Logs {
         if out.inner_rect.contains(
             ui.input(|i| i.pointer.hover_pos())
                 .unwrap_or(egui::Pos2::ZERO),
-        ) && ui.input(|i| i.raw_scroll_delta.y > 0.0)
+        ) && ui.input(|i| i.smooth_scroll_delta.y > 0.0)
         {
             self.follow = false;
         }
@@ -133,7 +133,8 @@ mod layout_tests {
         for width in [320.0, 1000.0] {
             let ctx = egui::Context::default();
             let mut logs = Logs::default();
-            let _ = ctx.run(
+            let _ = crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -141,12 +142,12 @@ mod layout_tests {
                     )),
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| logs.ui(ui));
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| logs.ui(ui));
                     assert!(
-                        ctx.used_rect().right() <= width + 1.0,
+                        ctx.globally_used_rect().right() <= width + 1.0,
                         "controls overflow at {width}: {:?}",
-                        ctx.used_rect()
+                        ctx.globally_used_rect()
                     );
                 },
             );

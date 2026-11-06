@@ -11,7 +11,7 @@ mod platform;
 mod settings;
 mod syntax;
 mod terminal;
-mod terminal_input;
+mod terminal_fonts;
 mod ui_theme;
 
 use editor::EditorApp;
@@ -54,4 +54,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     log::info!("Application stopped");
     Ok(())
+}
+
+// Headless frames have no renderer to apply texture uploads to.
+#[cfg(test)]
+fn test_frame(
+    ctx: &egui::Context,
+    input: egui::RawInput,
+    render: impl FnMut(&mut egui::Ui),
+) -> egui::FullOutput {
+    let mut output = ctx.run_ui(input, render);
+    output.textures_delta.clear();
+    output
 }

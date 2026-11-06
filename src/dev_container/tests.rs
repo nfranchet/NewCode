@@ -65,7 +65,8 @@ fn errors_are_logged_once_and_never_expand_the_menu() {
     );
     let ctx = egui::Context::default();
     for _ in 0..3 {
-        let output = ctx.run(
+        let output = crate::test_frame(
+            &ctx,
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -73,9 +74,9 @@ fn errors_are_logged_once_and_never_expand_the_menu() {
                 )),
                 ..Default::default()
             },
-            |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| container.menu(ui, ctx));
-                assert!(ctx.used_rect().right() <= 361.0);
+            |root| {
+                egui::CentralPanel::default().show(root, |ui| container.menu(ui, &ctx));
+                assert!(ctx.globally_used_rect().right() <= 361.0);
             },
         );
         let labels: Vec<_> = output

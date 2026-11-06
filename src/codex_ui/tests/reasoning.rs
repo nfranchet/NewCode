@@ -149,7 +149,8 @@ fn painted_text(codex: &mut CodexUi) -> Vec<String> {
     let mut text = Vec::new();
     for _ in 0..2 {
         text.clear();
-        let output = ctx.run(
+        let output = crate::test_frame(
+            &ctx,
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -157,8 +158,8 @@ fn painted_text(codex: &mut CodexUi) -> Vec<String> {
                 )),
                 ..Default::default()
             },
-            |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| codex.show_conversation(ui));
+            |root| {
+                egui::CentralPanel::default().show(root, |ui| codex.show_conversation(ui));
             },
         );
         for shape in output.shapes {

@@ -21,6 +21,9 @@ impl EditorApp {
     }
 
     pub(super) fn editor_shortcuts(&mut self, ctx: &egui::Context) -> bool {
+        if self.bottom_tab == super::logs::Tab::Terminal && super::terminal_input::focused(ctx) {
+            return false;
+        }
         let opened_find = ctx
             .input(|input| input.modifiers.command && input.key_pressed(egui::Key::F))
             && self.active_file.is_some();
@@ -35,15 +38,17 @@ impl EditorApp {
 
         opened_find
     }
-    pub(super) fn toolbar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("toolbar")
+    pub(super) fn toolbar(&mut self, root: &mut egui::Ui) {
+        let context = root.ctx().clone();
+        let ctx = &context;
+        egui::Panel::top("toolbar")
             .frame(
                 egui::Frame::new()
                     .fill(Color32::WHITE)
                     .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
                     .inner_margin(egui::Margin::symmetric(12, 9)),
             )
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 ui.horizontal(|ui| {
                     theme::icon(ui, Icon::Spark, theme::BLUE);
                     ui.label(
@@ -160,15 +165,15 @@ impl EditorApp {
                 });
             });
     }
-    pub(super) fn status_bar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("status_bar")
-            .exact_height(25.0)
+    pub(super) fn status_bar(&mut self, root: &mut egui::Ui) {
+        egui::Panel::bottom("status_bar")
+            .exact_size(25.0)
             .frame(
                 egui::Frame::new()
                     .fill(theme::BLUE_SOFT)
                     .inner_margin(egui::Margin::symmetric(12, 3)),
             )
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::Label::new(
@@ -189,16 +194,16 @@ impl EditorApp {
                 });
             });
     }
-    pub(super) fn activity_bar(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("activity_bar")
-            .exact_width(48.0)
+    pub(super) fn activity_bar(&mut self, root: &mut egui::Ui) {
+        egui::Panel::left("activity_bar")
+            .exact_size(48.0)
             .resizable(false)
             .frame(
                 egui::Frame::new()
                     .fill(theme::NAVY)
                     .inner_margin(egui::Margin::symmetric(3, 8)),
             )
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 ui.vertical_centered(|ui| {
                     if theme::nav_button(
                         ui,
@@ -233,10 +238,12 @@ impl EditorApp {
                 });
             });
     }
-    pub(super) fn document_panel(&mut self, ctx: &egui::Context, opened_find: bool) {
+    pub(super) fn document_panel(&mut self, root: &mut egui::Ui, opened_find: bool) {
+        let context = root.ctx().clone();
+        let ctx = &context;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(8))
-            .show(ctx, |ui| {
+            .show(root, |ui| {
                 self.document_tabs(ui, ctx);
                 if self.sidebar_mode == SidebarMode::Git && self.git_ui.show_diff(ui) {
                     return;

@@ -66,14 +66,15 @@ fn long_messages_fit_narrow_panel() {
         for busy in [false, true] {
             codex.busy = busy;
             for _ in 0..3 {
-                let _ = ctx.run(
+                let _ = crate::test_frame(
+                    &ctx,
                     egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
                         ..Default::default()
                     },
-                    |ctx| {
-                        egui::CentralPanel::default().show(ctx, |ui| {
-                            codex.show(ui, None, ctx);
+                    |root| {
+                        egui::CentralPanel::default().show(root, |ui| {
+                            codex.show(ui, None, &ctx);
                             assert!(
                                 ui.min_rect().right() <= ui.clip_rect().right() + 1.0,
                                 "Codex content exceeds panel: {:?}",

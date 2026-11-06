@@ -82,8 +82,8 @@ pub(super) fn highlight_find_matches(
     let active_bytes = active_match.and_then(|index| byte_matches.get(index).copied());
     let original_sections = std::mem::take(&mut job.sections);
     for section in original_sections {
-        let section_start = section.byte_range.start;
-        let section_end = section.byte_range.end;
+        let section_start = section.byte_range.start.0;
+        let section_end = section.byte_range.end.0;
         let mut boundaries = vec![section_start, section_end];
         for (start, end) in &byte_matches {
             if *start < section_end && *end > section_start {
@@ -100,7 +100,7 @@ pub(super) fn highlight_find_matches(
                 continue;
             }
             let mut part = section.clone();
-            part.byte_range = start..end;
+            part.byte_range = start.into()..end.into();
             if let Some((active_start, active_end)) = active_bytes
                 && start >= active_start
                 && end <= active_end

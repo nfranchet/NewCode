@@ -25,6 +25,7 @@ fn test_app() -> EditorApp {
         buffer: "fn main() {\n    println!(\"Hello\");\n}\n".into(),
         dirty: true,
         top: None,
+        terminal_error: None,
         bottom_tab: Default::default(),
         logs: Default::default(),
         dev_container: Default::default(),

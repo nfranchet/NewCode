@@ -173,7 +173,8 @@ fn comparison_layout_stays_stable_when_hunk_is_staged() {
         let mut sizes = Vec::new();
         for staged in [false, false, true, true] {
             state.diff.as_mut().unwrap().hunks[0].staged = staged;
-            let _ = ctx.run(
+            let _ = crate::test_frame(
+                &ctx,
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -181,8 +182,8 @@ fn comparison_layout_stays_stable_when_hunk_is_staged() {
                     )),
                     ..Default::default()
                 },
-                |ctx| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
+                |root| {
+                    egui::CentralPanel::default().show(root, |ui| {
                         assert!(state.show_diff(ui));
                         sizes.push(ui.min_rect().size());
                     });

@@ -47,6 +47,8 @@ def verify_binary(binary, target):
     if target.endswith("linux-gnu"):
         libraries = run("ldd", str(binary))
         print(libraries)
+        if "libghostty-vt.so" in libraries:
+            raise RuntimeError("Ghostty must be statically linked in release binaries")
         if "not found" in libraries:
             raise RuntimeError("Unresolved Linux shared libraries")
     else:
@@ -69,11 +71,12 @@ def package_linux(binary, output, stage):
     shutil.copy2(binary, stage / "focus-editor")
     shutil.copy2("scripts/release/INSTALL-linux.txt", stage / "INSTALL.txt")
     shutil.copy2("LICENSE", stage / "LICENSE")
+    shutil.copy2("THIRD_PARTY_NOTICES.txt", stage / "THIRD_PARTY_NOTICES.txt")
     with tarfile.open(output, "w:gz") as archive:
-        for name in ("focus-editor", "INSTALL.txt", "LICENSE"):
+        for name in ("focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt"):
             archive.add(stage / name, arcname=name)
     with tarfile.open(output) as archive:
-        if set(archive.getnames()) != {"focus-editor", "INSTALL.txt", "LICENSE"}:
+        if set(archive.getnames()) != {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt"}:
             raise RuntimeError("Unexpected Linux archive contents")
         if not archive.getmember("focus-editor").mode & 0o111:
             raise RuntimeError("Packaged executable lost its execute permission")
@@ -89,6 +92,7 @@ def package_macos(binary, output, stage):
     executable = contents / "MacOS/focus-editor"
     shutil.copy2(binary, executable)
     shutil.copy2("LICENSE", contents / "Resources/LICENSE")
+    shutil.copy2("THIRD_PARTY_NOTICES.txt", contents / "Resources/THIRD_PARTY_NOTICES.txt")
     # Rust's macOS target supports 11.0 and later; keep bundle and binary aligned.
     with (contents / "Info.plist").open("wb") as stream:
         plistlib.dump({
@@ -109,6 +113,7 @@ def package_macos(binary, output, stage):
     os.symlink("/Applications", stage / "Applications")
     shutil.copy2("scripts/release/INSTALL-macos.txt", stage / "INSTALL.txt")
     shutil.copy2("LICENSE", stage / "LICENSE")
+    shutil.copy2("THIRD_PARTY_NOTICES.txt", stage / "THIRD_PARTY_NOTICES.txt")
     run("hdiutil", "create", "-volname", "Focus Editor", "-srcfolder", str(stage),
         "-format", "UDZO", "-ov", str(output))
     run("hdiutil", "verify", str(output))

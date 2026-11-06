@@ -19,8 +19,8 @@ impl EditorApp {
         let copied: String = self
             .buffer
             .chars()
-            .skip(range.start)
-            .take(range.end - range.start)
+            .skip(range.start.0)
+            .take(range.end.0 - range.start.0)
             .collect();
         ctx.copy_text(copied);
         self.status = "Copied selection".into();

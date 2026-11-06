@@ -4,8 +4,16 @@ RUN rustup update stable && \
     rustup default stable && \
     rustup component add --toolchain stable llvm-tools-preview && \
     sudo apt update && \
-    sudo apt install -y tig zsh-antigen curl ca-certificates unzip && \
+    sudo apt install -y tig zsh-antigen curl ca-certificates unzip fonts-dejavu-core python3 xz-utils && \
     cargo +stable install --locked grcov
+
+# The Compose build context is .devcontainer; pin the same toolchain as CI.
+ARG ZIG_VERSION=0.15.2
+RUN architecture="$(uname -m)" && \
+    curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-${architecture}-linux-${ZIG_VERSION}.tar.xz" -o /tmp/zig.tar.xz && \
+    mkdir -p /opt/zig && tar -xJf /tmp/zig.tar.xz --strip-components=1 -C /opt/zig && \
+    rm /tmp/zig.tar.xz
+ENV PATH=/opt/zig:${PATH}
 
 COPY ./vscode/files/toto.txt /tmp/toto.txt
 
