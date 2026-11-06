@@ -15,9 +15,10 @@ pub(crate) enum Source {
     DevContainer,
     DockerCompose,
     Terminal,
+    Addons,
 }
 impl Source {
-    pub(crate) const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::Editor,
         Self::Git,
         Self::Codex,
@@ -25,6 +26,7 @@ impl Source {
         Self::DevContainer,
         Self::DockerCompose,
         Self::Terminal,
+        Self::Addons,
     ];
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -35,10 +37,13 @@ impl Source {
             Self::DevContainer => "Dev Container",
             Self::DockerCompose => "Docker Compose",
             Self::Terminal => "Terminal",
+            Self::Addons => "Addons",
         }
     }
     pub(crate) fn from_target(target: &str) -> Self {
-        if target.contains("dev_container::compose") {
+        if target.contains("addons") {
+            Self::Addons
+        } else if target.contains("dev_container::compose") {
             Self::DockerCompose
         } else if target.contains("dev_container") {
             Self::DevContainer
@@ -114,9 +119,7 @@ pub(crate) fn clear(source: Option<Source>) {
         .clear(source);
 }
 pub(crate) fn log_path() -> io::Result<PathBuf> {
-    dirs::data_local_dir()
-        .map(|p| p.join("focus-editor/logs/launch.log"))
-        .ok_or_else(|| io::Error::other("Cannot locate application log directory"))
+    Ok(crate::app_paths::data_root()?.join("logs/launch.log"))
 }
 pub(crate) fn fresh_file(path: &Path) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;

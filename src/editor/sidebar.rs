@@ -41,6 +41,7 @@ impl EditorApp {
                     ui.separator();
                 }
                 match self.sidebar_mode {
+                    SidebarMode::Addon => self.addons.sidebar(ui),
                     SidebarMode::Git => {
                         if let Some(path) = self.git_ui.ui(
                             ui,

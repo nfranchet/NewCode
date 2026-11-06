@@ -22,6 +22,21 @@ pub(crate) struct Runtime {
 }
 
 impl Runtime {
+    /// Forward sensitive values by environment name, never in docker's argv.
+    pub(crate) fn command_with_env(&self, program: &str, values: &[(String, String)]) -> Command {
+        let mut command = Command::new("docker");
+        command
+            .args(["exec", "-i", "-w"])
+            .arg(&self.workspace_folder);
+        if let Some(user) = &self.remote_user {
+            command.args(["-u", user]);
+        }
+        for (key, value) in values {
+            command.arg("-e").arg(key).env(key, value);
+        }
+        command.arg(&self.container_id).arg(program);
+        command
+    }
     pub(crate) fn command(&self, program: &str) -> Command {
         let mut command = Command::new("docker");
         command

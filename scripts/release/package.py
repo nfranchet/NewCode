@@ -34,7 +34,7 @@ def run(*args, **kwargs):
     return subprocess.check_output(args, text=True, **kwargs).strip()
 
 
-def verify_binary(binary, target):
+def verify_binary(binary, target, name="focus-editor"):
     description = run("file", "-b", str(binary))
     print(description)
     architecture = {
@@ -62,24 +62,40 @@ def verify_binary(binary, target):
             if not dependency.startswith(("/usr/lib/", "/System/Library/")):
                 raise RuntimeError(f"Unbundled macOS dependency: {dependency}")
     version = run(str(binary), "--version")
-    if not version.startswith("focus-editor "):
+    if not version.startswith(name + " "):
         raise RuntimeError("Executable version smoke test failed")
     print(version)
 
 
-def package_linux(binary, output, stage):
+ADDON_ASSETS = ("addon.toml", "icon.png", "focus-addon-github", "LICENSE")
+
+
+def copy_addons(binary, destination, addon_source=None):
+    source = Path(addon_source) if addon_source else binary.parent / "addons/github"
+    target = destination / "addons/github"
+    target.mkdir(parents=True)
+    for name in ADDON_ASSETS:
+        shutil.copy2(source / name, target / name)
+
+
+def package_linux(binary, output, stage, addon_source=None):
     shutil.copy2(binary, stage / "focus-editor")
     shutil.copy2("scripts/release/INSTALL-linux.txt", stage / "INSTALL.txt")
     shutil.copy2("LICENSE", stage / "LICENSE")
     shutil.copy2("THIRD_PARTY_NOTICES.txt", stage / "THIRD_PARTY_NOTICES.txt")
+    shutil.copy2("scripts/release/install-addons.py", stage / "install-addons.py")
+    copy_addons(binary, stage, addon_source)
+    assets = ("focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py") + tuple("addons/github/" + name for name in ADDON_ASSETS)
     with tarfile.open(output, "w:gz") as archive:
-        for name in ("focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt"):
+        for name in assets:
             archive.add(stage / name, arcname=name)
     with tarfile.open(output) as archive:
-        if set(archive.getnames()) != {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt"}:
+        if set(archive.getnames()) != set(assets):
             raise RuntimeError("Unexpected Linux archive contents")
         if not archive.getmember("focus-editor").mode & 0o111:
             raise RuntimeError("Packaged executable lost its execute permission")
+        if not archive.getmember("addons/github/focus-addon-github").mode & 0o111:
+            raise RuntimeError("Packaged addon lost its execute permission")
 
 
 def package_macos(binary, output, stage):
@@ -93,6 +109,7 @@ def package_macos(binary, output, stage):
     shutil.copy2(binary, executable)
     shutil.copy2("LICENSE", contents / "Resources/LICENSE")
     shutil.copy2("THIRD_PARTY_NOTICES.txt", contents / "Resources/THIRD_PARTY_NOTICES.txt")
+    copy_addons(binary, contents / "Resources")
     # Rust's macOS target supports 11.0 and later; keep bundle and binary aligned.
     with (contents / "Info.plist").open("wb") as stream:
         plistlib.dump({
@@ -108,12 +125,14 @@ def package_macos(binary, output, stage):
             "NSHighResolutionCapable": True,
         }, stream)
     run("plutil", "-lint", str(contents / "Info.plist"))
+    run("codesign", "--force", "--sign", "-", str(contents / "Resources/addons/github/focus-addon-github"))
     run("codesign", "--force", "--sign", "-", str(app))
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
     os.symlink("/Applications", stage / "Applications")
     shutil.copy2("scripts/release/INSTALL-macos.txt", stage / "INSTALL.txt")
     shutil.copy2("LICENSE", stage / "LICENSE")
     shutil.copy2("THIRD_PARTY_NOTICES.txt", stage / "THIRD_PARTY_NOTICES.txt")
+    shutil.copy2("scripts/release/install-addons.py", stage / "install-addons.py")
     run("hdiutil", "create", "-volname", "Focus Editor", "-srcfolder", str(stage),
         "-format", "UDZO", "-ov", str(output))
     run("hdiutil", "verify", str(output))
@@ -137,6 +156,7 @@ def main():
     args = parser.parse_args()
     binary = Path("target", args.target, "release/focus-editor").resolve(strict=True)
     verify_binary(binary, args.target)
+    verify_binary(binary.parent / "addons/github/focus-addon-github", args.target, "focus-addon-github")
     destination = Path("dist").resolve()
     destination.mkdir(exist_ok=True)
     output = destination / asset_name(args.tag, args.target)

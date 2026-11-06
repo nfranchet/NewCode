@@ -89,6 +89,12 @@ impl EditorApp {
                         self.logs.source = Some(crate::logging::session::Source::DevContainer);
                     }
                     self.assistants_menu(ui, ctx);
+                    ui.menu_button("Addons", |ui| {
+                        self.addons.menu(ui, &mut self.settings.disabled_addons)
+                    });
+                    if self.sidebar_mode == SidebarMode::Addon && self.addons.active.is_none() {
+                        self.sidebar_mode = SidebarMode::Explorer;
+                    }
                     ui.menu_button("Edit", |ui| {
                         if ui
                             .add_enabled_ui(self.active_file.is_some(), |ui| {
@@ -235,6 +241,12 @@ impl EditorApp {
                     {
                         self.sidebar_mode = SidebarMode::Git;
                     }
+                    if self
+                        .addons
+                        .activity(ui, self.sidebar_mode == SidebarMode::Addon)
+                    {
+                        self.sidebar_mode = SidebarMode::Addon;
+                    }
                 });
             });
     }
@@ -245,12 +257,15 @@ impl EditorApp {
             .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(8))
             .show(root, |ui| {
                 self.document_tabs(ui, ctx);
+                if self.sidebar_mode == SidebarMode::Addon && self.addons.central(ui) {
+                    return;
+                }
                 if self.sidebar_mode == SidebarMode::Git && self.git_ui.show_diff(ui) {
                     return;
                 }
                 if self.active_file.is_some() {
                     self.find_bar(ui, ctx, opened_find);
-                    self.text_view(ui, ctx);
+                    ui.add_enabled_ui(!self.addons.worktree_busy(), |ui| self.text_view(ui, ctx));
                 } else {
                     ui.vertical_centered(|ui| {
                         ui.add_space((ui.available_height() * 0.23).max(12.0));

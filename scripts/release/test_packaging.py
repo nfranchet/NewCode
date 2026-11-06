@@ -7,7 +7,12 @@ import tarfile
 import tempfile
 import unittest
 
-from package import RELEASE_TARGETS, asset_name, package_linux
+from package import RELEASE_TARGETS, ADDON_ASSETS, asset_name, package_linux
+import importlib.util
+
+spec = importlib.util.spec_from_file_location("install_addons", Path(__file__).with_name("install-addons.py"))
+installer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(installer)
 
 
 class PackagingTests(unittest.TestCase):
@@ -21,12 +26,40 @@ class PackagingTests(unittest.TestCase):
             stage.mkdir()
             (stage / "auth.json").write_text("must not ship")
             output = root / "release.tar.gz"
-            package_linux(binary, output, stage)
+            addon = root / "addon"
+            addon.mkdir()
+            for name in ADDON_ASSETS:
+                (addon / name).write_bytes(b"fixture addon")
+            (addon / "focus-addon-github").chmod(0o755)
+            package_linux(binary, output, stage, addon)
             with tarfile.open(output) as archive:
-                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt"})
+                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py"} | {"addons/github/" + name for name in ADDON_ASSETS})
                 self.assertEqual(archive.extractfile("LICENSE").read(), Path("LICENSE").read_bytes())
                 self.assertTrue(archive.getmember("focus-editor").mode & 0o111)
                 self.assertEqual(archive.extractfile("focus-editor").read(), binary.read_bytes())
+                self.assertTrue(archive.getmember("addons/github/focus-addon-github").mode & 0o111)
+
+    def test_addon_installer_places_assets_beside_logs_and_preserves_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "payload/github"
+            source.mkdir(parents=True)
+            (source / "addon.toml").write_text("id='github'\nprotocol=1\nexecutable='program'\nicon='icon.png'\n")
+            (source / "program").write_bytes(b"executable")
+            (source / "program").chmod(0o755)
+            (source / "icon.png").write_bytes(b"icon")
+            destination = root / "app"
+            (destination / "logs").mkdir(parents=True)
+            state = destination / "addons/github/data/state.json"
+            state.parent.mkdir(parents=True)
+            state.write_text("keep non-secret state")
+            installer.install(source.parent, destination)
+            self.assertEqual(state.read_text(), "keep non-secret state")
+            self.assertEqual((destination / "addons/github/program").read_bytes(), b"executable")
+            self.assertTrue((destination / "addons/github/program").stat().st_mode & 0o111)
+            (source / "addon.toml").write_text("id='github'\nprotocol=1\nexecutable='../escape'\nicon='icon.png'\n")
+            with self.assertRaises(ValueError):
+                installer.install(source.parent, destination)
 
     def test_checksums_require_both_linux_targets_and_reject_macos_assets(self):
         script = Path(__file__).with_name("checksums.py").resolve()

@@ -151,7 +151,11 @@ impl GitUi {
             .map_or(workspace.clone(), |snapshot| snapshot.root.clone());
         let runtime = self.runtime.clone();
         let review_id = self.diff.as_ref().map(|view| view.id);
+        let Ok(lease) = crate::repository_jobs::acquire(&workspace) else {
+            return;
+        };
         self.pending = Some(Pending::spawn(self.ticket(), true, ctx, move || {
+            let _lease = lease;
             let mut diff = None;
             let mut committed = None;
             let (result, success, failure) = match action {

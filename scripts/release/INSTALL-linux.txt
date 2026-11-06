@@ -3,7 +3,13 @@ Focus Editor for Linux
 Extract the archive and put focus-editor on your PATH, for example:
   mkdir -p ~/.local/bin
   install -m 755 focus-editor ~/.local/bin/focus-editor
+  python3 install-addons.py
   focus-editor ~/projects/my-project
+
+The addon installer requires Python 3.11 or newer. It installs GitHub in
+$XDG_DATA_HOME/focus-editor/addons/github (normally
+~/.local/share/focus-editor/addons/github), beside the logs directory.
+Existing addon state is preserved. Restart the editor after installation.
 
 These binaries are built on Ubuntu 24.04 with glibc (2.39 or newer).
 They are not static binaries. An X11 or Wayland desktop, working OpenGL/EGL

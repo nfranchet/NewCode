@@ -13,6 +13,7 @@ use std::{
 };
 use text_view::EditorLayoutCache;
 
+mod addons;
 mod assistants;
 mod clipboard;
 mod close_dialog;
@@ -39,6 +40,7 @@ enum SidebarMode {
     Explorer,
     Search,
     Git,
+    Addon,
 }
 
 pub(crate) struct EditorApp {
@@ -70,6 +72,7 @@ pub(crate) struct EditorApp {
     status: String,
     sidebar_mode: SidebarMode,
     git_ui: crate::git_ui::GitUi,
+    addons: crate::addons::Addons,
     search_query: String,
     search_results: Vec<FileMatches>,
     pending_editor_cursor: Option<usize>,
@@ -167,6 +170,8 @@ impl EditorApp {
                 )
             })
             .collect();
+        let mut addons = crate::addons::Addons::default();
+        addons.discover(&settings.disabled_addons);
         Self {
             settings,
             settings_path,
@@ -196,6 +201,7 @@ impl EditorApp {
             status: "Ready".into(),
             sidebar_mode: SidebarMode::Explorer,
             git_ui: crate::git_ui::GitUi::default(),
+            addons,
             search_query: String::new(),
             search_results: Vec::new(),
             pending_editor_cursor: None,
@@ -239,6 +245,7 @@ impl EditorApp {
             self.restart_terminal(ctx, cwd.as_deref(), runtime.as_ref());
         }
         let opened_find = self.editor_shortcuts(ctx);
+        self.update_addons(ctx);
         self.toolbar(root);
         self.update_window_title(ctx);
         self.update_assistants(ctx);
@@ -253,6 +260,7 @@ impl EditorApp {
         self.document_panel(root, opened_find);
         self.rename_dialog(ctx);
         self.close_dialog(ctx);
+        self.addon_dialogs(ctx);
         self.deletion_dialog(ctx);
         self.cancel_unfocused_creation(ctx);
     }

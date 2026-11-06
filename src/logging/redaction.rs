@@ -34,7 +34,7 @@ pub(crate) fn redact(line: &str, secrets: &[String]) -> String {
     text = CREDENTIAL.replace_all(&text, "${1}[redacted]").into_owned();
     URL_AUTH.replace_all(&text, "${1}[redacted]@").into_owned()
 }
-pub(super) fn environment_secrets() -> Vec<String> {
+pub(crate) fn environment_secrets() -> Vec<String> {
     std::env::vars_os()
         .filter_map(|(key, value)| {
             let key = key.to_string_lossy().to_ascii_uppercase();
