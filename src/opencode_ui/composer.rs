@@ -1,148 +1,135 @@
-//! Send controls and backend-supplied model, variant, and agent choices.
-use super::{OpenCodeUi, Operation, short};
+//! Provider catalog adapter for the shared assistant composer.
+use super::{OpenCodeUi, Operation};
+use crate::assistant_ui::composer::{self, Choice, Selector};
 use eframe::egui;
 impl OpenCodeUi {
     pub(super) fn composer(&mut self, ui: &mut egui::Ui) {
-        let selection_before = log::log_enabled!(log::Level::Debug)
-            .then(|| (self.model.clone(), self.variant.clone(), self.agent.clone()));
-        let id = ui.make_persistent_id("opencode_composer");
-        if self.can_send() && ui.memory(|m| m.has_focus(id)) {
-            let backwards = ui.input_mut(|i| {
-                if i.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab) {
-                    Some(true)
-                } else if i.consume_key(egui::Modifiers::NONE, egui::Key::Tab) {
-                    Some(false)
-                } else {
-                    None
-                }
-            });
-            if let Some(backwards) = backwards {
-                if !self.agents.is_empty() {
-                    let current = self
-                        .agents
-                        .iter()
-                        .position(|a| a == &self.agent)
-                        .unwrap_or(0);
-                    self.agent = self.agents[(current
-                        + if backwards { self.agents.len() - 1 } else { 1 })
-                        % self.agents.len()]
-                    .clone();
-                }
-            }
-        }
-        ui.separator();
-        let input = ui.add(
-            egui::TextEdit::multiline(&mut self.input)
-                .id(id)
-                .lock_focus(true)
-                .hint_text("Message OpenCode…")
-                .desired_rows(3)
-                .desired_width(f32::INFINITY),
-        );
-        let send_key = input.has_focus()
-            && ui.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Enter));
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(
-                    self.can_send() && !self.input.trim().is_empty(),
-                    egui::Button::new("Send"),
-                )
-                .on_hover_text("Ctrl+Enter to send")
-                .clicked()
-                || send_key
-            {
-                self.submit(false);
-            }
-            if self.busy
-                && ui
-                    .add_enabled(
-                        !self
-                            .requests
-                            .values()
-                            .any(|p| matches!(p.operation, Operation::Abort)),
-                        egui::Button::new("Interrupt"),
-                    )
-                    .clicked()
-            {
-                if let Some(id) = &self.session {
-                    self.request(
-                        Operation::Abort,
-                        "POST",
-                        format!("/session/{id}/abort"),
-                        None,
-                    );
-                }
-            }
-            self.selectors(ui);
-        });
-        if selection_before.is_some_and(|before| {
-            before != (self.model.clone(), self.variant.clone(), self.agent.clone())
-        }) {
-            log::debug!("Assistant model/thinking/mode selection changed");
-        }
-    }
-    fn selectors(&mut self, ui: &mut egui::Ui) {
         let enabled = self.online && !self.locked();
-        crate::ui_theme::wrap_control(ui, 145.0);
-        let label = self
-            .selected_model()
-            .map(|m| short(&m.label, 22))
-            .unwrap_or_else(|| "Model…".into());
-        let old_model = self.model.clone();
-        ui.add_enabled_ui(enabled, |ui| {
-            egui::ComboBox::from_id_salt("opencode_model")
-                .width(135.0)
-                .truncate()
-                .selected_text(label)
-                .show_ui(ui, |ui| {
-                    for model in &self.models {
-                        ui.selectable_value(
-                            &mut self.model,
-                            Some((model.provider.clone(), model.id.clone())),
-                            &model.label,
-                        );
-                    }
-                });
-        });
-        if self.model != old_model {
-            self.validate_variant();
-        }
         let variants = self
             .selected_model()
             .map(|m| m.variants.clone())
             .unwrap_or_default();
-        crate::ui_theme::wrap_control(ui, 110.0);
-        ui.add_enabled_ui(enabled && !variants.is_empty(), |ui| {
-            egui::ComboBox::from_id_salt("opencode_variant")
-                .width(100.0)
-                .truncate()
-                .selected_text(if self.variant.is_empty() {
-                    "Thinking: Default"
+        let selectors = [
+            Selector {
+                id: "opencode_model",
+                title: "Model",
+                label: self
+                    .selected_model()
+                    .map(|m| m.label.clone())
+                    .unwrap_or("Default model".into()),
+                selected: self
+                    .models
+                    .iter()
+                    .position(|m| self.model.as_ref() == Some(&(m.provider.clone(), m.id.clone()))),
+                enabled,
+                options: self
+                    .models
+                    .iter()
+                    .map(|m| Choice {
+                        label: m.label.clone(),
+                        detail: format!("{} / {}", m.provider, m.id),
+                    })
+                    .collect(),
+            },
+            Selector {
+                id: "opencode_variant",
+                title: "Thinking",
+                label: if self.variant.is_empty() {
+                    "Default".into()
                 } else {
-                    &self.variant
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.variant, String::new(), "Default");
-                    for variant in variants {
-                        ui.selectable_value(&mut self.variant, variant.clone(), variant);
-                    }
-                });
-        });
-        crate::ui_theme::wrap_control(ui, 95.0);
-        ui.add_enabled_ui(enabled, |ui| {
-            egui::ComboBox::from_id_salt("opencode_agent")
-                .width(85.0)
-                .truncate()
-                .selected_text(if self.agent.is_empty() {
-                    "Agent…"
+                    self.variant.clone()
+                },
+                selected: if self.variant.is_empty() {
+                    Some(0)
                 } else {
-                    &self.agent
+                    variants
+                        .iter()
+                        .position(|v| v == &self.variant)
+                        .map(|i| i + 1)
+                },
+                enabled: enabled && !variants.is_empty(),
+                options: std::iter::once(Choice {
+                    label: "Default".into(),
+                    detail: "Provider default thinking".into(),
                 })
-                .show_ui(ui, |ui| {
-                    for agent in &self.agents {
-                        ui.selectable_value(&mut self.agent, agent.clone(), agent);
-                    }
-                });
-        });
+                .chain(variants.iter().map(|v| Choice {
+                    label: v.clone(),
+                    detail: v.clone(),
+                }))
+                .collect(),
+            },
+            Selector {
+                id: "opencode_agent",
+                title: "Mode / agent",
+                label: if self.agent.is_empty() {
+                    "Default".into()
+                } else {
+                    self.agent.clone()
+                },
+                selected: self.agents.iter().position(|a| a == &self.agent),
+                enabled,
+                options: self
+                    .agents
+                    .iter()
+                    .map(|a| Choice {
+                        label: a.clone(),
+                        detail: a.clone(),
+                    })
+                    .collect(),
+            },
+        ];
+        let can_send = self.can_send();
+        let can_interrupt = !self
+            .requests
+            .values()
+            .any(|p| matches!(p.operation, Operation::Abort));
+        let id = ui.make_persistent_id("opencode_composer");
+        let action = composer::show(
+            ui,
+            id,
+            &mut self.input,
+            self.composer_input_height,
+            can_send,
+            self.busy,
+            can_interrupt,
+            selectors,
+        );
+        if let Some(index) = action.selected[0] {
+            let model = &self.models[index];
+            self.model = Some((model.provider.clone(), model.id.clone()));
+            self.validate_variant();
+        } else if let Some(index) = action.selected[1] {
+            self.variant = if index == 0 {
+                String::new()
+            } else {
+                variants[index - 1].clone()
+            };
+        }
+        if let Some(index) = action.selected[2] {
+            self.agent = self.agents[index].clone();
+        }
+        if let Some(backwards) = action.cycle.filter(|_| enabled && !self.agents.is_empty()) {
+            let index = self
+                .agents
+                .iter()
+                .position(|a| a == &self.agent)
+                .unwrap_or(0);
+            self.agent = self.agents
+                [(index + if backwards { self.agents.len() - 1 } else { 1 }) % self.agents.len()]
+            .clone();
+        }
+        if action.send {
+            self.submit(false);
+        }
+        if action.interrupt {
+            if let Some(id) = &self.session {
+                self.request(
+                    Operation::Abort,
+                    "POST",
+                    format!("/session/{id}/abort"),
+                    None,
+                );
+            }
+        }
     }
 }

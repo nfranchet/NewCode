@@ -411,14 +411,6 @@ pub(crate) fn empty_art(ui: &mut Ui, symbol: Icon, accent: Color32) {
     );
 }
 
-// Child Ui allocations don't automatically wrap by their final width. Reserve a row
-// before a bounded control instead of letting it widen the whole Codex pane.
-pub(crate) fn wrap_control(ui: &mut Ui, width: f32) {
-    if ui.available_size_before_wrap().x < width {
-        ui.end_row();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

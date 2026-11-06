@@ -86,7 +86,7 @@ The bottom panel has **Terminal** and **Logs** tabs. Switching to Logs leaves th
 
 Logs are current-session only: every editor launch starts an empty viewer and replaces `launch.log`; no previous records are loaded and no rotated history is kept. Each running editor's viewer is independent. The file path represents the newest launch; older running instances keep their own output handle. The viewer retains up to 10,000 records or 8 MiB and discards oldest records when full. **Clear** removes records for the selected source (or all sources) from the viewer; it leaves the current-session diagnostic file intact. Viewer filters do not change which levels are captured.
 
-Docker Compose build/start/stop output streams live into its section, including successful progress. Codex and OpenCode process diagnostics appear in their sections; terminal input/output and assistant protocol payloads are excluded. Credentials are redacted before either log sink.
+Docker Compose build/start/stop output streams live into its section, including successful progress. Codex and OpenCode process diagnostics appear in their sections; terminal input/output and OpenCode protocol payloads are excluded. At Debug or Trace level, the Codex section also includes incoming and outgoing app-server JSON, including message content, request IDs, methods, and numbered payload chunks. Credentials are redacted before either log sink.
 
 Logging defaults to **Info**. Change it easily for a launch:
 
@@ -98,7 +98,7 @@ cargo run --release -- --log-level debug .
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, and `off`. Both flag forms work before or after the workspace argument, and background launching forwards the chosen level. Invalid levels fail before the GUI launches.
 
-- **Debug:** discrete editor/file/search/Git actions, terminal lifecycle and resizing, assistant controls, session and request activity. Rendering frames, text contents, prompts, answers, terminal input/output, credentials, and protocol payloads are excluded.
+- **Debug:** discrete editor/file/search/Git actions, terminal lifecycle and resizing, assistant controls, session and request activity. Codex app-server requests, responses, notifications, and approval/user-input replies include their redacted JSON payloads. Long payloads use numbered chunks rather than silently losing their bodies. Rendering frames, editor text contents, terminal input/output, credentials, and OpenCode protocol payloads are excluded.
 - **Info:** important application, workspace, assistant, Dev Container, and session lifecycle events; successful commits, deletion, and path changes.
 - **Warn:** recoverable operation failures, configuration fallbacks, and connection recovery. **Error** records fatal application failure. **Trace** adds low-level event metadata.
 
@@ -190,7 +190,11 @@ Use **Assistants** in the main toolbar to enable or disable **Codex** and **Open
 
 Disabling an assistant stops its connection and running work and hides its tab. With both disabled, the right pane disappears and the editor gets its width back. Enabling an assistant starts it and selects it; the previous pane width is restored. **Stop** inside an enabled panel leaves that panel visible so you can use **Start** again.
 
-Enabled assistants and the selected tab are saved. Initially, Codex is enabled and OpenCode is disabled. Workspace changes stop the old connections and resume the new workspace's sessions; drafts survive switching workspaces during the current editor run. Each assistant maintains its own conversations; nothing is copied between Codex and OpenCode.
+Enabled assistants and the selected tab are saved. Initially, Codex is enabled and OpenCode is disabled. Workspace changes stop the old connections and resume the new workspace's sessions; drafts survive switching workspaces during the current editor run. Each assistant maintains its own conversations; nothing is copied between Codex and OpenCode. Both use the same Codex-style header, session controls, usage section, message cards, approval styling, and composer. Provider-specific models, thinking choices, modes/agents, and usage values remain independent.
+
+The composer stays below the scrolling conversation. Its input grows from three rows to at most 120px (less in short panels), then scrolls vertically; Send, Interrupt, and selectors remain outside that scroll area. Drafts and cursor focus survive streaming and resizing.
+
+Assistant replies, proposed plans, and supplied reasoning render as Markdown, including headings, lists, links, tables, inline code, and fenced blocks such as `shell`, `bash`, Rust, and JSON. Code is selectable and has a copy control. Wide content stays inside a horizontal scroll area; unknown code languages retain a monospaced fallback. User messages and raw tool output stay literal.
 
 `--no-codex` and `--no-opencode` skip automatic startup of their respective connections for the launch while keeping enabled panels available for manual Start. The existing `codex_app_server = false` setting still disables automatic Codex startup. Panel visibility is controlled by `codex_enabled` and `opencode_enabled`, or the toolbar menu.
 
@@ -219,7 +223,7 @@ Codex initially selects **Plan** when offered, otherwise the first returned mode
 
 ### Replies, plans, and requests
 
-Replies appear as message cards. Commands, file activity, and readable reasoning are expandable. New turns request automatic reasoning summaries. The panel prefers a supplied summary and falls back to readable reasoning content supplied by Codex, preserving section boundaries and streamed text in live and restored conversations. An empty running reasoning item shows **Thinking…**; empty completed items are hidden. Reasoning cannot be displayed when Codex supplies neither a summary nor readable content.
+Replies appear as message cards. Commands and file activity are expandable. Readable reasoning starts expanded and can be collapsed; your choice remains in place as text streams and completes. New turns request automatic reasoning summaries. The panel prefers a supplied summary and falls back to readable reasoning content supplied by Codex, preserving section boundaries and streamed text in live and restored conversations. An empty running reasoning item shows **Thinking…**; empty completed items are hidden. Reasoning cannot be displayed when Codex supplies neither a summary nor readable content.
 
 Proposed plans are displayed as expanded cards and restored with session history. Completion appears in the conversation as **Plan ready**, **Response complete**, or a failure/interruption message, in addition to the header status.
 
@@ -237,7 +241,7 @@ The native panel uses a private local `opencode serve` process and your existing
 
 - The compact session dropdown lists conversations in the current workspace. **+** creates a session, **↻** refreshes it, and **…** requests older sessions. The last selected workspace session is remembered; missing sessions fall back to a new session. **Load earlier messages** retrieves earlier history.
 - **Send** or **Ctrl+Enter** submits the draft. Select the connected provider/model, supported **Thinking/variant**, and primary **Agent** beside Send. New choices prefer **Plan**, otherwise the first available primary agent. **Tab / Shift+Tab** cycles agents in the idle composer.
-- Responses stream into the conversation. Reasoning and tool activity are expandable when supplied. **Interrupt** stops active work. Permission and question cards use OpenCode's own responses; approvals are never supplied automatically by the editor.
+- Responses stream into the conversation. Supplied reasoning starts expanded and remains collapsible; tool activity is expandable. **Interrupt** stops active work. Permission and question cards use OpenCode's own responses; approvals are never supplied automatically by the editor.
 - After a successful completed Plan response, **Go** selects **Build** and sends exactly `Go`, preserving your draft, model, and variant. It is unavailable during work, pending questions/approvals, disconnected streams, missing Build agents, failed turns, or cancelled turns.
 - **Usage / status** shows reported tokens, cost, and model context capacity. Where session totals are unavailable, counts are labeled for loaded messages. Account quotas unavailable from OpenCode are stated explicitly. Usage refreshes every minute and on request.
 
@@ -268,6 +272,7 @@ Switching tabs continues processing both backends. Stream reconnects reload auth
 The application uses one crate with focused feature module directories:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
+- `src/assistant_ui/` shares assistant headers, cards, Markdown rendering/cache, and bounded scrolling composers; provider modules adapt their own catalogs and protocol actions to these controls.
 - `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, numeric diff statistics and new-file line counting (`stats`), independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
 - `src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/editor/assistants.rs` coordinates the shared pane and independent workspace states.

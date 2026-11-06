@@ -145,6 +145,7 @@ fn opencode_ui_fits_narrow_and_standard_panels() {
         let ctx = egui::Context::default();
         crate::ui_theme::apply(&ctx);
         let (mut ui, _, _) = connected();
+        ui.input = "Long draft line\n".repeat(300);
         ui.models.push(catalog::Model {
             provider: "provider".into(),
             id: "model".into(),

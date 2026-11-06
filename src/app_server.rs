@@ -69,10 +69,12 @@ impl AppServer {
                     Ok(line) => {
                         match serde_json::from_str::<Value>(&line) {
                             Ok(value) => {
+                                crate::logging::protocol::trace("IN", &value);
                                 let _ = output_tx.send(value);
                                 ctx.request_repaint();
                             }
                             Err(error) => {
+                                crate::logging::protocol::trace("IN", &json!({"invalidJson":line}));
                                 let _ = output_tx.send(json!({"_error": format!("Invalid app-server response: {error}")}));
                             }
                         }
@@ -116,6 +118,7 @@ impl AppServer {
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Ok(value) = serde_json::from_str(&line) {
+                    crate::logging::protocol::trace("IN", &value);
                     let _ = capture_tx.send(value);
                 }
             }
@@ -164,7 +167,9 @@ impl AppServer {
         input
             .write_all(b"\n")
             .and_then(|_| input.flush())
-            .map_err(|e| format!("App-server write failed: {e}"))
+            .map_err(|e| format!("App-server write failed: {e}"))?;
+        crate::logging::protocol::trace("OUT", &value);
+        Ok(())
     }
 
     pub(crate) fn drain(&self) -> Vec<Value> {

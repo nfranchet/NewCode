@@ -80,12 +80,18 @@ fn long_messages_fit_narrow_panel() {
                                 "Codex content exceeds panel: {:?}",
                                 ui.min_rect()
                             );
-                            let composer_id = ui.make_persistent_id("codex_composer");
-                            let composer = ctx.read_response(composer_id).unwrap();
+                            let composer_id = ui
+                                .make_persistent_id("assistant_composer_area")
+                                .with("codex_composer");
+                            let composer = ctx
+                                .data(|data| {
+                                    data.get_temp::<egui::Rect>(composer_id.with("viewport"))
+                                })
+                                .unwrap();
                             assert!(
-                                composer.rect.bottom() <= ui.clip_rect().bottom() + 1.0,
+                                composer.bottom() <= ui.clip_rect().bottom() + 1.0,
                                 "Composer hidden below panel: {:?}",
-                                composer.rect
+                                composer
                             );
                         });
                     },

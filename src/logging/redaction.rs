@@ -34,8 +34,8 @@ pub(crate) fn redact(line: &str, secrets: &[String]) -> String {
     text = CREDENTIAL.replace_all(&text, "${1}[redacted]").into_owned();
     URL_AUTH.replace_all(&text, "${1}[redacted]@").into_owned()
 }
-pub(crate) fn sanitize(detail: &str) -> Vec<String> {
-    let secrets: Vec<String> = std::env::vars_os()
+pub(super) fn environment_secrets() -> Vec<String> {
+    std::env::vars_os()
         .filter_map(|(key, value)| {
             let key = key.to_string_lossy().to_ascii_uppercase();
             [
@@ -51,7 +51,10 @@ pub(crate) fn sanitize(detail: &str) -> Vec<String> {
             .then(|| value.to_string_lossy().into_owned())
             .filter(|value| value.len() >= 4)
         })
-        .collect();
+        .collect()
+}
+pub(crate) fn sanitize(detail: &str) -> Vec<String> {
+    let secrets = environment_secrets();
     let mut lines = Vec::new();
     let mut size = 0;
     for line in detail.lines().filter(|line| !line.trim().is_empty()) {
