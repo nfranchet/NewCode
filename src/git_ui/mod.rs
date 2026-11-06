@@ -1,45 +1,73 @@
-//! Source Control state and public panel entry points.
-
-use crate::dev_container::Runtime;
-use crate::ui_theme::{self as theme, Icon};
-use actions::Reply;
+//! Source Control coordinates repository work, retained reviews, and a stable panel.
+use crate::{
+    dev_container::Runtime,
+    ui_theme::{self as theme, Icon},
+};
+use actions::{Pending, RefreshReply, Reply, ReviewReply, Ticket};
 use eframe::egui;
-use presentation::configure_input_style;
+use model::Selection;
+use presentation::{Notice, configure_input_style};
 use repository::Snapshot;
 use std::{
     path::{Path, PathBuf},
-    sync::mpsc,
     time::Instant,
 };
 mod actions;
 mod diff;
 mod diff_rows;
+mod file_list;
 mod fingerprint;
+mod model;
 mod panel;
 mod patch;
 mod patch_model;
 mod presentation;
 mod repository;
 mod review;
+mod stats;
 #[cfg(test)]
 mod tests;
 
 #[derive(Default)]
 pub(crate) struct GitUi {
     workspace: Option<PathBuf>,
+    runtime: Option<Runtime>,
     snapshot: Option<Snapshot>,
-    pending: Option<mpsc::Receiver<Reply>>,
+    repository_generation: u64,
+    data_generation: u64,
+    refresh: Option<Pending<RefreshReply>>,
+    pending: Option<Pending<Reply>>,
+    review_request: Option<Pending<ReviewReply>>,
+    refresh_requested: bool,
     refreshed: Option<Instant>,
-    message: String,
+    notice: Option<Notice>,
     commit: String,
     diff: Option<review::DiffView>,
     review_generation: u64,
-    diff_target: Option<(String, bool)>,
+    diff_target: Option<Selection>,
     diff_hidden: bool,
-    runtime: Option<Runtime>,
+    review_status: review::ReviewStatus,
 }
-
 impl GitUi {
+    fn ticket(&self) -> Ticket {
+        Ticket {
+            repository: self.repository_generation,
+            data: self.data_generation,
+        }
+    }
+    fn busy(&self) -> bool {
+        self.pending.is_some()
+    }
+    fn sync_workspace(&mut self, workspace: Option<&Path>, runtime: Option<&Runtime>) {
+        if self.workspace.as_deref() != workspace || self.runtime.as_ref() != runtime {
+            *self = Self {
+                workspace: workspace.map(Path::to_path_buf),
+                runtime: runtime.cloned(),
+                repository_generation: self.repository_generation.wrapping_add(1),
+                ..Self::default()
+            };
+        }
+    }
     pub(crate) fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -47,41 +75,22 @@ impl GitUi {
         runtime: Option<&Runtime>,
     ) -> Option<PathBuf> {
         configure_input_style(ui);
-        if self.workspace.as_deref() != workspace || self.runtime.as_ref() != runtime {
-            *self = Self {
-                workspace: workspace.map(Path::to_path_buf),
-                runtime: runtime.cloned(),
-                ..Self::default()
-            };
-        }
+        self.sync_workspace(workspace, runtime);
         self.poll_reply();
+        let manual_refresh = self.panel_header(ui);
         if workspace.is_none() {
             ui.vertical_centered(|ui| {
                 theme::empty_art(ui, Icon::Git, theme::GREEN);
-                ui.strong("Changes at a glance");
-                ui.label("Open a workspace to review and commit changes.");
+                ui.strong("Open a workspace");
+                ui.label("Review, stage, and commit its saved changes here.");
             });
             return None;
         }
-        let busy = self.pending.is_some();
-        let mut action = self.refresh_controls(ui, busy);
-        let mut open = None;
-        if self.snapshot.is_some() {
-            self.repository_heading(ui);
-            self.change_groups(ui, busy, &mut action);
-            ui.small("Space: stage/unstage selected file");
-            ui.separator();
-            open = self.selected_file_actions(ui, busy, &mut action);
-            ui.separator();
-            self.commit_form(ui, busy, &mut action);
-        }
-        if !self.message.is_empty() {
-            ui.separator();
-            ui.label(&self.message);
-        }
-        if let Some(action) = action {
-            self.start(action, ui.ctx());
-        }
+
+        self.commit_form(ui);
+        self.notice_area(ui);
+        let open = self.change_groups(ui);
+        self.schedule_refresh(ui.ctx(), manual_refresh);
         open
     }
 }

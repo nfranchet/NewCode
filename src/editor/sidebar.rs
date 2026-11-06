@@ -34,12 +34,12 @@ impl EditorApp {
                             self.create_entry(true);
                         }
                     });
-                } else if self.sidebar_mode == SidebarMode::Git {
-                    theme::heading(ui, Icon::Git, "Source Control", theme::GREEN);
-                } else {
+                } else if self.sidebar_mode == SidebarMode::Search {
                     theme::heading(ui, Icon::Search, "Search", theme::BLUE);
                 }
-                ui.separator();
+                if self.sidebar_mode != SidebarMode::Git {
+                    ui.separator();
+                }
                 match self.sidebar_mode {
                     SidebarMode::Git => {
                         if let Some(path) = self.git_ui.ui(

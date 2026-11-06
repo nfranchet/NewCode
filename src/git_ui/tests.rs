@@ -1,7 +1,8 @@
 use super::{
     GitUi,
-    actions::Reply,
+    actions::{Pending, RefreshReply},
     repository::{Snapshot, changes, conflict, git, snapshot},
+    stats::LineStats,
 };
 use crate::ui_theme as theme;
 use eframe::egui;
@@ -15,8 +16,6 @@ fn commit_focus_survives_refresh_and_failure() {
         root: workspace.clone(),
         branch: "main".into(),
         files: Vec::new(),
-        staged: String::new(),
-        unstaged: String::new(),
         counts: [HashMap::new(), HashMap::new()],
     };
     let mut git_ui = GitUi {
@@ -49,18 +48,21 @@ fn commit_focus_survives_refresh_and_failure() {
     frame(&mut git_ui, vec![egui::Event::Text("Draft".into())]);
     let initial_rect = ctx.read_response(id).unwrap().rect;
     let (tx, rx) = mpsc::channel();
-    git_ui.pending = Some(rx);
+    git_ui.refresh = Some(Pending {
+        ticket: git_ui.ticket(),
+        rx,
+        started: Instant::now(),
+        foreground: false,
+    });
     frame(
         &mut git_ui,
         vec![egui::Event::Text(" during refresh".into())],
     );
     assert!(ctx.memory(|memory| memory.has_focus(id)));
     assert_eq!(ctx.read_response(id).unwrap().rect, initial_rect);
-    tx.send(Reply {
+    tx.send(RefreshReply {
         snapshot: Ok(make_snapshot()),
-        message: None,
-        committed: false,
-        diff: None,
+        invalidation: None,
     })
     .unwrap();
     frame(
@@ -70,12 +72,15 @@ fn commit_focus_survives_refresh_and_failure() {
     assert!(ctx.memory(|memory| memory.has_focus(id)));
     assert_eq!(ctx.read_response(id).unwrap().rect, initial_rect);
     let (tx, rx) = mpsc::channel();
-    git_ui.pending = Some(rx);
-    tx.send(Reply {
+    git_ui.refresh = Some(Pending {
+        ticket: git_ui.ticket(),
+        rx,
+        started: Instant::now(),
+        foreground: false,
+    });
+    tx.send(RefreshReply {
         snapshot: Err("Temporary error".into()),
-        message: None,
-        committed: false,
-        diff: None,
+        invalidation: None,
     })
     .unwrap();
     frame(
@@ -132,8 +137,20 @@ fn repository_staging_diff_commit_and_unstage() {
         std::fs::write(root.join("file [1].txt"), "one\ntwo\nthree\n").unwrap();
         let state = snapshot(&root)?;
         assert_eq!((state.files[0].index, state.files[0].work), ('M', 'M'));
-        assert_eq!(state.counts[0]["file [1].txt"], "+1 −0");
-        assert_eq!(state.counts[1]["file [1].txt"], "+1 −0");
+        assert_eq!(
+            state.counts[0]["file [1].txt"],
+            LineStats::Text {
+                added: 1,
+                deleted: 0
+            }
+        );
+        assert_eq!(
+            state.counts[1]["file [1].txt"],
+            LineStats::Text {
+                added: 1,
+                deleted: 0
+            }
+        );
         git(&root, &["reset", "-q", "--", "file [1].txt"])?;
         assert_eq!(snapshot(&root)?.files[0].index, ' ');
         Ok::<_, String>(())
@@ -144,3 +161,7 @@ fn repository_staging_diff_commit_and_unstage() {
 }
 
 mod review;
+
+mod panel;
+mod state;
+mod stats;

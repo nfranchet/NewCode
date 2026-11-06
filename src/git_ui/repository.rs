@@ -1,5 +1,6 @@
 //! Git command execution, status parsing, snapshots, and conflict classification.
 
+use super::stats::{self, LineStats};
 use crate::dev_container::Runtime;
 use std::{
     collections::HashMap,
@@ -39,7 +40,7 @@ pub(super) fn git_with(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Change {
     pub(super) path: String,
     pub(super) old: Option<String>,
@@ -73,13 +74,12 @@ pub(super) fn changes(bytes: &[u8]) -> Vec<Change> {
     result
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Snapshot {
     pub(super) root: PathBuf,
     pub(super) branch: String,
     pub(super) files: Vec<Change>,
-    pub(super) staged: String,
-    pub(super) unstaged: String,
-    pub(super) counts: [HashMap<String, String>; 2],
+    pub(super) counts: [HashMap<String, LineStats>; 2],
 }
 
 #[cfg(test)]
@@ -109,44 +109,24 @@ pub(super) fn snapshot_with(
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
         runtime,
     )?);
-    let stats = |cached: bool| -> Result<String, String> {
-        let args = if cached {
-            vec!["diff", "--cached", "--shortstat"]
-        } else {
-            vec!["diff", "--shortstat"]
-        };
-        Ok(String::from_utf8_lossy(&git_with(&root, &args, runtime)?)
-            .trim()
-            .to_owned())
-    };
-    let counts = |cached: bool| -> Result<HashMap<String, String>, String> {
-        let mut args = vec!["diff", "--numstat", "-z", "--no-renames"];
+    let counts = |cached: bool| -> Result<HashMap<String, LineStats>, String> {
+        let mut args = vec!["diff", "--numstat", "-z", "--find-renames"];
         if cached {
             args.push("--cached");
         }
-        let bytes = git_with(&root, &args, runtime)?;
-        Ok(bytes
-            .split(|b| *b == 0)
-            .filter_map(|entry| {
-                let mut parts = entry.splitn(3, |b| *b == b'\t');
-                let added = String::from_utf8_lossy(parts.next()?);
-                let removed = String::from_utf8_lossy(parts.next()?);
-                let path = String::from_utf8_lossy(parts.next()?).into_owned();
-                Some((
-                    path,
-                    if added == "-" {
-                        "Binary".into()
-                    } else {
-                        format!("+{added} −{removed}")
-                    },
-                ))
-            })
-            .collect())
+        Ok(stats::numstat(&git_with(&root, &args, runtime)?))
     };
+    let mut counts = [counts(true)?, counts(false)?];
+    for change in &files {
+        if change.index == '?' {
+            counts[1].insert(
+                change.path.clone(),
+                stats::untracked(&root.join(&change.path)),
+            );
+        }
+    }
     Ok(Snapshot {
-        counts: [counts(true)?, counts(false)?],
-        staged: stats(true)?,
-        unstaged: stats(false)?,
+        counts,
         root,
         branch,
         files,
