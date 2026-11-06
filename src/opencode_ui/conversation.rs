@@ -1,13 +1,16 @@
 //! Readable streaming messages, tools, reasoning, and completed Plan continuation.
 use super::{OpenCodeUi, short, string};
+use crate::assistant_ui::content;
 use crate::ui_theme as theme;
 use eframe::egui;
 impl OpenCodeUi {
     pub(super) fn conversation(&mut self, ui: &mut egui::Ui) {
-        let height = (ui.available_height() - 155.0).max(45.0);
+        let height = ui.available_height().max(0.0);
         let mut go = false;
+        let go_ready = self.go_ready();
+        let can_send = self.can_send();
         egui::ScrollArea::vertical()
-            .id_salt("opencode_conversation")
+            .id_salt(("assistant_conversation", &self.session))
             .auto_shrink([false, false])
             .max_height(height)
             .min_scrolled_height(height)
@@ -20,109 +23,118 @@ impl OpenCodeUi {
                 {
                     self.older_messages();
                 }
+                self.approvals(ui);
                 if self.messages.is_empty() {
-                    ui.weak("Choose or create an OpenCode session to begin.");
+                    crate::assistant_ui::empty(ui);
                 }
                 for (index, message) in self.messages.iter().enumerate() {
-                    ui.push_id(&message.id, |ui| {
-                        egui::Frame::new()
-                            .fill(if string(&message.info, "role") == "user" {
-                                theme::BLUE_SOFT
-                            } else {
-                                egui::Color32::WHITE
-                            })
-                            .inner_margin(8)
-                            .show(ui, |ui| {
-                                ui.set_min_width(ui.available_width());
-                                ui.strong(if string(&message.info, "role") == "user" {
-                                    "You"
+                    ui.push_id((&self.session, &message.id), |ui| {
+                        let role = if string(&message.info, "role") == "user" {
+                            "You"
+                        } else {
+                            "OpenCode"
+                        };
+                        content::frame(role).show(ui, |ui| {
+                            ui.set_min_width(ui.available_width());
+                            content::heading(ui, role);
+                            for (part_index, part) in message.parts.iter().enumerate() {
+                                let part_id = string(part, "id");
+                                let part_id = if part_id.is_empty() {
+                                    egui::Id::new(("part", part_index))
                                 } else {
-                                    "OpenCode"
-                                });
-                                for part in &message.parts {
-                                    match string(part, "type") {
-                                        "text" => {
-                                            let text = string(part, "text");
-                                            if !text.is_empty() {
-                                                ui.add(
-                                                    egui::Label::new(text).wrap().selectable(true),
-                                                );
+                                    egui::Id::new(("part", part_id))
+                                };
+                                ui.push_id(part_id, |ui| match string(part, "type") {
+                                    "text" => {
+                                        let text = string(part, "text");
+                                        if !text.is_empty() {
+                                            if role == "You" {
+                                                content::literal(ui, text);
+                                            } else {
+                                                content::markdown(ui, &mut self.markdown, text);
                                             }
                                         }
-                                        "reasoning" => {
-                                            let text = string(part, "text");
-                                            if !text.trim().is_empty() {
-                                                egui::CollapsingHeader::new("Reasoning")
-                                                    .id_salt(string(part, "id"))
-                                                    .show(ui, |ui| {
+                                    }
+                                    "reasoning" => {
+                                        let text = string(part, "text");
+                                        if !text.trim().is_empty() {
+                                            content::reasoning(
+                                                ui,
+                                                &mut self.markdown,
+                                                string(part, "id"),
+                                                text,
+                                            );
+                                        }
+                                    }
+                                    "tool" => {
+                                        let state = &part["state"];
+                                        let label = format!(
+                                            "{} · {}",
+                                            string(part, "tool"),
+                                            string(state, "status")
+                                        );
+                                        egui::CollapsingHeader::new(label)
+                                            .id_salt(string(part, "id"))
+                                            .show(ui, |ui| {
+                                                if let Some(command) = state
+                                                    .pointer("/input/command")
+                                                    .and_then(serde_json::Value::as_str)
+                                                {
+                                                    ui.add(
+                                                        egui::Label::new(
+                                                            egui::RichText::new(command)
+                                                                .monospace(),
+                                                        )
+                                                        .wrap()
+                                                        .selectable(true),
+                                                    );
+                                                }
+                                                for key in ["title", "output", "error"] {
+                                                    let text = string(state, key);
+                                                    if !text.is_empty() {
                                                         ui.add(
                                                             egui::Label::new(text)
                                                                 .wrap()
                                                                 .selectable(true),
                                                         );
-                                                    });
-                                            }
-                                        }
-                                        "tool" => {
-                                            let state = &part["state"];
-                                            let label = format!(
-                                                "{} · {}",
-                                                string(part, "tool"),
-                                                string(state, "status")
-                                            );
-                                            egui::CollapsingHeader::new(label)
-                                                .id_salt(string(part, "id"))
-                                                .show(ui, |ui| {
-                                                    if let Some(command) = state
-                                                        .pointer("/input/command")
-                                                        .and_then(serde_json::Value::as_str)
-                                                    {
-                                                        ui.add(
-                                                            egui::Label::new(
-                                                                egui::RichText::new(command)
-                                                                    .monospace(),
-                                                            )
-                                                            .wrap()
-                                                            .selectable(true),
-                                                        );
                                                     }
-                                                    for key in ["title", "output", "error"] {
-                                                        let text = string(state, key);
-                                                        if !text.is_empty() {
-                                                            ui.add(
-                                                                egui::Label::new(text)
-                                                                    .wrap()
-                                                                    .selectable(true),
-                                                            );
-                                                        }
-                                                    }
-                                                });
-                                        }
-                                        "file" => {
-                                            ui.label(format!(
-                                                "File: {}",
-                                                short(string(part, "filename"), 80)
-                                            ));
-                                        }
-                                        _ => {}
+                                                }
+                                            });
                                     }
-                                }
-                                if let Some(error) = message
-                                    .info
-                                    .pointer("/error/data/message")
-                                    .and_then(serde_json::Value::as_str)
-                                {
-                                    ui.colored_label(theme::RED, error);
-                                }
-                                if index + 1 == self.messages.len() && self.go_ready() {
-                                    go = ui
-                                        .add_enabled(self.can_send(), egui::Button::new("Go"))
-                                        .on_hover_text("Switch to Build and send Go")
-                                        .clicked();
-                                }
-                            });
+                                    "file" => {
+                                        ui.label(format!(
+                                            "File: {}",
+                                            short(string(part, "filename"), 80)
+                                        ));
+                                    }
+                                    _ => {}
+                                });
+                            }
+                            if let Some(error) = message
+                                .info
+                                .pointer("/error/data/message")
+                                .and_then(serde_json::Value::as_str)
+                            {
+                                ui.colored_label(theme::RED, error);
+                            }
+                            if index + 1 == self.messages.len() && go_ready {
+                                go = ui
+                                    .add_enabled_ui(can_send, |ui| {
+                                        theme::button(
+                                            ui,
+                                            theme::Icon::Send,
+                                            "Go",
+                                            theme::TEAL,
+                                            true,
+                                        )
+                                    })
+                                    .inner
+                                    .on_hover_text("Switch to Build and send Go")
+                                    .clicked();
+                            }
+                        });
                     });
-                    ui.add_space(7.0);
+                    ui.add_space(10.0);
                 }
                 if self.busy {
                     ui.horizontal(|ui| {

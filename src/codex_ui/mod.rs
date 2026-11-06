@@ -39,13 +39,14 @@ pub(crate) struct CodexUi {
     token_usage: Value,
     usage_error: String,
     last_usage: Option<Instant>,
-    composer_height: f32,
+    composer_input_height: f32,
     busy: bool,
     status: String,
     messages: Vec<Message>,
     pending: Vec<PendingRequest>,
     answer: String,
     plan: plan::PlanState,
+    markdown: crate::assistant_ui::content::CommonMarkCache,
     runtime: Option<Runtime>,
 }
 
@@ -71,13 +72,14 @@ impl Default for CodexUi {
             token_usage: Value::Null,
             usage_error: String::new(),
             last_usage: None,
-            composer_height: 190.0,
+            composer_input_height: 80.0,
             busy: false,
             status: "Codex is offline".into(),
             messages: Vec::new(),
             pending: Vec::new(),
             answer: String::new(),
             plan: plan::PlanState::default(),
+            markdown: Default::default(),
             runtime: None,
         }
     }
@@ -165,18 +167,30 @@ impl CodexUi {
 
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, cwd: Option<&Path>, ctx: &egui::Context) {
         self.tick(cwd, ctx);
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-        let cursor_color = if ui.visuals().dark_mode {
-            egui::Color32::WHITE
-        } else {
-            egui::Color32::BLACK
-        };
-        ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0_f32, cursor_color);
-        ui.visuals_mut().text_cursor.blink = false;
-        self.show_header(ui, cwd, ctx);
-        self.show_usage(ui, ctx);
-        ui.separator();
-        self.show_conversation(ui);
-        self.show_composer(ui, ctx);
+        crate::assistant_ui::configure(ui);
+        egui::ScrollArea::vertical()
+            .id_salt("assistant_header")
+            .max_height(ui.available_height() * 0.35)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                self.show_header(ui, cwd, ctx);
+                self.show_usage(ui, ctx);
+            });
+        let full = ui.available_rect_before_wrap();
+        let (conversation, composer, input_height) = crate::assistant_ui::body(ui, &self.input);
+        self.composer_input_height = input_height;
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id(ui.make_persistent_id("assistant_composer_area"))
+                .max_rect(composer),
+            |ui| self.show_composer(ui, ctx),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id(ui.make_persistent_id("assistant_conversation_area"))
+                .max_rect(conversation),
+            |ui| self.show_conversation(ui),
+        );
+        ui.advance_cursor_after_rect(full);
     }
 }

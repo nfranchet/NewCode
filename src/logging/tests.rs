@@ -201,3 +201,86 @@ fn filters_enable_expected_levels_without_dependency_debug_noise() {
         )
     );
 }
+
+#[test]
+fn codex_wire_payloads_are_debug_only_redacted_and_complete_in_both_sinks() {
+    if let Some(root) = std::env::var_os("FOCUS_PROTOCOL_TEST_ROOT") {
+        let path = std::path::PathBuf::from(root).join("launch.log");
+        let debug = std::env::var("FOCUS_PROTOCOL_TEST_LEVEL").unwrap() == "debug";
+        init_at(
+            &Arguments {
+                level: Some(if debug {
+                    log::LevelFilter::Debug
+                } else {
+                    log::LevelFilter::Info
+                }),
+                ..Default::default()
+            },
+            &path,
+        )
+        .unwrap();
+        let (mut server, captured) = crate::app_server::AppServer::capture_requests();
+        server.request("turn/start", serde_json::json!({"text":format!("{}protocol-tail", "x".repeat(6000)),"nested":{"access_token":"fixture-credential"},"content":"embedded-env-secret"})).unwrap();
+        server.notify("initialized", serde_json::json!({})).unwrap();
+        server
+            .respond(
+                serde_json::json!(77),
+                serde_json::json!({"answer":"reply-content"}),
+            )
+            .unwrap();
+        for _ in 0..3 {
+            captured
+                .recv_timeout(std::time::Duration::from_secs(3))
+                .unwrap();
+        }
+        let records = session::snapshot();
+        let wire: Vec<_> = records
+            .iter()
+            .filter(|entry| entry.text.contains("Codex OUT") || entry.text.contains("Codex IN"))
+            .collect();
+        let disk = std::fs::read_to_string(path).unwrap();
+        if debug {
+            assert!(
+                wire.iter()
+                    .all(|entry| entry.source == session::Source::Codex
+                        && entry.level == log::Level::Debug)
+            );
+            for marker in [
+                "Codex OUT",
+                "Codex IN",
+                "turn/start",
+                "protocol-tail",
+                "initialized",
+                "reply-content",
+            ] {
+                assert!(
+                    wire.iter().any(|entry| entry.text.contains(marker)),
+                    "missing viewer marker {marker}"
+                );
+                assert!(disk.contains(marker), "missing file marker {marker}");
+            }
+            assert!(!disk.contains("line truncated") && !disk.contains("diagnostics truncated"));
+            assert!(disk.contains("[redacted]"));
+        } else {
+            assert!(wire.is_empty());
+            assert!(!disk.contains("protocol-tail") && !disk.contains("reply-content"));
+        }
+        assert!(!disk.contains("fixture-credential") && !disk.contains("embedded-env-secret"));
+        return;
+    }
+    for level in ["debug", "info"] {
+        let root =
+            std::env::temp_dir().join(format!("focus-protocol-{}-{level}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "logging::tests::codex_wire_payloads_are_debug_only_redacted_and_complete_in_both_sinks", "--nocapture"])
+            .env("FOCUS_PROTOCOL_TEST_ROOT",&root).env("FOCUS_PROTOCOL_TEST_LEVEL",level)
+            .env("FIXTURE_API_TOKEN","embedded-env-secret").env_remove("RUST_LOG").output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

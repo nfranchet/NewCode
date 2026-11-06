@@ -1,6 +1,7 @@
 //! Message data, restored-history conversion, and streamed item updates.
 
 use super::{CodexUi, reasoning::ReasoningText};
+use eframe::egui;
 use serde_json::Value;
 
 pub(super) struct PendingRequest {
@@ -12,6 +13,7 @@ pub(super) struct PendingRequest {
 
 pub(super) struct Message {
     pub(super) id: String,
+    pub(super) ui_id: u64,
     pub(super) kind: String,
     pub(super) text: String,
     pub(super) output: String,
@@ -20,8 +22,17 @@ pub(super) struct Message {
 }
 
 impl Message {
+    pub(super) fn view_id(&self) -> egui::Id {
+        if self.id.is_empty() {
+            egui::Id::new(("local", self.ui_id))
+        } else {
+            egui::Id::new(("item", &self.id))
+        }
+    }
     pub(super) fn new(kind: &str, text: String) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Self {
+            ui_id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             id: String::new(),
             kind: kind.into(),
             text,

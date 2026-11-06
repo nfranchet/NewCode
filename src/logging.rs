@@ -1,6 +1,7 @@
-//! Logging configuration and launch argument parsing. Never accept content payloads.
+//! Logging configuration and launch argument parsing; protocol content is Debug-only.
 use std::{ffi::OsString, io::Write, path::PathBuf, str::FromStr};
 pub(crate) mod process;
+pub(crate) mod protocol;
 pub(crate) mod redaction;
 pub(crate) mod session;
 
@@ -83,7 +84,13 @@ fn init_at(
         .format(move |buffer, record| {
             let timestamp = buffer.timestamp_millis().to_string();
             let source = session::Source::from_target(record.target());
-            for message in redaction::sanitize(&record.args().to_string()) {
+            // Protocol records are already redacted and bounded before reaching the facade.
+            let messages = if record.target() == protocol::TARGET {
+                vec![record.args().to_string()]
+            } else {
+                redaction::sanitize(&record.args().to_string())
+            };
+            for message in messages {
                 let text = format!(
                     "{} {:5} pid={} [{}] {}",
                     timestamp,

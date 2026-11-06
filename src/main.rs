@@ -1,4 +1,5 @@
 mod app_server;
+mod assistant_ui;
 mod codex_ui;
 mod dev_container;
 mod editor;

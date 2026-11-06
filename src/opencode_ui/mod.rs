@@ -62,6 +62,7 @@ pub(crate) struct OpenCodeUi {
     server: Option<Server>,
     workspace: PathBuf,
     input: String,
+    composer_input_height: f32,
     session: Option<String>,
     epoch: u64,
     requests: HashMap<u64, Pending>,
@@ -88,6 +89,7 @@ pub(crate) struct OpenCodeUi {
     session_limit: usize,
     history_before: Option<String>,
     last_refresh: Option<Instant>,
+    markdown: crate::assistant_ui::content::CommonMarkCache,
     runtime: Option<Runtime>,
 }
 impl Default for OpenCodeUi {
@@ -96,6 +98,7 @@ impl Default for OpenCodeUi {
             server: None,
             workspace: PathBuf::new(),
             input: String::new(),
+            composer_input_height: 80.0,
             session: None,
             epoch: 0,
             requests: HashMap::new(),
@@ -122,6 +125,7 @@ impl Default for OpenCodeUi {
             session_limit: 50,
             history_before: None,
             last_refresh: None,
+            markdown: Default::default(),
             runtime: None,
         }
     }
@@ -219,14 +223,31 @@ impl OpenCodeUi {
         }
     }
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-        ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0_f32, crate::ui_theme::INK);
-        ui.visuals_mut().text_cursor.blink = false;
-        self.header(ui, ctx);
-        self.usage(ui);
-        self.approvals(ui);
-        self.conversation(ui);
-        self.composer(ui);
+        crate::assistant_ui::configure(ui);
+        egui::ScrollArea::vertical()
+            .id_salt("assistant_header")
+            .max_height(ui.available_height() * 0.35)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                self.header(ui, ctx);
+                self.usage(ui);
+            });
+        let full = ui.available_rect_before_wrap();
+        let (conversation, composer, input_height) = crate::assistant_ui::body(ui, &self.input);
+        self.composer_input_height = input_height;
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id(ui.make_persistent_id("assistant_composer_area"))
+                .max_rect(composer),
+            |ui| self.composer(ui),
+        );
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .id(ui.make_persistent_id("assistant_conversation_area"))
+                .max_rect(conversation),
+            |ui| self.conversation(ui),
+        );
+        ui.advance_cursor_after_rect(full);
     }
 }
 fn string<'a>(value: &'a Value, key: &str) -> &'a str {

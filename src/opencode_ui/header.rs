@@ -1,97 +1,63 @@
-//! Compact lifecycle and workspace session controls.
+//! OpenCode lifecycle/session adapter for the common assistant header.
 use super::{OpenCodeUi, short, string};
-use crate::ui_theme as theme;
+use crate::{
+    assistant_ui::header::{self, Action, Header, Session},
+    ui_theme as theme,
+};
 use eframe::egui;
 impl OpenCodeUi {
     pub(super) fn header(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.horizontal_wrapped(|ui| {
-            ui.strong("OpenCode");
-            let state = self.state();
-            theme::badge(ui, state, theme::BLUE, theme::BLUE_SOFT).on_hover_text(&self.status);
-            if self.server.is_some() {
-                if ui.small_button("Stop").clicked() {
-                    self.stop();
-                }
-            } else if ui.button("Start").clicked() {
+        let sessions = self
+            .sessions
+            .iter()
+            .map(|s| Session {
+                id: string(s, "id").into(),
+                label: short(string(s, "title"), 18),
+                detail: format!("{}\n{}", string(s, "title"), string(s, "id")),
+            })
+            .collect::<Vec<_>>();
+        let action = header::show(
+            ui,
+            Header {
+                name: "OpenCode",
+                state: self.state(),
+                status: &self.status,
+                connected: self.server.is_some(),
+                enabled: self.online && !self.locked(),
+                selected: self.session.as_deref(),
+                sessions: &sessions,
+                more: self.online,
+            },
+        );
+        match action {
+            Some(Action::Start) => {
                 let cwd = self.workspace.clone();
                 self.start(Some(&cwd), ctx.clone());
             }
-            theme::wrap_control(ui, 195.0);
-            ui.add_enabled_ui(self.online && !self.locked(), |ui| {
-                if ui.small_button("+").on_hover_text("New session").clicked() {
-                    self.select_session(None);
-                }
-                let current = self
-                    .sessions
-                    .iter()
-                    .find(|s| s["id"].as_str() == self.session.as_deref());
-                let label = current
-                    .map(|s| short(string(s, "title"), 18))
-                    .unwrap_or_else(|| "Choose session…".into());
-                let mut selected = None;
-                egui::ComboBox::from_id_salt("opencode_sessions")
-                    .width(110.0)
-                    .truncate()
-                    .selected_text(label)
-                    .show_ui(ui, |ui| {
-                        ui.weak("Sessions in this workspace");
-                        for session in &self.sessions {
-                            let id = string(session, "id");
-                            if ui
-                                .selectable_label(
-                                    self.session.as_deref() == Some(id),
-                                    short(string(session, "title"), 100),
-                                )
-                                .on_hover_text(format!("{}\n{id}", string(session, "title")))
-                                .clicked()
-                            {
-                                selected = Some(id.to_string());
-                            }
-                        }
-                    });
-                if let Some(id) = selected {
-                    if self.session.as_ref() != Some(&id) {
-                        self.select_session(Some(id));
-                    }
-                }
-                if ui
-                    .small_button("↻")
-                    .on_hover_text("Refresh sessions and conversation")
-                    .clicked()
-                {
-                    self.list_sessions(false);
-                    self.refresh();
-                }
-                if ui
-                    .small_button("…")
-                    .on_hover_text("Load older sessions")
-                    .clicked()
-                {
-                    self.session_limit += 50;
-                    self.list_sessions(false);
-                }
-            });
-        });
+            Some(Action::Stop) => self.stop(),
+            Some(Action::New) => self.select_session(None),
+            Some(Action::Select(id)) => self.select_session(Some(id)),
+            Some(Action::Refresh) => {
+                self.list_sessions(false);
+                self.refresh();
+            }
+            Some(Action::More) => {
+                self.session_limit += 50;
+                self.list_sessions(false);
+            }
+            None => {}
+        }
         if let Some(error) = &self.error {
             ui.colored_label(theme::RED, error);
-        } else if !self.online {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(&self.status)
-                        .small()
-                        .color(theme::MUTED),
-                )
-                .wrap(),
-            );
         }
         if self.online && self.models.is_empty() {
-            ui.colored_label(theme::AMBER,"No connected models. Configure and authenticate a provider using the OpenCode CLI, then restart this connection.");
-        }
-        if self.online && self.agents.is_empty() {
             ui.colored_label(
                 theme::AMBER,
-                "No primary agents available in the OpenCode configuration.",
+                "No connected models. Configure a provider in OpenCode, then restart.",
             );
+        }
+        if self.online && self.agents.is_empty() {
+            ui.colored_label(theme::AMBER, "No primary agents available in OpenCode.");
         }
     }
 }
