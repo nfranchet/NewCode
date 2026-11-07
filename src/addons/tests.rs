@@ -144,6 +144,9 @@ fn rejects_stale_addon_views_and_keeps_host_responsive() {
         icon: None,
         working: false,
         incarnation: 0,
+        surface: Default::default(),
+        seed: Default::default(),
+        status: String::new(),
     });
     let ctx = egui::Context::default();
     host.activate("fixture".into(), &ctx);

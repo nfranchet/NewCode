@@ -1,15 +1,11 @@
+use focus_addon_support::assistant_ui;
 mod addons;
 mod app_paths;
-mod app_server;
-mod assistant_ui;
-mod codex_ui;
 mod dev_container;
 mod editor;
 mod git_ui;
 mod launch;
 mod logging;
-mod opencode_server;
-mod opencode_ui;
 mod platform;
 mod repository_jobs;
 mod settings;

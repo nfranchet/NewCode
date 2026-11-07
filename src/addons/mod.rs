@@ -6,6 +6,7 @@ mod ui;
 #[cfg(test)]
 use installation::load_manifest;
 mod services;
+mod surface;
 #[cfg(test)]
 mod tests;
 mod widgets;
@@ -38,6 +39,9 @@ pub(crate) struct Addon {
     icon: Option<egui::TextureHandle>,
     working: bool,
     incarnation: u64,
+    surface: surface::Surface,
+    seed: serde_json::Value,
+    status: String,
 }
 struct Task {
     addon: String,
@@ -61,6 +65,7 @@ pub(crate) struct Addons {
     pub entries: Vec<Addon>,
     pub active: Option<String>,
     pub detail: bool,
+    pub suppressed: Vec<String>,
     context: Context,
     runtime: Option<Runtime>,
     generation: Arc<AtomicU64>,
@@ -80,6 +85,7 @@ impl Default for Addons {
             entries: vec![],
             active: None,
             detail: false,
+            suppressed: vec![],
             context: Context::default(),
             runtime: None,
             generation: Arc::new(AtomicU64::new(0)),
@@ -105,12 +111,33 @@ impl Drop for Addons {
 }
 
 impl Addons {
+    pub fn apply_settings(
+        &mut self,
+        enabled: &BTreeMap<String, bool>,
+        state: &BTreeMap<String, serde_json::Value>,
+    ) {
+        for addon in &mut self.entries {
+            addon.enabled = !self.suppressed.contains(&addon.manifest.id)
+                && enabled
+                    .get(&addon.manifest.id)
+                    .copied()
+                    .unwrap_or(addon.manifest.enabled_by_default);
+            addon.seed = state.get(&addon.manifest.id).cloned().unwrap_or_default();
+        }
+    }
+
     pub fn sync(&mut self, workspace: Option<&Path>, runtime: Option<&Runtime>) {
         let workspace = workspace.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
         if self.context.workspace == workspace && self.runtime.as_ref() == runtime {
             return;
         }
+        for addon in &mut self.entries {
+            if let Some(process) = &addon.process {
+                addon.surface.flush_input(process, self.context.generation);
+            }
+        }
         self.context.workspace = workspace;
+        self.context.runtime = runtime.map(Into::into);
         self.runtime = runtime.cloned();
         self.context.generation = self.context.generation.wrapping_add(1);
         self.generation
@@ -122,16 +149,25 @@ impl Addons {
         for addon in &mut self.entries {
             addon.view = View::default();
             addon.values.clear();
+            addon.surface.workspace_changed();
+            addon.status.clear();
             if let Some(process) = &addon.process {
                 let mut context = self.context.clone();
                 context.storage = addon.directory.join("data");
+                context.state = addon.seed.clone();
                 let _ = process.send(Message::notification("context.changed", context));
             }
         }
     }
     pub fn activate(&mut self, id: String, ctx: &egui::Context) {
-        self.active = Some(id.clone());
-        self.detail = false;
+        if self
+            .entries
+            .iter()
+            .any(|a| a.manifest.id == id && a.manifest.panel == focus_addon_sdk::Panel::Left)
+        {
+            self.active = Some(id.clone());
+            self.detail = false;
+        }
         let Some(addon) = self
             .entries
             .iter_mut()
@@ -142,6 +178,8 @@ impl Addons {
         if addon.process.is_none() {
             let mut context = self.context.clone();
             context.storage = addon.directory.join("data");
+            context.state = addon.seed.clone();
+            addon.surface = Default::default();
             match Process::start(&addon.directory, &addon.manifest, &context, ctx) {
                 Ok(process) => {
                     addon.process = Some(process);
@@ -222,6 +260,20 @@ impl Addons {
     }
     /// Return true after any Git mutation, including partially completed failures.
     pub fn tick(&mut self, ctx: &egui::Context, dirty: bool, visible: bool) -> bool {
+        let starters: Vec<_> = self
+            .entries
+            .iter()
+            .filter(|a| {
+                a.enabled
+                    && a.manifest.panel == focus_addon_sdk::Panel::Right
+                    && a.process.is_none()
+                    && a.error.is_none()
+            })
+            .map(|a| a.manifest.id.clone())
+            .collect();
+        for id in starters {
+            self.activate(id, ctx);
+        }
         let mut changed = false;
         while let Ok(completion) = self.rx.try_recv() {
             if matches!(&completion.task.call.service, Service::Git { operation } if operation.changes_worktree())
@@ -261,9 +313,46 @@ impl Addons {
                                 .and_then(|v| v.as_u64())
                                 == Some(focus_addon_sdk::PROTOCOL_VERSION as u64)
                             {
-                                process.ready = true;
+                                if addon.manifest.ui == focus_addon_sdk::Presentation::Surface
+                                    && message
+                                        .result
+                                        .as_ref()
+                                        .and_then(|v| v.get("surface"))
+                                        .and_then(|v| v.as_u64())
+                                        != Some(1)
+                                {
+                                    failure = Some("Unsupported addon UI surface version".into());
+                                } else {
+                                    process.ready = true;
+                                }
                             } else {
                                 failure = Some("Addon protocol handshake failed".into());
+                            }
+                        }
+                        Some("panel.status") => {
+                            if let Some(params) = message.params {
+                                if params["generation"].as_u64() == Some(self.context.generation) {
+                                    addon.status =
+                                        params["state"].as_str().unwrap_or_default().into();
+                                }
+                            }
+                        }
+                        Some("surface.frame") => {
+                            match serde_json::from_value::<focus_addon_support::surface::Frame>(
+                                message.params.unwrap_or_default(),
+                            ) {
+                                Ok(frame) if frame.generation == self.context.generation => {
+                                    addon.status = frame.state.clone();
+                                    if let Err(error) = addon.surface.accept(ctx, frame) {
+                                        failure = Some(error);
+                                    }
+                                }
+                                Ok(frame) => {
+                                    if let Err(error) = addon.surface.resources(ctx, &frame) {
+                                        failure = Some(error);
+                                    }
+                                }
+                                Err(_) => failure = Some("Invalid addon surface frame".into()),
                             }
                         }
                         Some("view.update") => {

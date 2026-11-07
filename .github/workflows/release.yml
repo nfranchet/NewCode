@@ -38,18 +38,7 @@ jobs:
       - name: Run shared Linux checks
         uses: ./.github/actions/linux-checks
         with:
-          key: release-${{ matrix.target }}
-      - name: Check formatting and run tests
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          python3 -m unittest discover -s scripts/release -p 'test_*.py'
-          cargo fmt --check
-          cargo fmt --check --manifest-path crates/addon-sdk/Cargo.toml
-          cargo fmt --check --manifest-path addons/github/Cargo.toml
-          cargo test --locked --manifest-path crates/addon-sdk/Cargo.toml
-          cargo test --locked --manifest-path addons/github/Cargo.toml
-          cargo test --locked --target "$TARGET"
+          target: ${{ matrix.target }}
       - name: Build optimized executable
         env:
           TARGET: ${{ matrix.target }}

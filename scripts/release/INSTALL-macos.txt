@@ -1,7 +1,7 @@
 Focus Editor for Apple Silicon (macOS 11 or newer)
 
 Drag Focus Editor.app to Applications, then open it from Applications.
-To install the bundled GitHub addon, run python3 install-addons.py from the
+To install the bundled addons, run python3 install-addons.py from the
 mounted image (Python 3.11 or newer), then restart the editor. Addons are
 installed beside logs in ~/Library/Application Support/focus-editor/addons.
 This download has an ad-hoc signature, not an Apple Developer ID signature,

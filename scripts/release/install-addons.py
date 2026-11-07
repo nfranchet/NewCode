@@ -17,11 +17,11 @@ def data_root():
     return base / "focus-editor"
 
 
-def install(source, destination):
+def install(source, destination, ids=None):
     source = Path(source).resolve(strict=True)
     installed = []
     for directory in sorted(source.iterdir()):
-        if not directory.is_dir():
+        if not directory.is_dir() or (ids and directory.name not in ids):
             continue
         manifest = tomllib.loads((directory / "addon.toml").read_text())
         addon_id = manifest["id"]
@@ -66,10 +66,11 @@ def main():
     source = here / "addons"
     if not source.exists():
         source = here / "Focus Editor.app/Contents/Resources/addons"
+    parser.add_argument("--addon", action="append", help="Install only this addon ID; repeat to select several")
     parser.add_argument("--source", type=Path, default=source)
     parser.add_argument("--data-root", type=Path, default=data_root())
     args = parser.parse_args()
-    for path in install(args.source, args.data_root):
+    for path in install(args.source, args.data_root, args.addon):
         print(f"Installed {path}")
 
 

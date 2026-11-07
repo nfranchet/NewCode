@@ -10,19 +10,15 @@ use std::{
 pub(crate) enum Source {
     Editor,
     Git,
-    Codex,
-    OpenCode,
     DevContainer,
     DockerCompose,
     Terminal,
     Addons,
 }
 impl Source {
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::Editor,
         Self::Git,
-        Self::Codex,
-        Self::OpenCode,
         Self::DevContainer,
         Self::DockerCompose,
         Self::Terminal,
@@ -32,8 +28,6 @@ impl Source {
         match self {
             Self::Editor => "Editor",
             Self::Git => "Git",
-            Self::Codex => "Codex",
-            Self::OpenCode => "OpenCode",
             Self::DevContainer => "Dev Container",
             Self::DockerCompose => "Docker Compose",
             Self::Terminal => "Terminal",
@@ -47,10 +41,6 @@ impl Source {
             Self::DockerCompose
         } else if target.contains("dev_container") {
             Self::DevContainer
-        } else if target.contains("opencode") {
-            Self::OpenCode
-        } else if target.contains("codex") || target.contains("app_server") {
-            Self::Codex
         } else if target.contains("git_ui") {
             Self::Git
         } else if target.contains("terminal") || target.ends_with("::shell") {
@@ -159,7 +149,7 @@ mod tests {
                 source: if i % 2 == 0 {
                     Source::Git
                 } else {
-                    Source::Codex
+                    Source::Addons
                 },
                 text: i.to_string(),
             });
@@ -167,7 +157,7 @@ mod tests {
         assert_eq!(store.entries.len(), 10_000);
         assert_eq!(store.entries[0].text, "5");
         store.clear(Some(Source::Git));
-        assert!(store.entries.iter().all(|e| e.source == Source::Codex));
+        assert!(store.entries.iter().all(|e| e.source == Source::Addons));
         store.clear(None);
         assert_eq!(store.bytes, 0);
         assert_eq!(
@@ -175,12 +165,12 @@ mod tests {
             Source::DockerCompose
         );
         assert_eq!(
-            Source::from_target("focus_editor::app_server"),
-            Source::Codex
+            Source::from_target("focus_editor::addons::example"),
+            Source::Addons
         );
         assert_eq!(
-            Source::from_target("focus_editor::opencode_ui"),
-            Source::OpenCode
+            Source::from_target("focus_editor::addons::another"),
+            Source::Addons
         );
         store.push(Entry {
             timestamp: String::new(),

@@ -14,7 +14,7 @@ Publishing a GitHub release (including a prerelease) builds the tagged source an
 
 Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer, an X11 or Wayland desktop, and working OpenGL/EGL libraries. They are dynamically linked; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
 
-Run `python3 install-addons.py` from the extracted archive to install its GitHub addon (Python 3.11 or newer). Restart the editor after installation. The installer preserves non-secret addon state and installs addons beside logs.
+Run `python3 install-addons.py` from the extracted archive to install its GitHub, Codex, and OpenCode addons (Python 3.11 or newer). Restart the editor after installation. The installer preserves non-secret addon state and installs addons beside logs.
 
 Automatic releases currently publish Linux binaries only. macOS arm64 builds and DMGs are skipped. macOS remains available to build from source; its app packaging script remains available for manual use.
 
@@ -56,7 +56,7 @@ Open a workspace directly:
 cargo run --release -- ~/projects/my-app
 ```
 
-## Addons and GitHub
+## Addons
 
 Addons compile independently from the editor and run as separate executables. The main Rust process renders their native panels. Install a trusted addon through **Addons → Install local addon…** by choosing its manifest; the menu also enables/disables addons, restarts them, and manages credentials. Installation does not load code from the open repository.
 
@@ -65,17 +65,33 @@ Installed addons live beside the logs directory:
 ```text
 ~/.local/share/focus-editor/
 ├── logs/
-└── addons/github/
+└── addons/
+    ├── github/
+    ├── codex/
+    └── opencode/
 ```
 
-Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. The editor loads installed addons only from this shared application data root. Build and install GitHub from source separately:
+Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. The editor loads installed addons only from this shared application data root. Build and install the bundled addons separately:
 
 ```sh
 python3 scripts/addons.py --release --install
 cargo run --release -- .
 ```
 
-For an isolated Linux development installation, use `--data-root "$PWD/target/dev-data/focus-editor"` and launch the editor with `XDG_DATA_HOME="$PWD/target/dev-data"`. A plain `cargo build` builds the editor and SDK, without compiling the GitHub executable. See the [addon SDK contract](crates/addon-sdk/README.md) to develop another addon.
+For an isolated Linux development installation, use `--data-root "$PWD/target/dev-data/focus-editor"` and launch the editor with `XDG_DATA_HOME="$PWD/target/dev-data"`. A plain `cargo build` builds the editor and SDK, without compiling any addon executables. See the [addon SDK contract](crates/addon-sdk/README.md) to develop another addon.
+
+Codex and OpenCode are optional, independently compiled addons. They occupy the existing right-hand dock. Install either one or both, and use **Addons → Enabled** to choose which run. When both are enabled, status-bearing tabs select the visible panel while both continue processing events. Disabling every right-dock addon gives the width back to the editor. A fresh installation enables Codex by default and leaves OpenCode disabled; existing preferences and remembered sessions migrate from the old settings.
+
+To install only selected addons:
+
+```sh
+python3 scripts/addons.py --release --addon codex --install
+python3 scripts/addons.py --release --addon opencode --install
+# From an extracted release:
+python3 install-addons.py --addon codex --addon opencode
+```
+
+All addon installations share the directory beside logs. Omitted addons are not required by the editor. The SDK's `panel = "right"` capability is available to any addon; simple panels use native declarative widgets, and richer panels can use the optional shared surface runner. See [the UI addon helper](crates/addon-support/README.md).
 
 The GitHub icon opens **Issues** and **Pull requests** for the active workspace's GitHub.com remotes, preferring `origin`. Select a repository, filter loaded items, load more results, or open Markdown details. The panel provides:
 
@@ -99,29 +115,29 @@ The launcher resolves build settings relative to the first Compose file's direct
 
 Docker Engine and the Docker Compose plugin are required. Node.js and `@devcontainers/cli` are not required or installed. The bundled image installs Codex and OpenCode using their official curl installers as `vscode`, with both commands available to noninteractive `docker exec`. Custom images must provide the tools you enable. Dev Container Features and lifecycle commands are not interpreted by Focus Editor; express required setup in the Dockerfile or Compose service instead.
 
-Skip automatic Codex startup for a launch:
+Temporarily disable an addon for one launch:
 
 ```sh
-cargo run --release -- --no-codex ~/projects/my-app
+cargo run --release -- --no-addon codex ~/projects/my-app
 ```
 
-The first build downloads crates from crates.io. Settings are stored in the platform configuration directory, usually `~/.config/focus-editor/settings.toml`. Set `codex_app_server = false` there to disable automatic Codex startup on future launches; the panel's Start button remains available.
+The first build downloads crates from crates.io. Settings are stored in the platform configuration directory, usually `~/.config/focus-editor/settings.toml`. Addon enablement is stored under `[addon_enabled]`; use the Addons menu to change it. The editor stores right-dock selection and width generically. Each assistant addon retains its own Start/Stop controls and non-secret session IDs in its `data/` directory.
 
 The bundled Rust Dev Container image updates the stable Rust toolchain during its build, installs matching `llvm-tools-preview`, and installs `grcov` with its published lockfile. Use **Dev Container → Rebuild** after changing the Dockerfile. The image also runs the official installers at `https://chatgpt.com/codex/install.sh` and `https://opencode.ai/install`; rebuilding selects their current default releases.
 
 ## Logging
 
-On **Open**, **Reconnect**, and **Rebuild**, Focus Editor copies only host Codex/OpenCode `auth.json` files into the configured container user's home before connecting assistants. Host `CODEX_HOME` and `XDG_DATA_HOME` overrides are respected; container destinations use their own overrides. Writes are atomic, with directory mode 0700 and file mode 0600; credentials travel through stdin and are never included in image layers or logs. Codex uses file-backed credentials in the container. Missing host auth files leave existing container credentials intact and produce a warning; keyring-only host logins require a file-backed login first. Unreadable or invalid credentials and transfer failures stop the connection and are reported in the application log.
+When an enabled assistant addon connects inside a Dev Container, that addon copies only its own host `auth.json` into the configured container user's home before starting its tool. Host `CODEX_HOME` and `XDG_DATA_HOME` overrides are respected; container destinations use their own overrides. Writes are atomic, with directory mode 0700 and file mode 0600; credentials travel through stdin and are never included in image layers or logs. Codex uses file-backed credentials in the container. Missing host auth files leave existing container credentials intact and produce a warning; keyring-only host logins require a file-backed login first. Unreadable or invalid credentials and transfer failures stop the connection and are reported in the application log.
 
-Assistant launches forward present `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENCODE_API_KEY`, and OpenCode server username/password variables by name. Restart the editor to pick up changes to its inherited environment. Use **Reconnect** after refreshing host credentials. Session history, databases, configuration, and container token refreshes remain independent; no assistant data directories are shared or copied back to the host.
+Each addon declares the environment variables it needs in its manifest. The host forwards only those declared variables; the assistant addons support `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_ORG_ID`, `OPENAI_PROJECT_ID`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENCODE_API_KEY`, and OpenCode server username/password variables by name. Restart the editor to pick up changes to its inherited environment. Use **Reconnect** after refreshing host credentials. Session history, databases, configuration, and container token refreshes remain independent; no assistant data directories are shared or copied back to the host.
 
 Dev Container failure details are written to the application log at **Warn** level. Its toolbar menu shows a short failure message and retains **Retry**; opening the menu does not repeat diagnostics. Configuration, start/rebuild/reconnect, and stop errors include operation context. Failure records include the Compose exit status and captured stdout/stderr, with long output bounded while retaining its tail. Each diagnostic line gets its own timestamped record. Sensitive values and build-command payloads are redacted while surrounding failure explanations and exit codes remain visible.
 
-The bottom panel has **Terminal** and **Logs** tabs. Switching to Logs leaves the terminal running and processing output, while keyboard input belongs to the log controls. Select **All**, **Editor**, **Git**, **Codex**, **OpenCode**, **Dev Container**, **Docker Compose**, **Terminal**, or **Addons** to view a component. Use search and severity filters, select/copy text, **Copy visible logs**, **Clear**, and **Follow latest**. Scrolling upward pauses following. **Dev Container → Show logs** opens the viewer with that source selected.
+The bottom panel has **Terminal** and **Logs** tabs. Switching to Logs leaves the terminal running and processing output, while keyboard input belongs to the log controls. Select **All**, **Editor**, **Git**, **Dev Container**, **Docker Compose**, **Terminal**, or **Addons** to view a component. Use search and severity filters, select/copy text, **Copy visible logs**, **Clear**, and **Follow latest**. Scrolling upward pauses following. **Dev Container → Show logs** opens the viewer with that source selected.
 
 Logs are current-session only: every editor launch starts an empty viewer and replaces `launch.log`; no previous records are loaded and no rotated history is kept. Each running editor's viewer is independent. The file path represents the newest launch; older running instances keep their own output handle. The viewer retains up to 10,000 records or 8 MiB and discards oldest records when full. **Clear** removes records for the selected source (or all sources) from the viewer; it leaves the current-session diagnostic file intact. Viewer filters do not change which levels are captured.
 
-Docker Compose build/start/stop output streams live into its section, including successful progress. Codex and OpenCode process diagnostics appear in their sections; terminal input/output and OpenCode protocol payloads are excluded. At Debug or Trace level, the Codex section also includes incoming and outgoing app-server JSON, including message content, request IDs, methods, and numbered payload chunks. Credentials are redacted before either log sink.
+Docker Compose build/start/stop output streams live into its section, including successful progress. Codex and OpenCode process diagnostics appear in their sections; terminal input/output and OpenCode protocol payloads are excluded. At Debug or Trace level, the Addons section also includes incoming and outgoing app-server JSON, including message content, request IDs, methods, and numbered payload chunks. Credentials are redacted before either log sink.
 
 Logging defaults to **Info**. Change it easily for a launch:
 
@@ -219,11 +235,11 @@ Click the terminal surface to give it keyboard focus. **Tab** performs shell com
 
 **Ctrl+C** interrupts even with a selection. **Ctrl+Shift+C** copies the terminal selection; **Ctrl+V** and **Ctrl+Shift+V** paste. On macOS, Command+C/V use the clipboard. Pasted text uses bracketed paste when requested by the shell. Application-cursor mode is respected for navigation. The terminal starts your configured shell (`$SHELL`, then your account shell, with `/bin/sh` as a fallback) interactively and loads its normal startup configuration, prompt, aliases, history, and completion. Dev Container terminals resolve the shell inside the container for the selected user. Shortcuts reserved by your Linux desktop remain controlled by the desktop. Restart is the icon at the right of the Terminal/Logs title row. Logs keeps the shell running without capturing its keys. Shell exit preserves the screen with an exit notice; startup failures stay visible and can be retried with Restart. Restart, workspace/container changes, and application shutdown close the old terminal session without stopping the container.
 
-## Assistants: Codex and OpenCode
+## Assistant addons: Codex and OpenCode
 
-Use **Assistants** in the main toolbar to enable or disable **Codex** and **OpenCode** independently. When both are enabled, use their tabs at the top of the right pane to switch. Each tab shows activity or **Needs you** for an approval/question. Conversations, drafts, selections, and scroll positions remain independent; work continues in an inactive tab.
+Use **Addons** in the main toolbar to enable or disable **Codex** and **OpenCode** independently. When both are enabled, use their tabs at the top of the right pane to switch. Each tab shows activity or **Waiting for you** for an approval/question. Conversations, drafts, selections, and scroll positions remain independent; work continues in an inactive tab.
 
-Disabling an assistant stops its connection and running work and hides its tab. With both disabled, the right pane disappears and the editor gets its width back. Enabling an assistant starts it and selects it; the previous pane width is restored. **Stop** inside an enabled panel leaves that panel visible so you can use **Start** again.
+Disabling an assistant stops its connection and running work and hides its tab. With both disabled, the right pane disappears and the editor gets its width back. Enabling an assistant starts its addon and restores the pane width; use its tab to select it. **Stop** inside an enabled panel leaves that panel visible so you can use **Start** again.
 
 Enabled assistants and the selected tab are saved. Initially, Codex is enabled and OpenCode is disabled. Workspace changes stop the old connections and resume the new workspace's sessions; drafts survive switching workspaces during the current editor run. Each assistant maintains its own conversations; nothing is copied between Codex and OpenCode. Both use the same Codex-style header, session controls, usage section, message cards, approval styling, and composer. Provider-specific models, thinking choices, modes/agents, and usage values remain independent.
 
@@ -231,9 +247,9 @@ The composer stays below the scrolling conversation. Its input grows from three 
 
 Assistant replies, proposed plans, and supplied reasoning render as Markdown, including headings, lists, links, tables, inline code, and fenced blocks such as `shell`, `bash`, Rust, and JSON. Code is selectable and has a copy control. Wide content stays inside a horizontal scroll area; unknown code languages retain a monospaced fallback. User messages and raw tool output stay literal.
 
-`--no-codex` and `--no-opencode` skip automatic startup of their respective connections for the launch while keeping enabled panels available for manual Start. The existing `codex_app_server = false` setting still disables automatic Codex startup. Panel visibility is controlled by `codex_enabled` and `opencode_enabled`, or the toolbar menu.
+`--no-addon codex` and `--no-addon opencode` suppress an addon for one launch without changing saved enablement. Repeat the option to suppress multiple addons. Use **Addons** in the toolbar for persistent visibility and lifecycle controls.
 
-## Codex
+## Codex addon
 
 The panel starts `codex app-server` and exchanges JSONL messages over stdio. **Start** and **Stop** control the connection; **Interrupt** stops an active turn. Header badges show **Ready**, **Running**, **Waiting for you**, or **Offline**, with additional details on hover.
 
@@ -270,7 +286,7 @@ Approval requests provide Allow, Allow this session, and Decline actions. Input 
 
 Expand **Usage / status** for the session ID, model, account limits, session tokens, and context usage when supplied by Codex. Account limits refresh every minute while connected; **Refresh usage** requests an immediate update. Unsupported or unavailable account usage is shown explicitly. Token/context figures update from session events.
 
-## OpenCode
+## OpenCode addon
 
 The native panel uses a private local `opencode serve` process and your existing OpenCode configuration and provider authentication. Configure providers using OpenCode's CLI first; Focus Editor does not change those credentials or permission rules. Missing executables, unavailable models, connection failures, and unsupported responses appear in the panel. The transport has been smoke-tested with OpenCode **1.19.5**.
 
@@ -304,15 +320,15 @@ Switching tabs continues processing both backends. Stream reconnects reload auth
 
 ## Source organization
 
-The application uses one crate with focused feature module directories:
+The editor and executable addons compile as separate Cargo projects:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
-- `src/assistant_ui/` shares assistant headers, cards, Markdown rendering/cache, and bounded scrolling composers; provider modules adapt their own catalogs and protocol actions to these controls.
-- `src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
+- `crates/addon-support/src/assistant_ui/` shares assistant headers, cards, Markdown rendering/cache, and bounded scrolling composers; provider modules adapt their own catalogs and protocol actions to these controls.
+- `addons/codex/src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, numeric diff statistics and new-file line counting (`stats`), independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
-- `src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/editor/assistants.rs` coordinates the shared pane and independent workspace states.
-- Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `src/codex_ui/tests.rs`.
+- `addons/opencode/src/opencode_ui/` separates OpenCode lifecycle, catalogs, sessions, events, approvals, composer, conversation, and usage. `addons/opencode/src/opencode_server/` owns background HTTP/SSE workers and server cleanup. `src/addons/` owns the generic docks, addon lifecycle, and UI surface input/rendering.
+- Editor tests are grouped by feature under `src/editor/tests/`. Codex tests cover panel layout, selection helpers, history, and event routing in `addons/codex/src/codex_ui/tests.rs`.
 
-Other top-level modules provide the shared theme/icons, settings, terminal process lifecycle and system font discovery, syntax coloring, and the App Server transport. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
+Other top-level modules provide the shared theme/icons, settings, terminal process lifecycle and system font discovery, syntax coloring, and addon host services. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.

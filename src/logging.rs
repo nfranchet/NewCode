@@ -1,7 +1,6 @@
 //! Logging configuration and launch argument parsing; protocol content is Debug-only.
 use std::{ffi::OsString, io::Write, path::PathBuf, str::FromStr};
 pub(crate) mod process;
-pub(crate) mod protocol;
 pub(crate) mod redaction;
 pub(crate) mod session;
 
@@ -10,6 +9,7 @@ pub(crate) struct Arguments {
     pub(crate) version: bool,
     pub(crate) level: Option<log::LevelFilter>,
     pub(crate) workspace: Option<PathBuf>,
+    pub(crate) disabled_addons: Vec<String>,
 }
 impl Arguments {
     pub(crate) fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self, String> {
@@ -26,6 +26,21 @@ impl Arguments {
                 continue;
             }
             let text = arg.to_string_lossy();
+            if !positional && (text == "--no-addon" || text.starts_with("--no-addon=")) {
+                let id = if text == "--no-addon" {
+                    args.next()
+                        .ok_or("--no-addon requires an addon ID")?
+                        .to_string_lossy()
+                        .into_owned()
+                } else {
+                    text[11..].to_owned()
+                };
+                if id.is_empty() {
+                    return Err("--no-addon requires an addon ID".into());
+                }
+                result.disabled_addons.push(id);
+                continue;
+            }
             let value = if !positional && arg == "--log-level" {
                 Some(
                     args.next()
@@ -85,11 +100,7 @@ fn init_at(
             let timestamp = buffer.timestamp_millis().to_string();
             let source = session::Source::from_target(record.target());
             // Protocol records are already redacted and bounded before reaching the facade.
-            let messages = if record.target() == protocol::TARGET {
-                vec![record.args().to_string()]
-            } else {
-                redaction::sanitize(&record.args().to_string())
-            };
+            let messages = redaction::sanitize(&record.args().to_string());
             for message in messages {
                 let text = format!(
                     "{} {:5} pid={} [{}] {}",

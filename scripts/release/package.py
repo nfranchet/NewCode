@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 
 TARGETS = {
     "x86_64-unknown-linux-gnu": ("linux-amd64", ".tar.gz"),
@@ -67,15 +68,25 @@ def verify_binary(binary, target, name="focus-editor"):
     print(version)
 
 
-ADDON_ASSETS = ("addon.toml", "icon.png", "focus-addon-github", "LICENSE")
+def addon_assets():
+    assets = []
+    for path in sorted(Path("addons").glob("*/addon.toml")):
+        manifest = tomllib.loads(path.read_text())
+        prefix = "addons/" + manifest["id"] + "/"
+        assets += [prefix + name for name in ("addon.toml", manifest["icon"], manifest["executable"], "LICENSE")]
+    return tuple(assets)
+
+
+ADDON_ASSETS = addon_assets()
+ADDON_EXECUTABLES = tuple("addons/" + m["id"] + "/" + m["executable"] for m in (tomllib.loads(p.read_text()) for p in sorted(Path("addons").glob("*/addon.toml"))))
 
 
 def copy_addons(binary, destination, addon_source=None):
-    source = Path(addon_source) if addon_source else binary.parent / "addons/github"
-    target = destination / "addons/github"
-    target.mkdir(parents=True)
-    for name in ADDON_ASSETS:
-        shutil.copy2(source / name, target / name)
+    source = Path(addon_source) if addon_source else binary.parent
+    for relative in ADDON_ASSETS:
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source / relative, target)
 
 
 def package_linux(binary, output, stage, addon_source=None):
@@ -85,7 +96,7 @@ def package_linux(binary, output, stage, addon_source=None):
     shutil.copy2("THIRD_PARTY_NOTICES.txt", stage / "THIRD_PARTY_NOTICES.txt")
     shutil.copy2("scripts/release/install-addons.py", stage / "install-addons.py")
     copy_addons(binary, stage, addon_source)
-    assets = ("focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py") + tuple("addons/github/" + name for name in ADDON_ASSETS)
+    assets = ("focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py") + ADDON_ASSETS
     with tarfile.open(output, "w:gz") as archive:
         for name in assets:
             archive.add(stage / name, arcname=name)
@@ -94,8 +105,9 @@ def package_linux(binary, output, stage, addon_source=None):
             raise RuntimeError("Unexpected Linux archive contents")
         if not archive.getmember("focus-editor").mode & 0o111:
             raise RuntimeError("Packaged executable lost its execute permission")
-        if not archive.getmember("addons/github/focus-addon-github").mode & 0o111:
-            raise RuntimeError("Packaged addon lost its execute permission")
+        for name in ADDON_ASSETS:
+            if name in ADDON_EXECUTABLES and not archive.getmember(name).mode & 0o111:
+                raise RuntimeError("Packaged addon lost its execute permission")
 
 
 def package_macos(binary, output, stage):
@@ -125,7 +137,9 @@ def package_macos(binary, output, stage):
             "NSHighResolutionCapable": True,
         }, stream)
     run("plutil", "-lint", str(contents / "Info.plist"))
-    run("codesign", "--force", "--sign", "-", str(contents / "Resources/addons/github/focus-addon-github"))
+    for name in ADDON_ASSETS:
+        if name in ADDON_EXECUTABLES:
+            run("codesign", "--force", "--sign", "-", str(contents / "Resources" / name))
     run("codesign", "--force", "--sign", "-", str(app))
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
     os.symlink("/Applications", stage / "Applications")
@@ -156,7 +170,10 @@ def main():
     args = parser.parse_args()
     binary = Path("target", args.target, "release/focus-editor").resolve(strict=True)
     verify_binary(binary, args.target)
-    verify_binary(binary.parent / "addons/github/focus-addon-github", args.target, "focus-addon-github")
+    for name in ADDON_ASSETS:
+        if name in ADDON_EXECUTABLES:
+            executable = binary.parent / name
+            verify_binary(executable, args.target, executable.name)
     destination = Path("dist").resolve()
     destination.mkdir(exist_ok=True)
     output = destination / asset_name(args.tag, args.target)

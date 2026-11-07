@@ -88,10 +88,19 @@ impl EditorApp {
                         self.bottom_tab = super::logs::Tab::Logs;
                         self.logs.source = Some(crate::logging::session::Source::DevContainer);
                     }
-                    self.assistants_menu(ui, ctx);
                     ui.menu_button("Addons", |ui| {
-                        self.addons.menu(ui, &mut self.settings.disabled_addons)
+                        self.addons.menu(ui, &mut self.settings.addon_enabled)
                     });
+                    self.settings.migrate_addons(
+                        &self
+                            .addons
+                            .entries
+                            .iter()
+                            .map(|a| a.manifest.clone())
+                            .collect::<Vec<_>>(),
+                    );
+                    self.addons
+                        .apply_settings(&self.settings.addon_enabled, &self.settings.addon_state);
                     if self.sidebar_mode == SidebarMode::Addon && self.addons.active.is_none() {
                         self.sidebar_mode = SidebarMode::Explorer;
                     }

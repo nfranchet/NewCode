@@ -10,6 +10,9 @@ Install each addon under `<application-data>/focus-editor/addons/<id>/`, beside
 `logs/`. Use **Addons → Install local addon…** and select its `addon.toml`, or use
 the release installer. Repository directories are never searched for addons.
 Executable and PNG icon paths must stay inside the installation directory.
+Any addon may declare `panel = "right"` to use the shared right-hand dock.
+The default `ui = "widgets"` uses declarative controls; rich interfaces can use
+`ui = "surface"` through the optional [UI helper](../addon-support/README.md).
 
 ```toml
 id = "example"
@@ -75,5 +78,5 @@ The GitHub addon is a complete example. Build it separately with:
 
 ```sh
 cargo build --locked --manifest-path addons/github/Cargo.toml
-python3 scripts/addons.py --install
+python3 scripts/addons.py --addon github --install
 ```

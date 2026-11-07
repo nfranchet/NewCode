@@ -2,14 +2,14 @@ use super::*;
 use std::fs;
 
 impl Addons {
-    pub fn menu(&mut self, ui: &mut egui::Ui, disabled: &mut Vec<String>) {
+    pub fn menu(&mut self, ui: &mut egui::Ui, enabled: &mut BTreeMap<String, bool>) {
         if ui.button("Install local addon…").clicked() {
             if let Some(path) = rfd::FileDialog::new()
                 .add_filter("Addon manifest", &["toml"])
                 .set_file_name("addon.toml")
                 .pick_file()
             {
-                if let Err(error) = self.install(&path, disabled) {
+                if let Err(error) = self.install(&path, enabled) {
                     self.notice = Some(error);
                 }
             }
@@ -28,9 +28,8 @@ impl Addons {
                 addon.manifest.name, addon.manifest.version
             ));
             if ui.checkbox(&mut addon.enabled, "Enabled").changed() {
-                disabled.retain(|id| id != &addon.manifest.id);
+                enabled.insert(addon.manifest.id.clone(), addon.enabled);
                 if !addon.enabled {
-                    disabled.push(addon.manifest.id.clone());
                     addon.process = None;
                     if self.active.as_ref() == Some(&addon.manifest.id) {
                         self.active = None;
@@ -156,7 +155,11 @@ impl Addons {
     }
     pub fn activity(&mut self, ui: &mut egui::Ui, selected: bool) -> bool {
         let mut chosen = None;
-        for addon in self.entries.iter_mut().filter(|a| a.enabled) {
+        for addon in self
+            .entries
+            .iter_mut()
+            .filter(|a| a.enabled && a.manifest.panel == focus_addon_sdk::Panel::Left)
+        {
             if addon.icon.is_none() {
                 if let Ok(bytes) = fs::read(addon.directory.join(&addon.manifest.icon)) {
                     if let Ok(image) =
