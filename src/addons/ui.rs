@@ -2,54 +2,10 @@ use super::*;
 use std::fs;
 
 impl Addons {
-    pub fn menu(&mut self, ui: &mut egui::Ui, enabled: &mut BTreeMap<String, bool>) {
-        if ui.button("Install local addon…").clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Addon manifest", &["toml"])
-                .set_file_name("addon.toml")
-                .pick_file()
-            {
-                if let Err(error) = self.install(&path, enabled) {
-                    self.notice = Some(error);
-                }
-            }
+    pub fn menu(&mut self, ui: &mut egui::Ui, _enabled: &mut BTreeMap<String, bool>) {
+        if ui.button("Manage addons…").clicked() {
+            self.open_manager();
             ui.close();
-        }
-        if let Ok(root) = crate::app_paths::addons() {
-            ui.label(root.display().to_string());
-        }
-        if let Some(notice) = &self.notice {
-            ui.colored_label(crate::ui_theme::RED, notice);
-        }
-        for addon in &mut self.entries {
-            ui.separator();
-            ui.label(format!(
-                "{} {}",
-                addon.manifest.name, addon.manifest.version
-            ));
-            if ui.checkbox(&mut addon.enabled, "Enabled").changed() {
-                enabled.insert(addon.manifest.id.clone(), addon.enabled);
-                if !addon.enabled {
-                    addon.process = None;
-                    if self.active.as_ref() == Some(&addon.manifest.id) {
-                        self.active = None;
-                        self.detail = false;
-                    }
-                }
-            }
-            if ui.button("Restart").clicked() {
-                addon.process = None;
-                addon.error = None;
-            }
-            if addon.manifest.credential.is_some() && ui.button("Credentials…").clicked() {
-                self.credentials = Some(Credentials {
-                    addon: addon.manifest.id.clone(),
-                    secret: String::new(),
-                    result: String::new(),
-                    pending: None,
-                });
-                ui.close();
-            }
         }
     }
     pub fn sidebar(&mut self, ui: &mut egui::Ui) {

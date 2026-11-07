@@ -136,6 +136,7 @@ fn rejects_stale_addon_views_and_keeps_host_responsive() {
     host.entries.push(Addon {
         manifest,
         directory: fixture.0.clone(),
+        storage: fixture.0.join("data"),
         enabled: true,
         process: None,
         error: None,

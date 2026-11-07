@@ -28,6 +28,10 @@ focus-addon-support = { path = "crates/addon-support" }
 keyring = { version = "4.2", features = ["v1"] }
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
+sha2 = "0.11"
+flate2 = "1"
+tar = "0.4.44"
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -1,9 +1,15 @@
 Focus Editor for Apple Silicon (macOS 11 or newer)
 
 Drag Focus Editor.app to Applications, then open it from Applications.
-To install the bundled addons, run python3 install-addons.py from the
-mounted image (Python 3.11 or newer), then restart the editor. Addons are
+To install bundled addons, run python3 install-addons.py from the
+mounted image (Python 3.11 or newer). Add --addon github to install only GitHub.
+Open Addons below Source Control and choose Rescan installed afterward. Addons are
 installed beside logs in ~/Library/Application Support/focus-editor/addons.
+Persistent data is kept separately under focus-editor/addon-data/<id>.
+Updates and default uninstall preserve data and OS-keyring credentials.
+The Addons manager also installs local addon .tar.gz packages and provides
+enable, restart, credential, and uninstall controls. Automatic release catalogs
+currently provide Linux packages only.
 This download has an ad-hoc signature, not an Apple Developer ID signature,
 and is not notarized. macOS may block the first launch. After attempting to
 open it, use System Settings > Privacy & Security > Open Anyway if offered.

@@ -41,6 +41,9 @@ impl EditorApp {
                     ui.separator();
                 }
                 match self.sidebar_mode {
+                    SidebarMode::AddonManager => self
+                        .addons
+                        .manager_sidebar(ui, &mut self.settings.addon_enabled),
                     SidebarMode::Addon => self.addons.sidebar(ui),
                     SidebarMode::Git => {
                         if let Some(path) = self.git_ui.ui(

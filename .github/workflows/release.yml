@@ -14,6 +14,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ github.event.release.tag_name }}
+  FOCUS_RELEASE_TAG: ${{ github.event.release.tag_name }}
 
 jobs:
   build:

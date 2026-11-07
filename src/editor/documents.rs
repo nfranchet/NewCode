@@ -50,6 +50,7 @@ impl EditorApp {
 
     fn open_document(&mut self, path: PathBuf, mode: OpenMode) -> bool {
         self.addons.detail = false;
+        self.addons.dismiss_manager_detail();
         log::debug!("Open document path={} mode={mode:?}", path.display());
         if self.active_file.as_ref() == Some(&path) {
             if mode == OpenMode::Permanent || self.dirty {

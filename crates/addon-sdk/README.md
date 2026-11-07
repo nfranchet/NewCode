@@ -7,8 +7,9 @@ the addon has no dependency on egui or the editor crate. Other languages can
 implement the same protocol. Installed addons are trusted OS programs.
 
 Install each addon under `<application-data>/focus-editor/addons/<id>/`, beside
-`logs/`. Use **Addons → Install local addon…** and select its `addon.toml`, or use
-the release installer. Repository directories are never searched for addons.
+`logs/`. Open the **Addons** activity below Source Control, choose **Install local
+addon…** and select its `addon.toml` or standalone `.tar.gz`, or use the release
+installer. Repository directories are never searched for addons.
 Executable and PNG icon paths must stay inside the installation directory.
 Any addon may declare `panel = "right"` to use the shared right-hand dock.
 The default `ui = "widgets"` uses declarative controls; rich interfaces can use
@@ -17,11 +18,19 @@ The default `ui = "widgets"` uses declarative controls; rich interfaces can use
 ```toml
 id = "example"
 name = "Example"
+description = "What this addon provides"
+publisher = "Your name or organization"
 version = "0.1.0"
 protocol = 1
 executable = "example-addon"
 icon = "icon.png"
 ```
+
+`description` and `publisher` are optional display metadata. Release staging adds
+an optional top-level `target`, such as `x86_64-unknown-linux-gnu`; the host rejects
+packages for another target. Keep the manifest version equal to the addon Cargo
+package version. The ID must match its directory and contain only letters,
+digits, `_`, and `-`.
 
 ## Lifecycle and UI
 
@@ -72,7 +81,11 @@ Optional manifest credentials declare `origin`, `program`, `environment`,
 in the OS keyring, attaches them only to the matching HTTPS origin or declared
 program, and returns sanitized results. It does not expose a token-reading API.
 Use `Context.storage` for non-secret persistent addon state; preserve the
-generation/workspace association of pending local operations.
+generation/workspace association of pending local operations. This path is
+`<application-data>/focus-editor/addon-data/<id>`, outside the executable folder.
+The host migrates the older `addons/<id>/data` directory. Updates and default
+uninstall preserve this directory and OS-keyring credentials. Do not write
+runtime state into the installation directory.
 
 The GitHub addon is a complete example. Build it separately with:
 
@@ -80,3 +93,50 @@ The GitHub addon is a complete example. Build it separately with:
 cargo build --locked --manifest-path addons/github/Cargo.toml
 python3 scripts/addons.py --addon github --install
 ```
+
+## Release packages and catalog
+
+Place a crate and `addon.toml` under `addons/<id>/`. The build helper and release
+workflow discover all such manifests; the editor crate does not compile them.
+Use `python3 scripts/addons.py --release --target <triple>` to build and stage all
+addons under `target/<triple>/release/addons/`. `--addon <id>` selects one and can
+be repeated. `--test` checks formatting and tests the SDK and selected crates.
+Release executables must support `--version`, printing their executable basename
+followed by the version without starting the addon protocol. The release job
+checks architecture, shared libraries, and that version response. Addon-specific
+license/notices files take precedence over the repository defaults.
+
+`scripts/release/package.py <triple> <tag>` emits a separate
+`focus-addon-<id>-<tag>-<platform>.tar.gz` for every staged addon, as well as the
+editor archive and `addons-<platform>.json`. Each addon archive contains files
+directly at its root: `addon.toml`, its declared executable and PNG icon,
+`LICENSE`, and `THIRD_PARTY_NOTICES.txt`. Relative asset subdirectories are
+supported. Runtime state, credentials, extra files, symlinks, and hardlinks are
+excluded. The editor accepts only those declared assets and optional notices;
+compressed and expanded size limits are 256 MiB and 512 MiB.
+
+The final release job checks the complete platform matrix and emits `addons.json`
+and `SHA256SUMS`. `Catalog` and `Package` in this SDK define catalog schema 1:
+
+```json
+{
+  "schema": 1,
+  "release": "v0.1.0",
+  "editor_version": "0.1.0",
+  "packages": [{
+    "id": "example", "name": "Example", "description": "An example addon",
+    "publisher": "Example project", "version": "0.1.0", "protocol": 1,
+    "target": "x86_64-unknown-linux-gnu",
+    "archive": "focus-addon-example-v0.1.0-linux-amd64.tar.gz",
+    "size": 1234, "sha256": "<64 hexadecimal characters>"
+  }]
+}
+```
+
+The manager fetches the official catalog anonymously, checks editor version,
+protocol, target, archive SHA-256/size, and manifest identity before replacement.
+Local packages use the same manifest/archive checks without an official
+checksum. Installation receipts are separate from addon state. Shared process
+leases prevent updates while another editor uses the executable; updates use a
+rollback journal and restart only the affected process. No protocol changes or
+addon-specific host code are needed to appear in the manager or release catalog.

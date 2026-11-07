@@ -1,6 +1,9 @@
 //! Installed executable addons. Native UI and credential handling stay in the host.
+mod catalog;
 mod credentials;
 mod installation;
+mod manager;
+mod packages;
 mod process;
 mod ui;
 #[cfg(test)]
@@ -31,6 +34,7 @@ use std::{
 pub(crate) struct Addon {
     pub manifest: Manifest,
     directory: PathBuf,
+    storage: PathBuf,
     enabled: bool,
     process: Option<Process>,
     error: Option<String>,
@@ -77,6 +81,7 @@ pub(crate) struct Addons {
     credentials: Option<Credentials>,
     pub notice: Option<String>,
     cache: crate::assistant_ui::content::CommonMarkCache,
+    manager: manager::Manager,
 }
 impl Default for Addons {
     fn default() -> Self {
@@ -97,6 +102,7 @@ impl Default for Addons {
             credentials: None,
             notice: None,
             cache: Default::default(),
+            manager: Default::default(),
         }
     }
 }
@@ -153,7 +159,7 @@ impl Addons {
             addon.status.clear();
             if let Some(process) = &addon.process {
                 let mut context = self.context.clone();
-                context.storage = addon.directory.join("data");
+                context.storage = addon.storage.clone();
                 context.state = addon.seed.clone();
                 let _ = process.send(Message::notification("context.changed", context));
             }
@@ -177,7 +183,7 @@ impl Addons {
         };
         if addon.process.is_none() {
             let mut context = self.context.clone();
-            context.storage = addon.directory.join("data");
+            context.storage = addon.storage.clone();
             context.state = addon.seed.clone();
             addon.surface = Default::default();
             match Process::start(&addon.directory, &addon.manifest, &context, ctx) {

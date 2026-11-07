@@ -304,6 +304,9 @@ mod tests {
             protocol: 1,
             executable: "program".into(),
             icon: "icon.png".into(),
+            description: String::new(),
+            publisher: String::new(),
+            target: None,
             credential: Some(focus_addon_sdk::Credential {
                 origin: "https://api.github.com".into(),
                 program: "gh".into(),

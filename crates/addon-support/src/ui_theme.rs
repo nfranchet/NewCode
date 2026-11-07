@@ -75,6 +75,7 @@ pub enum Icon {
     File,
     Search,
     Git,
+    Addons,
     Save,
     Copy,
     Paste,
@@ -144,6 +145,11 @@ pub fn paint_icon(ui: &Ui, rect: Rect, icon: Icon, color: Color32) {
         Icon::Search => {
             painter.circle_stroke(p(8., 8.), rect.width() * 0.27, stroke);
             line(&[(12., 12.), (18., 18.)]);
+        }
+        Icon::Addons => {
+            for (x, y) in [(3., 3.), (12., 3.), (3., 12.), (12., 12.)] {
+                box_at(x, y, 5., 5.);
+            }
         }
         Icon::Git => {
             line(&[(5., 5.), (5., 15.)]);

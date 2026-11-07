@@ -19,6 +19,12 @@ pub struct Manifest {
     pub executable: PathBuf,
     pub icon: PathBuf,
     #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub publisher: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    #[serde(default)]
     pub credential: Option<Credential>,
     #[serde(default)]
     pub panel: Panel,
@@ -53,6 +59,62 @@ pub struct Migration {
     pub selection: Option<String>,
     pub sessions: Option<String>,
     pub autostart: Option<String>,
+}
+
+/// Release metadata shared by publishers, the manager, and local package tools.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Catalog {
+    pub schema: u32,
+    pub release: String,
+    pub editor_version: String,
+    pub packages: Vec<Package>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Package {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub publisher: String,
+    pub version: String,
+    pub protocol: u32,
+    pub target: String,
+    pub archive: String,
+    pub size: u64,
+    pub sha256: String,
+}
+impl Catalog {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.schema != 1 || self.release.is_empty() || self.editor_version.is_empty() {
+            return Err("Unsupported or incomplete addon catalog".into());
+        }
+        let mut keys = std::collections::HashSet::new();
+        for package in &self.packages {
+            if !valid_id(&package.id)
+                || package.name.is_empty()
+                || package.version.is_empty()
+                || package.target.is_empty()
+                || package.archive.starts_with('.')
+                || package.archive.contains(['/', '\\'])
+                || !package.archive.ends_with(".tar.gz")
+                || package.size == 0
+                || package.size > 256 * 1024 * 1024
+                || package.sha256.len() != 64
+                || !package.sha256.bytes().all(|b| b.is_ascii_hexdigit())
+                || !keys.insert((&package.id, &package.target))
+            {
+                return Err("Invalid or duplicate addon package metadata".into());
+            }
+        }
+        Ok(())
+    }
+}
+pub fn valid_id(id: &str) -> bool {
+    !id.is_empty()
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -431,6 +493,33 @@ impl<R: BufRead, W: Write> Connection<R, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn catalog_rejects_duplicate_packages_and_unsafe_archive_names() {
+        let package = Package {
+            id: "example".into(),
+            name: "Example".into(),
+            description: String::new(),
+            publisher: String::new(),
+            version: "1.0.0".into(),
+            protocol: 1,
+            target: "linux".into(),
+            archive: "example.tar.gz".into(),
+            size: 1,
+            sha256: "a".repeat(64),
+        };
+        let mut catalog = Catalog {
+            schema: 1,
+            release: "v1".into(),
+            editor_version: "1.0.0".into(),
+            packages: vec![package.clone()],
+        };
+        assert!(catalog.validate().is_ok());
+        catalog.packages.push(package);
+        assert!(catalog.validate().is_err());
+        catalog.packages.pop();
+        catalog.packages[0].archive = "../bad.tar.gz".into();
+        assert!(catalog.validate().is_err());
+    }
     #[test]
     fn framing_and_interleaved_events() {
         let mut wire = Vec::new();

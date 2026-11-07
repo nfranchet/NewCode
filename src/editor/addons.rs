@@ -3,6 +3,7 @@ use eframe::egui;
 
 impl EditorApp {
     pub(super) fn update_addons(&mut self, ctx: &egui::Context) {
+        self.addons.manager_tick(ctx, &self.settings.addon_enabled);
         self.addons.sync(
             self.settings.workspace.as_deref(),
             self.dev_container.runtime(),
@@ -38,6 +39,7 @@ impl EditorApp {
     }
     pub(super) fn addon_dialogs(&mut self, ctx: &egui::Context) {
         self.addons.credential_dialog(ctx);
+        self.addons.manager_dialog(ctx);
         if !self.addons.checkout_waiting() {
             return;
         }

@@ -66,9 +66,11 @@ pub(super) fn load_manifest(path: &Path) -> Result<Manifest, String> {
 
 impl Addons {
     pub fn discover(&mut self, enabled: &BTreeMap<String, bool>) {
+        self.notice = None;
         let mut result = || -> Result<Vec<Addon>, String> {
             let root = crate::app_paths::addons().map_err(|e| e.to_string())?;
             fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+            super::packages::recover(root.parent().unwrap())?;
             let mut entries = Vec::new();
             for directory in fs::read_dir(&root).map_err(|e| e.to_string())?.flatten() {
                 let path = directory.path();
@@ -85,8 +87,11 @@ impl Addons {
                             .get(&manifest.id)
                             .copied()
                             .unwrap_or(manifest.enabled_by_default);
+                        let storage =
+                            super::packages::ensure_data(root.parent().unwrap(), &manifest.id)?;
                         entries.push(Addon {
                             manifest,
+                            storage,
                             directory: path,
                             enabled,
                             process: None,
@@ -113,16 +118,16 @@ impl Addons {
         };
         match result() {
             Ok(mut entries) => {
-                let mut old: BTreeMap<_, _> = std::mem::take(&mut self.entries)
+                let mut previous: BTreeMap<_, _> = std::mem::take(&mut self.entries)
                     .into_iter()
                     .map(|a| (a.manifest.id.clone(), a))
                     .collect();
                 for entry in &mut entries {
-                    if let Some(previous) = old.remove(&entry.manifest.id) {
-                        if serde_json::to_value(&previous.manifest).ok()
+                    if let Some(old) = previous.remove(&entry.manifest.id) {
+                        if serde_json::to_value(&old.manifest).ok()
                             == serde_json::to_value(&entry.manifest).ok()
                         {
-                            *entry = previous;
+                            *entry = old;
                         }
                     }
                 }
@@ -130,72 +135,5 @@ impl Addons {
             }
             Err(error) => self.notice = Some(error),
         }
-    }
-    pub fn install(
-        &mut self,
-        source: &Path,
-        enabled: &BTreeMap<String, bool>,
-    ) -> Result<(), String> {
-        let manifest = load_manifest(source)?;
-        let from = source.parent().ok_or("Missing addon directory")?;
-        let root = crate::app_paths::addons().map_err(|e| e.to_string())?;
-        let target = root.join(&manifest.id);
-        fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-        let canonical_root = root.canonicalize().map_err(|e| e.to_string())?;
-        if target.exists()
-            && !target
-                .canonicalize()
-                .map_err(|e| e.to_string())?
-                .starts_with(&canonical_root)
-        {
-            return Err("Addon installation destination escapes the addons directory".into());
-        }
-        if from.canonicalize().ok() == target.canonicalize().ok() && target.exists() {
-            return Ok(());
-        }
-        // Stop the old executable before replacing it; keep its non-secret state.
-        if let Some(addon) = self
-            .entries
-            .iter_mut()
-            .find(|a| a.manifest.id == manifest.id)
-        {
-            addon.process = None;
-        }
-        fs::create_dir_all(&target).map_err(|e| e.to_string())?;
-        for relative in [
-            &manifest.executable,
-            &manifest.icon,
-            Path::new("addon.toml"),
-        ] {
-            let destination = target.join(relative);
-            let mut parent = target.clone();
-            for component in relative.parent().unwrap_or(Path::new("")).components() {
-                parent.push(component);
-                if fs::symlink_metadata(&parent).is_ok_and(|m| m.file_type().is_symlink()) {
-                    return Err("Addon installation directory contains a symlink".into());
-                }
-            }
-            fs::create_dir_all(destination.parent().unwrap()).map_err(|e| e.to_string())?;
-            let temporary =
-                destination.with_extension(format!("installing-{}", std::process::id()));
-            let mut output = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)
-                .map_err(|e| e.to_string())?;
-            let copied = (|| -> std::io::Result<()> {
-                let mut input = fs::File::open(from.join(relative))?;
-                std::io::copy(&mut input, &mut output)?;
-                output.set_permissions(input.metadata()?.permissions())?;
-                drop(output);
-                fs::rename(&temporary, destination)
-            })();
-            if copied.is_err() {
-                let _ = fs::remove_file(&temporary);
-            }
-            copied.map_err(|e| e.to_string())?;
-        }
-        self.discover(enabled);
-        Ok(())
     }
 }

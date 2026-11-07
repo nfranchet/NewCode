@@ -41,7 +41,7 @@ runs:
         TARGET: ${{ inputs.target }}
       shell: bash
       run: cargo test --locked --target "$TARGET"
-    - name: Check and test independent addons
+    - name: Test SDK and addon projects
       shell: bash
       env:
         TARGET: ${{ inputs.target }}

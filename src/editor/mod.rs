@@ -40,6 +40,7 @@ enum SidebarMode {
     Search,
     Git,
     Addon,
+    AddonManager,
 }
 
 pub(crate) struct EditorApp {
