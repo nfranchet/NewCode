@@ -10,7 +10,7 @@ fn macos_path(
     .collect();
     let mut extra = Vec::new();
     if let Some(home) = home {
-        extra.extend([home.join(".local/bin"), home.join(".opencode/bin")]);
+        extra.push(home.join(".local/bin"));
     }
     extra.extend(["/opt/homebrew/bin".into(), "/usr/local/bin".into()]);
     for path in extra {
@@ -45,7 +45,6 @@ mod tests {
         assert_eq!(paths[0], Path::new("/custom"));
         assert_eq!(paths[1], Path::new("/usr/local/bin"));
         assert!(paths.contains(&home.join(".local/bin")));
-        assert!(paths.contains(&home.join(".opencode/bin")));
         assert!(paths.contains(&"/opt/homebrew/bin".into()));
         assert_eq!(
             paths

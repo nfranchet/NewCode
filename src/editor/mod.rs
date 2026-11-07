@@ -1,5 +1,5 @@
 //! Application state and pane orchestration. Feature implementations live in sibling modules.
-use crate::{codex_ui::CodexUi, settings::Settings, terminal::Terminal, ui_theme as theme};
+use crate::{settings::Settings, terminal::Terminal, ui_theme as theme};
 use creation::NewEntry;
 use deletion::Deletion;
 use eframe::egui;
@@ -14,7 +14,6 @@ use std::{
 use text_view::EditorLayoutCache;
 
 mod addons;
-mod assistants;
 mod clipboard;
 mod close_dialog;
 mod creation;
@@ -59,12 +58,6 @@ pub(crate) struct EditorApp {
     bottom_tab: logs::Tab,
     logs: logs::Logs,
     dev_container: crate::dev_container::DevContainer,
-    codex_ui: CodexUi,
-    opencode_ui: crate::opencode_ui::OpenCodeUi,
-    assistant_workspace: Option<PathBuf>,
-    skip_codex_start: bool,
-    skip_opencode_start: bool,
-    assistant_workspaces: HashMap<PathBuf, (CodexUi, crate::opencode_ui::OpenCodeUi)>,
     creation: Option<NewEntry>,
     deletion: Option<Deletion>,
     rename_target: Option<PathBuf>,
@@ -111,16 +104,11 @@ impl EditorApp {
             }
         };
         let args: Vec<_> = std::env::args_os().skip(1).collect();
-        let no_codex = args.iter().any(|arg| arg == "--no-codex");
         let directory_argument = crate::logging::Arguments::parse(args.clone())
             .ok()
             .and_then(|a| a.workspace)
             .filter(|p| p.is_dir());
         let mut settings = settings;
-        // Older settings launched Codex as a shell command. Keep the terminal a normal shell.
-        if settings.right_command.trim() == "codex --resume" {
-            settings.right_command.clear();
-        }
         if let Some(directory) = directory_argument {
             settings.workspace = Some(directory);
         }
@@ -137,26 +125,6 @@ impl EditorApp {
             Ok(terminal) => (Some(terminal), None),
             Err(error) => (None, Some(format!("Terminal failed to start: {error}"))),
         };
-        let mut codex_ui = CodexUi::default();
-        if settings.codex_enabled && settings.codex_app_server && !no_codex {
-            codex_ui.start(cwd, cc.egui_ctx.clone());
-        }
-        let mut opencode_ui = crate::opencode_ui::OpenCodeUi::default();
-        let root = cwd
-            .unwrap_or(std::path::Path::new("."))
-            .canonicalize()
-            .unwrap_or_else(|_| cwd.unwrap_or(std::path::Path::new(".")).to_path_buf());
-        if let Some(id) = settings.opencode_sessions.get(&root) {
-            opencode_ui.remember_session(id.clone());
-        }
-        if settings.opencode_enabled && !args.iter().any(|a| a == "--no-opencode") {
-            opencode_ui.start(cwd, cc.egui_ctx.clone());
-        }
-        let assistant_workspace = Some(
-            cwd.unwrap_or(std::path::Path::new("."))
-                .canonicalize()
-                .unwrap_or_else(|_| cwd.unwrap_or(std::path::Path::new(".")).to_path_buf()),
-        );
         theme::apply(&cc.egui_ctx);
         let (open_files, active_file, buffer) = restore_open_files(&settings);
         let next_document_id = open_files.len() as u64;
@@ -171,7 +139,18 @@ impl EditorApp {
             })
             .collect();
         let mut addons = crate::addons::Addons::default();
-        addons.discover(&settings.disabled_addons);
+        addons.discover(&settings.addon_enabled);
+        settings.migrate_addons(
+            &addons
+                .entries
+                .iter()
+                .map(|a| a.manifest.clone())
+                .collect::<Vec<_>>(),
+        );
+        addons.suppressed = crate::logging::Arguments::parse(args)
+            .map(|a| a.disabled_addons)
+            .unwrap_or_default();
+        addons.apply_settings(&settings.addon_enabled, &settings.addon_state);
         Self {
             settings,
             settings_path,
@@ -188,12 +167,6 @@ impl EditorApp {
             bottom_tab: Default::default(),
             logs: Default::default(),
             dev_container: Default::default(),
-            codex_ui,
-            opencode_ui,
-            assistant_workspace,
-            skip_codex_start: no_codex,
-            skip_opencode_start: args.iter().any(|a| a == "--no-opencode"),
-            assistant_workspaces: HashMap::new(),
             creation: None,
             deletion: None,
             rename_target: None,
@@ -248,7 +221,6 @@ impl EditorApp {
         self.update_addons(ctx);
         self.toolbar(root);
         self.update_window_title(ctx);
-        self.update_assistants(ctx);
         self.status_bar(root);
         let cwd = self.settings.workspace.clone();
         let runtime = self.dev_container.runtime().cloned();
@@ -256,7 +228,11 @@ impl EditorApp {
         self.activity_bar(root);
         self.cancel_creation_for_workspace_change();
         self.sidebar(root);
-        self.assistant_panel(root, cwd.as_deref());
+        self.addons.right_panel(
+            root,
+            &mut self.settings.right_width,
+            &mut self.settings.selected_right_addon,
+        );
         self.document_panel(root, opened_find);
         self.rename_dialog(ctx);
         self.close_dialog(ctx);
@@ -267,6 +243,7 @@ impl EditorApp {
 }
 impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.addons.route_input(ctx, raw);
         self.route_terminal_input(ctx, raw);
     }
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {

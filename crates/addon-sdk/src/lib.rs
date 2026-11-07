@@ -10,7 +10,7 @@ use std::{
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_MESSAGE: usize = 8 * 1024 * 1024;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Manifest {
     pub id: String,
     pub name: String,
@@ -20,6 +20,39 @@ pub struct Manifest {
     pub icon: PathBuf,
     #[serde(default)]
     pub credential: Option<Credential>,
+    #[serde(default)]
+    pub panel: Panel,
+    #[serde(default)]
+    pub ui: Presentation,
+    #[serde(default = "yes")]
+    pub enabled_by_default: bool,
+    #[serde(default)]
+    pub environment: Vec<String>,
+    #[serde(default)]
+    pub migration: Migration,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Panel {
+    #[default]
+    Left,
+    Right,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Presentation {
+    #[default]
+    Widgets,
+    Surface,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Migration {
+    #[serde(default)]
+    pub enabled: Vec<String>,
+    pub selection: Option<String>,
+    pub sessions: Option<String>,
+    pub autostart: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,6 +73,18 @@ pub struct Context {
     pub generation: u64,
     pub workspace: Option<PathBuf>,
     pub storage: PathBuf,
+    #[serde(default)]
+    pub runtime: Option<Runtime>,
+    #[serde(default)]
+    pub state: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Runtime {
+    pub host_workspace: PathBuf,
+    pub container_id: String,
+    pub workspace_folder: PathBuf,
+    pub remote_user: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

@@ -35,9 +35,16 @@ impl Process {
                 .iter()
                 .any(|word| name.contains(word))
             {
-                command.env_remove(key);
+                if !manifest
+                    .environment
+                    .iter()
+                    .any(|allowed| std::ffi::OsStr::new(allowed) == key)
+                {
+                    command.env_remove(key);
+                }
             }
         }
+        command.env("FOCUS_ADDON_LOG_LEVEL", log::max_level().as_str());
         let mut child = command
             .spawn()
             .map_err(|e| format!("Cannot start addon: {e}"))?;
@@ -91,7 +98,9 @@ impl Process {
                     break;
                 }
                 for line in crate::logging::redaction::sanitize(&String::from_utf8_lossy(&line)) {
-                    log::debug!("Addon {}: {}", id, line);
+                    let (level, text) = line.split_once(' ').unwrap_or(("DEBUG", line.as_str()));
+                    let level = level.parse::<log::Level>().unwrap_or(log::Level::Debug);
+                    log::log!(level, "Addon {}: {}", id, text);
                 }
             }
         });
@@ -123,7 +132,16 @@ impl Process {
                 .is_none_or(|child| child.try_wait().ok().flatten().is_some())
     }
     pub fn stop_now(mut self) {
+        // On editor exit, let the addon drop its owned backend processes first.
+        let _ = self.send(Message::notification("shutdown", ()));
         if let Some(mut child) = self.child.take() {
+            let start = Instant::now();
+            while start.elapsed() < Duration::from_secs(2) {
+                if child.try_wait().ok().flatten().is_some() {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
             let _ = child.kill();
             let _ = child.wait();
         }

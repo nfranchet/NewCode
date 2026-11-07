@@ -65,7 +65,7 @@ pub(super) fn load_manifest(path: &Path) -> Result<Manifest, String> {
 }
 
 impl Addons {
-    pub fn discover(&mut self, disabled: &[String]) {
+    pub fn discover(&mut self, enabled: &BTreeMap<String, bool>) {
         let mut result = || -> Result<Vec<Addon>, String> {
             let root = crate::app_paths::addons().map_err(|e| e.to_string())?;
             fs::create_dir_all(&root).map_err(|e| e.to_string())?;
@@ -81,7 +81,10 @@ impl Addons {
                 }
                 match load_manifest(&path.join("addon.toml")) {
                     Ok(manifest) if path.file_name().is_some_and(|n| n == manifest.id.as_str()) => {
-                        let enabled = !disabled.contains(&manifest.id);
+                        let enabled = enabled
+                            .get(&manifest.id)
+                            .copied()
+                            .unwrap_or(manifest.enabled_by_default);
                         entries.push(Addon {
                             manifest,
                             directory: path,
@@ -93,6 +96,9 @@ impl Addons {
                             icon: None,
                             working: false,
                             incarnation: 0,
+                            surface: Default::default(),
+                            seed: Default::default(),
+                            status: String::new(),
                         });
                     }
                     Ok(_) => {
@@ -106,11 +112,30 @@ impl Addons {
             Ok(entries)
         };
         match result() {
-            Ok(entries) => self.entries = entries,
+            Ok(mut entries) => {
+                let mut old: BTreeMap<_, _> = std::mem::take(&mut self.entries)
+                    .into_iter()
+                    .map(|a| (a.manifest.id.clone(), a))
+                    .collect();
+                for entry in &mut entries {
+                    if let Some(previous) = old.remove(&entry.manifest.id) {
+                        if serde_json::to_value(&previous.manifest).ok()
+                            == serde_json::to_value(&entry.manifest).ok()
+                        {
+                            *entry = previous;
+                        }
+                    }
+                }
+                self.entries = entries;
+            }
             Err(error) => self.notice = Some(error),
         }
     }
-    pub fn install(&mut self, source: &Path, disabled: &[String]) -> Result<(), String> {
+    pub fn install(
+        &mut self,
+        source: &Path,
+        enabled: &BTreeMap<String, bool>,
+    ) -> Result<(), String> {
         let manifest = load_manifest(source)?;
         let from = source.parent().ok_or("Missing addon directory")?;
         let root = crate::app_paths::addons().map_err(|e| e.to_string())?;
@@ -170,7 +195,7 @@ impl Addons {
             }
             copied.map_err(|e| e.to_string())?;
         }
-        self.discover(disabled);
+        self.discover(enabled);
         Ok(())
     }
 }

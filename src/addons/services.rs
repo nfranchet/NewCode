@@ -311,6 +311,7 @@ mod tests {
                 git_origin: Some("https://github.com".into()),
                 instructions: String::new(),
             }),
+            ..Default::default()
         };
         let reply = execute(
             &manifest,

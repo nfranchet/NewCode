@@ -29,11 +29,13 @@ class PackagingTests(unittest.TestCase):
             addon = root / "addon"
             addon.mkdir()
             for name in ADDON_ASSETS:
+                (addon / name).parent.mkdir(parents=True, exist_ok=True)
                 (addon / name).write_bytes(b"fixture addon")
-            (addon / "focus-addon-github").chmod(0o755)
+                if "/focus-addon-" in name:
+                    (addon / name).chmod(0o755)
             package_linux(binary, output, stage, addon)
             with tarfile.open(output) as archive:
-                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py"} | {"addons/github/" + name for name in ADDON_ASSETS})
+                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py"} | set(ADDON_ASSETS))
                 self.assertEqual(archive.extractfile("LICENSE").read(), Path("LICENSE").read_bytes())
                 self.assertTrue(archive.getmember("focus-editor").mode & 0o111)
                 self.assertEqual(archive.extractfile("focus-editor").read(), binary.read_bytes())
@@ -60,6 +62,19 @@ class PackagingTests(unittest.TestCase):
             (source / "addon.toml").write_text("id='github'\nprotocol=1\nexecutable='../escape'\nicon='icon.png'\n")
             with self.assertRaises(ValueError):
                 installer.install(source.parent, destination)
+
+    def test_installing_one_addon_does_not_install_other_staged_addons(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("first", "second"):
+                source = root / "payload" / name
+                source.mkdir(parents=True)
+                (source / "addon.toml").write_text(f"id='{name}'\nprotocol=1\nexecutable='program'\nicon='icon.png'\n")
+                (source / "program").write_bytes(b"executable")
+                (source / "icon.png").write_bytes(b"icon")
+            installer.install(root / "payload", root / "app", ["first"])
+            self.assertTrue((root / "app/addons/first/program").exists())
+            self.assertFalse((root / "app/addons/second").exists())
 
     def test_checksums_require_both_linux_targets_and_reject_macos_assets(self):
         script = Path(__file__).with_name("checksums.py").resolve()

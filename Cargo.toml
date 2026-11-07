@@ -24,6 +24,7 @@ regex = "1"
 env_logger = "0.11"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 focus-addon-sdk = { path = "crates/addon-sdk" }
+focus-addon-support = { path = "crates/addon-support" }
 keyring = { version = "4.2", features = ["v1"] }
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }

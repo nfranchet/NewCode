@@ -1522,6 +1522,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "focus-addon-support"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "dirs",
+ "egui",
+ "egui_commonmark",
+ "env_logger",
+ "focus-addon-sdk",
+ "log",
+ "miniz_oxide 0.8.9",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "focus-editor"
 version = "0.1.0"
 dependencies = [
@@ -1532,6 +1549,7 @@ dependencies = [
  "egui_tty",
  "env_logger",
  "focus-addon-sdk",
+ "focus-addon-support",
  "fontdb",
  "image",
  "keyring",

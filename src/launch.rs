@@ -125,7 +125,10 @@ mod tests {
     #[test]
     fn foreground_and_child_flags_prevent_recursion() {
         assert!(should_detach(&[]));
-        assert!(should_detach(&["--no-codex".into(), "project".into()]));
+        assert!(should_detach(&[
+            "--no-addon=example".into(),
+            "project".into()
+        ]));
         for flag in ["--foreground", CHILD_FLAG] {
             assert!(!should_detach(&["project".into(), flag.into()]));
         }
@@ -181,7 +184,7 @@ mod tests {
             "-c".into(),
             script.into(),
             "test".into(),
-            "--no-codex".into(),
+            "--no-addon=example".into(),
             "project with spaces".into(),
             OsStr::from_bytes(b"nonutf8-\xff").to_owned(),
             result.clone().into_os_string(),
@@ -206,8 +209,8 @@ mod tests {
         assert!(bytes.starts_with(root.as_os_str().as_bytes()));
         assert!(
             bytes
-                .windows(b"--no-codex\nproject with spaces\nnonutf8-\xff\n".len())
-                .any(|w| w == b"--no-codex\nproject with spaces\nnonutf8-\xff\n")
+                .windows(b"--no-addon=example\nproject with spaces\nnonutf8-\xff\n".len())
+                .any(|w| w == b"--no-addon=example\nproject with spaces\nnonutf8-\xff\n")
         );
         assert!(String::from_utf8_lossy(&bytes).contains("stderr\nstdin closed\n"));
         fs::remove_dir_all(root).unwrap();

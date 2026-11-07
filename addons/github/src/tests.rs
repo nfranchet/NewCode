@@ -54,6 +54,7 @@ fn app() -> App {
             generation: 1,
             workspace: Some(root.clone()),
             storage: root,
+            ..Default::default()
         },
         ..Default::default()
     }

@@ -2,106 +2,16 @@
 
 use eframe::egui;
 use serde::Deserialize;
-mod authentication;
 mod compose;
 mod diagnostics;
 use compose::compose;
 use std::{
     path::{Path, PathBuf},
-    process::Command,
     sync::mpsc::{self, Receiver},
     thread,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Runtime {
-    pub(crate) host_workspace: PathBuf,
-    pub(crate) container_id: String,
-    pub(crate) workspace_folder: PathBuf,
-    pub(crate) remote_user: Option<String>,
-}
-
-impl Runtime {
-    /// Forward sensitive values by environment name, never in docker's argv.
-    pub(crate) fn command_with_env(&self, program: &str, values: &[(String, String)]) -> Command {
-        let mut command = Command::new("docker");
-        command
-            .args(["exec", "-i", "-w"])
-            .arg(&self.workspace_folder);
-        if let Some(user) = &self.remote_user {
-            command.args(["-u", user]);
-        }
-        for (key, value) in values {
-            command.arg("-e").arg(key).env(key, value);
-        }
-        command.arg(&self.container_id).arg(program);
-        command
-    }
-    pub(crate) fn command(&self, program: &str) -> Command {
-        let mut command = Command::new("docker");
-        command
-            .args(["exec", "-i", "-w"])
-            .arg(&self.workspace_folder);
-        if let Some(user) = &self.remote_user {
-            command.args(["-u", user]);
-        }
-        command.arg(&self.container_id).arg(program);
-        command
-    }
-
-    pub(crate) fn container_path(&self, host_path: &Path) -> Result<PathBuf, String> {
-        // Settings retain the user's spelling (often `.`), while the runtime
-        // stores a canonical workspace. Compare both in the same host namespace.
-        // Resolve before checking containment so symlinks and `..` cannot escape.
-        let workspace = self
-            .host_workspace
-            .canonicalize()
-            .map_err(|error| format!("Cannot resolve Dev Container workspace: {error}"))?;
-        let resolved = host_path.canonicalize().map_err(|error| {
-            format!("Cannot resolve host path {}: {error}", host_path.display())
-        })?;
-        let relative = resolved.strip_prefix(&workspace).map_err(|_| {
-            format!(
-                "{} is outside the Dev Container workspace",
-                host_path.display()
-            )
-        })?;
-        Ok(self.workspace_folder.join(relative))
-    }
-
-    pub(crate) fn host_path(&self, container_path: &Path) -> Result<PathBuf, String> {
-        let relative = container_path
-            .strip_prefix(&self.workspace_folder)
-            .map_err(|_| {
-                format!(
-                    "{} is outside the mounted workspace",
-                    container_path.display()
-                )
-            })?;
-        Ok(self.host_workspace.join(relative))
-    }
-
-    pub(crate) fn container_ip(&self) -> Result<String, String> {
-        let output = Command::new("docker")
-            .args([
-                "inspect",
-                "--format",
-                "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-                &self.container_id,
-            ])
-            .output()
-            .map_err(|error| format!("Could not inspect Dev Container: {error}"))?;
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
-        }
-        let address = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-        if address.is_empty() {
-            Err("Dev Container has no reachable Docker network address".into())
-        } else {
-            Ok(address)
-        }
-    }
-}
+pub(crate) use focus_addon_support::runtime::Runtime;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -391,7 +301,6 @@ fn start(configuration: &Configuration, rebuild: bool) -> Result<Runtime, String
         workspace_folder: configuration.workspace_folder.clone(),
         remote_user: configuration.remote_user.clone(),
     };
-    runtime.prepare_authentication()?;
     Ok(runtime)
 }
 

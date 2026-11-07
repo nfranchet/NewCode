@@ -1,5 +1,5 @@
 use super::{EditorApp, SidebarMode, text_view::EditorLayoutCache};
-use crate::{codex_ui::CodexUi, settings::Settings};
+use crate::settings::Settings;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
@@ -29,12 +29,6 @@ fn test_app() -> EditorApp {
         bottom_tab: Default::default(),
         logs: Default::default(),
         dev_container: Default::default(),
-        codex_ui: CodexUi::default(),
-        opencode_ui: crate::opencode_ui::OpenCodeUi::default(),
-        assistant_workspace: None,
-        skip_codex_start: false,
-        skip_opencode_start: false,
-        assistant_workspaces: Default::default(),
         creation: None,
         deletion: None,
         rename_target: None,
@@ -62,4 +56,4 @@ mod terminal;
 
 mod preview;
 
-mod assistants;
+mod addons;

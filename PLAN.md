@@ -14,16 +14,16 @@
 | Session persistence | Restore last workspace, open-tab order, and active file from disk; skip unavailable files; isolate a different launch workspace |
 | Source Control | Asynchronous Git status/actions, colored status groups, file/group staging, eligible hunk staging, commits, Space shortcut, editor-area diffs |
 | Shell | Bottom PTY-backed configured-shell terminal using egui_tty/Ghostty, title-row Restart, exclusive focus, system symbol fonts, selection, scrollback, mouse reporting, and alternate screens |
-| Assistant pane | Independent Codex/OpenCode enable switches, status tabs, hidden-client event processing, full editor width when both disabled, saved visibility and workspace state |
+| Addon right dock | Generic addon placement and enable switches, status tabs, hidden-process event handling, full editor width when disabled, saved selection and workspace state |
 | OpenCode | Native local HTTP/SSE client, session/history restore, provider/model/variant/agent catalogs, streaming messages/tools/reasoning, permissions/questions, interrupt, Plan-to-Build Go, reported usage |
 | Codex sessions | JSONL App Server client, automatic latest-session resume, session picker/pagination, new session, Start/Stop, Interrupt |
 | Codex controls | Catalog-based model/thinking/mode choices, Plan-first startup fallback, Ctrl+Enter send, Tab/Shift+Tab mode cycling, wrapping controls |
 | Codex output | Streaming message cards, expanded proposed plans, restored plan history, reasoning/activity details, completion markers, approval/input requests |
 | Codex usage | Available account limits with periodic/manual refresh, token/context updates, unavailable-data feedback |
 
-The application remains a single crate. `src/editor/mod.rs` owns application state and calls focused modules for layout, document lifecycle, tabs, clipboard, close confirmation, document path changes, text rendering, Explorer, creation/deletion, search, shell, sidebar routing, and persistence. `src/codex_ui/mod.rs` owns panel state and delegates to header, conversation, composer, catalog, usage, request, response, event, message, reasoning-section, and completed-plan/Go modules. `src/git_ui/mod.rs` owns Source Control state and delegates repository/status handling, asynchronous actions/replies, panel controls, aligned comparison rendering, byte-preserving patch parsing, retained reviews, file/index validation, hunk application, and presentation to focused sibling modules. Theme, settings, terminal, syntax, and App Server transport remain separate top-level modules.
+The editor, SDK, shared UI helper, and bundled addons compile as independent Cargo projects. The editor owns native docks, input routing, file/Git operations, and process supervision. Codex and OpenCode clients, UI state, authentication, and tests live entirely under `addons/codex/` and `addons/opencode/`. The shared `crates/addon-support/` library supplies reusable controls and a versioned UI surface runner without provider clients. `src/addons/` renders both declarative panels and richer surfaces; any addon can choose the left or right dock.
 
-The original monolithic editor, Codex UI, and Git UI source files have been replaced by these directories. Feature tests live under `src/editor/tests/` and in `src/codex_ui/tests.rs` with focused reasoning tests under `src/codex_ui/tests/`. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`. Public entry types remain `editor::EditorApp`, `codex_ui::CodexUi`, and `git_ui::GitUi`; internal helpers use module-scoped visibility.
+Existing assistant settings migrate through manifest-declared legacy keys into generic addon preferences. Session IDs persist inside each addon's data directory; workspace draft caches remain in the addon process. The installer selects one or several addon IDs and keeps non-secret state. All addons install beside logs in the application data root.
 
 ## Automated checks
 
@@ -32,6 +32,7 @@ Run:
 ```sh
 cargo check
 cargo test
+python3 scripts/addons.py --test
 cargo fmt --check
 ```
 
@@ -54,7 +55,7 @@ Passing these checks does not establish full manual desktop or live Codex valida
 
 These checks remain manual acceptance tasks, rather than claims that every desktop interaction has already been verified.
 
-- [ ] Launch with no workspace, a saved workspace, a directory argument, and `--no-codex`; verify expected pane and session restoration.
+- [ ] Launch with no workspace, a saved workspace, a directory argument, and `--no-addon codex`; verify expected pane and session restoration.
 - [ ] Resize all panes and verify labels, icons, focus outlines, scrollbars, and message wrapping at the minimum window size.
 - [ ] Create files/folders beside root, nested, and external open files; confirm focus, cancellation, errors, and no overwrite.
 - [ ] Confirm and cancel deletion of files and folders, including targets with unsaved edits and filesystem errors.
@@ -82,7 +83,7 @@ Terminal rendering, VT parsing, screen state, selection, and input encoding belo
 
 ## OpenCode integration validation
 
-The OpenCode transport and panel use focused sibling modules; the editor coordinates their lifecycles with Codex. Mock HTTP/SSE and UI tests cover request routing, reconnect snapshots, session generations, approvals/questions, model/agent choices, send shortcuts, Go, narrow layouts, and space reclamation. An ignored integration test checks the installed OpenCode server's health/catalogs and process cleanup without model prompts: `cargo test opencode_server::tests::installed_server_catalog_smoke -- --ignored`.
+The OpenCode transport and panel use focused sibling modules; the generic addon dock coordinates their independent processes. Mock HTTP/SSE and UI tests cover request routing, reconnect snapshots, session generations, approvals/questions, model/agent choices, send shortcuts, Go, narrow layouts, and space reclamation. An ignored integration test checks the installed OpenCode server's health/catalogs and process cleanup without model prompts: `cargo test --manifest-path addons/opencode/Cargo.toml opencode_server::tests::installed_server_catalog_smoke -- --ignored`.
 
 Manual desktop checks: enable both assistants, switch during work and pending approvals, disable each individually, disable both and check editor width, re-enable and check drafts/session restoration, then switch workspaces and relaunch to check saved preferences. Provider-level generation behavior remains dependent on configured accounts and is exercised by normal user prompts.
 
@@ -143,3 +144,9 @@ Codex and OpenCode adapt their provider-owned catalogs and actions to shared ass
 Codex wire tracing covers outgoing requests/notifications/replies and incoming JSON at runtime Debug/Trace. Credential and environment-secret redaction happens before the facade; labelled 700-character chunks avoid ordinary diagnostic truncation, and the original wire value is unchanged. The existing Codex log source, fresh launch file, and viewer retention apply. Normal Info logging excludes protocol payloads. Local loopback tests verify both sinks and Debug/Info gating.
 
 Validation passed: 129 tests (four optional integration tests skipped), debug compilation, formatting, and whitespace checks. Focused tests exercise 400-line drafts at narrow/standard/wide sizes, cursor scrolling to either end, visible controls and single Ctrl+Enter send, streaming collapse state, Markdown tables, incomplete/unknown fences, exact code copying, and redacted long protocol traffic. An isolated desktop check used local mock Codex/OpenCode backends to inspect both layouts, reasoning/Markdown, long-draft scrolling, and provider switching without model-service calls. Terminal integration is unchanged.
+
+## Addon extraction validation
+
+Check editor and addon formatting/tests independently with `cargo fmt --check`, `cargo test --locked`, and `python3 scripts/addons.py --test`. The shared push/release action runs these checks on both native Linux architectures. Release packaging discovers addon manifests and verifies all bundled executables. Python tests cover the archive allowlist, private-state preservation, and selective installation.
+
+Generic dock tests cover one/both/no addons, keyboard focus transfer, retained texture resources across workspace changes, and legacy settings migration. Provider tests retain sessions, approvals, Plan/Go, reasoning, usage, composer scrolling, and asynchronous event handling. The optional `surface-smoke` example exercises built Codex/OpenCode executables through initialization, rendered frames, a workspace change, and shutdown with backend autostart disabled.
