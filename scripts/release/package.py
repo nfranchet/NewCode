@@ -5,28 +5,16 @@ import json
 import os
 from pathlib import Path
 import plistlib
-import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
-import tomllib
-
-TARGETS = {
-    "x86_64-unknown-linux-gnu": ("linux-amd64", ".tar.gz"),
-    "aarch64-unknown-linux-gnu": ("linux-arm64", ".tar.gz"),
-    "aarch64-apple-darwin": ("macos-arm64", ".dmg"),
-}
-
-# Automatic GitHub releases publish Linux only; macOS packaging remains manual.
-RELEASE_TARGETS = ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
+from addon_release import TARGETS, RELEASE_TARGETS, safe_tag, manifests, assets as addon_files, package_addons
 
 
 def asset_name(tag, target):
     # Git tags may contain slashes; asset names must be single safe filenames.
-    tag = re.sub(r"[^A-Za-z0-9._-]", "-", tag)
-    if not tag:
-        raise ValueError("Release tag must not be empty")
+    tag = safe_tag(tag)
     platform, extension = TARGETS[target]
     return f"focus-editor-{tag}-{platform}{extension}"
 
@@ -68,17 +56,8 @@ def verify_binary(binary, target, name="focus-editor"):
     print(version)
 
 
-def addon_assets():
-    assets = []
-    for path in sorted(Path("addons").glob("*/addon.toml")):
-        manifest = tomllib.loads(path.read_text())
-        prefix = "addons/" + manifest["id"] + "/"
-        assets += [prefix + name for name in ("addon.toml", manifest["icon"], manifest["executable"], "LICENSE")]
-    return tuple(assets)
-
-
-ADDON_ASSETS = addon_assets()
-ADDON_EXECUTABLES = tuple("addons/" + m["id"] + "/" + m["executable"] for m in (tomllib.loads(p.read_text()) for p in sorted(Path("addons").glob("*/addon.toml"))))
+ADDON_ASSETS = tuple("addons/" + m["id"] + "/" + name for _, m in manifests() for name in addon_files(m))
+ADDON_EXECUTABLES = tuple("addons/" + m["id"] + "/" + m["executable"] for _, m in manifests())
 
 
 def copy_addons(binary, destination, addon_source=None):
@@ -105,8 +84,8 @@ def package_linux(binary, output, stage, addon_source=None):
             raise RuntimeError("Unexpected Linux archive contents")
         if not archive.getmember("focus-editor").mode & 0o111:
             raise RuntimeError("Packaged executable lost its execute permission")
-        for name in ADDON_ASSETS:
-            if name in ADDON_EXECUTABLES and not archive.getmember(name).mode & 0o111:
+        for name in ADDON_EXECUTABLES:
+            if not archive.getmember(name).mode & 0o111:
                 raise RuntimeError("Packaged addon lost its execute permission")
 
 
@@ -137,9 +116,8 @@ def package_macos(binary, output, stage):
             "NSHighResolutionCapable": True,
         }, stream)
     run("plutil", "-lint", str(contents / "Info.plist"))
-    for name in ADDON_ASSETS:
-        if name in ADDON_EXECUTABLES:
-            run("codesign", "--force", "--sign", "-", str(contents / "Resources" / name))
+    for name in ADDON_EXECUTABLES:
+        run("codesign", "--force", "--sign", "-", str(contents / "Resources" / name))
     run("codesign", "--force", "--sign", "-", str(app))
     run("codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app))
     os.symlink("/Applications", stage / "Applications")
@@ -170,10 +148,9 @@ def main():
     args = parser.parse_args()
     binary = Path("target", args.target, "release/focus-editor").resolve(strict=True)
     verify_binary(binary, args.target)
-    for name in ADDON_ASSETS:
-        if name in ADDON_EXECUTABLES:
-            executable = binary.parent / name
-            verify_binary(executable, args.target, executable.name)
+    for name in ADDON_EXECUTABLES:
+        executable = binary.parent / name
+        verify_binary(executable, args.target, executable.name)
     destination = Path("dist").resolve()
     destination.mkdir(exist_ok=True)
     output = destination / asset_name(args.tag, args.target)
@@ -184,6 +161,7 @@ def main():
             package_macos(binary, output, stage)
         else:
             package_linux(binary, output, stage)
+    package_addons(binary.parent, destination, args.tag, args.target)
     print(f"Verified release asset: {output.name}")
 
 

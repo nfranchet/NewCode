@@ -101,6 +101,9 @@ impl EditorApp {
                     );
                     self.addons
                         .apply_settings(&self.settings.addon_enabled, &self.settings.addon_state);
+                    if self.addons.take_manager_request() {
+                        self.sidebar_mode = SidebarMode::AddonManager;
+                    }
                     if self.sidebar_mode == SidebarMode::Addon && self.addons.active.is_none() {
                         self.sidebar_mode = SidebarMode::Explorer;
                     }
@@ -250,6 +253,18 @@ impl EditorApp {
                     {
                         self.sidebar_mode = SidebarMode::Git;
                     }
+                    if theme::nav_button(
+                        ui,
+                        Icon::Addons,
+                        self.sidebar_mode == SidebarMode::AddonManager,
+                        "Addons",
+                    )
+                    .clicked()
+                    {
+                        self.sidebar_mode = SidebarMode::AddonManager;
+                        self.addons.open_manager();
+                        self.addons.take_manager_request();
+                    }
                     if self
                         .addons
                         .activity(ui, self.sidebar_mode == SidebarMode::Addon)
@@ -266,6 +281,13 @@ impl EditorApp {
             .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(8))
             .show(root, |ui| {
                 self.document_tabs(ui, ctx);
+                if self.sidebar_mode == SidebarMode::AddonManager
+                    && self
+                        .addons
+                        .manager_central(ui, &mut self.settings.addon_enabled)
+                {
+                    return;
+                }
                 if self.sidebar_mode == SidebarMode::Addon && self.addons.central(ui) {
                     return;
                 }

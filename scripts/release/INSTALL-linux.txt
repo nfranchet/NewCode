@@ -6,10 +6,14 @@ Extract the archive and put focus-editor on your PATH, for example:
   python3 install-addons.py
   focus-editor ~/projects/my-project
 
-The addon installer requires Python 3.11 or newer. It installs addons in
-$XDG_DATA_HOME/focus-editor/addons (normally
-~/.local/share/focus-editor/addons), beside the logs directory. Use --addon codex or --addon opencode to select individual addons.
-Existing addon state is preserved. Restart the editor after installation.
+The addon installer requires Python 3.11 or newer. It installs all bundled
+addons in $XDG_DATA_HOME/focus-editor/addons/<id> (normally
+~/.local/share/focus-editor/addons/<id>), beside the logs directory.
+Add --addon github to install only GitHub. Existing addon data and OS-keyring
+credentials are preserved; data is stored separately under addon-data/<id>.
+Open Addons below Source Control and choose Rescan installed afterward.
+The same manager installs individual addons from the release catalog or a
+local addon .tar.gz, checks updates, and enables, restarts, or uninstalls addons.
 
 These binaries are built on Ubuntu 24.04 with glibc (2.39 or newer).
 They are not static binaries. An X11 or Wayland desktop, working OpenGL/EGL

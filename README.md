@@ -10,11 +10,13 @@ Publishing a GitHub release (including a prerelease) builds the tagged source an
 
 - `focus-editor-<tag>-linux-amd64.tar.gz`
 - `focus-editor-<tag>-linux-arm64.tar.gz`
+- `focus-addon-<id>-<tag>-linux-{amd64,arm64}.tar.gz` for every addon in the tagged source
+- `addons.json` (the manager catalog) and per-platform catalogs
 - `SHA256SUMS`
 
 Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer, an X11 or Wayland desktop, and working OpenGL/EGL libraries. They are dynamically linked; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
 
-Run `python3 install-addons.py` from the extracted archive to install its GitHub, Codex, and OpenCode addons (Python 3.11 or newer). Restart the editor after installation. The installer preserves non-secret addon state and installs addons beside logs.
+Open **Addons** in the activity bar to install individual addons from the release catalog. The editor archives also include addon executables: run `python3 install-addons.py` from the extracted archive to install all of them, or add `--addon github` to select one (Python 3.11 or newer). Use **Rescan installed** in the manager afterward. The installer preserves addon data and installs executables beside logs.
 
 Automatic releases currently publish Linux binaries only. macOS arm64 builds and DMGs are skipped. macOS remains available to build from source; its app packaging script remains available for manual use.
 
@@ -22,7 +24,7 @@ Finder launches retain the inherited PATH and add `~/.local/bin`, `~/.opencode/b
 
 To publish: merge the workflow and packaging scripts into the default branch, bump the Cargo package version as appropriate, create a tag containing those changes, then publish a release for that tag. Saving a draft or pushing a tag alone does not build downloads. Both Linux native builds and packaging checks must pass before any assets are uploaded. Rerun failed jobs from GitHub Actions to retry; matching assets are replaced. Release tags containing filename-unsafe characters such as `/` use `-` in download names. The bundle and executable version come from Cargo metadata; release filenames use the tag.
 
-The workflow needs no personal access token: its final upload job uses GitHub's built-in token with `contents: write`. Native Linux amd64 and arm64 builds run tests, validate architectures and runtime dependencies, and verify package contents. Both Linux archives must be present before checksums are generated and assets are uploaded. Builds are not triggered until a release is published.
+The workflow needs no personal access token: its final upload job uses GitHub's built-in token with `contents: write`. Native Linux amd64 and arm64 builds test the editor, SDK, and every addon discovered through `addons/*/addon.toml`, validate architectures and runtime dependencies, and verify package contents. Every editor/addon archive and both platform catalogs must be present and consistent before the combined catalog and checksums are generated and assets are uploaded. Builds are not triggered until a release is published. Branch pushes run the same shared checks.
 
 ## Build and run
 
@@ -58,29 +60,34 @@ cargo run --release -- ~/projects/my-app
 
 ## Addons
 
-Addons compile independently from the editor and run as separate executables. The main Rust process renders their native panels. Install a trusted addon through **Addons → Install local addon…** by choosing its manifest; the menu also enables/disables addons, restarts them, and manages credentials. Installation does not load code from the open repository.
+Addons compile independently from the editor and run as separate executables. The main Rust process renders their native panels. Open **Addons**, the activity-bar entry immediately below Source Control, or use **Addons → Manage addons…**. **Installed** lists local addons and their status; **Available** lists the official release packages. Search either list and select an addon to see its details in the center. Enable/disable, restart, credentials, and uninstall controls are in those details.
+
+Choose **Refresh / check updates** to load the catalog from `nfranchet/NewCode`. Release builds default to their own release tag; source builds default to `latest`. You can enter an explicit tag, including a prerelease. Installation requires matching editor version, addon protocol, and platform. Older releases without `addons.json` cannot supply a catalog; use a new release or a local package. Catalog requests are anonymous and do not use stored addon credentials.
+
+Installation and updates are manual. **Install local addon…** accepts a trusted `addon.toml` or standalone addon `.tar.gz`. Downloads, checksum checks, extraction, and replacement run in the background. Failed replacements restore the previous installation; an interrupted replacement is recovered on discovery. Updating restarts only the affected addon, and another editor instance using it prevents replacement. **Rescan installed** finds packages installed outside the editor. Installation does not load code from the open repository.
 
 Installed addons live beside the logs directory:
 
 ```text
 ~/.local/share/focus-editor/
 ├── logs/
-└── addons/
-    ├── github/
-    ├── codex/
-    └── opencode/
+├── addons/github/       # executables and assets
+├── addon-data/github/   # non-secret persistent state
+└── addon-receipts/      # installed source/release metadata
 ```
 
-Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. The editor loads installed addons only from this shared application data root. Build and install the bundled addons separately:
+Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. Legacy `addons/<id>/data` is moved to `addon-data/<id>` without overwriting existing data. Updates keep data and OS-keyring credentials. Uninstall keeps both by default; select **Also remove saved addon data** to remove non-secret state. Use **Credentials → Forget** before uninstalling to delete a stored token.
+
+The editor loads installed addons only from this shared application data root. Build and install GitHub from source separately:
 
 ```sh
-python3 scripts/addons.py --release --install
+python3 scripts/addons.py --release --install --addon github
 cargo run --release -- .
 ```
 
-For an isolated Linux development installation, use `--data-root "$PWD/target/dev-data/focus-editor"` and launch the editor with `XDG_DATA_HOME="$PWD/target/dev-data"`. A plain `cargo build` builds the editor and SDK, without compiling any addon executables. See the [addon SDK contract](crates/addon-sdk/README.md) to develop another addon.
+Omit `--addon` to build/install every discovered addon; repeat it to select several. Run `python3 scripts/addons.py --test` to format-check and test the SDK and addon crates. For an isolated Linux development installation, use `--data-root "$PWD/target/dev-data/focus-editor"` and launch the editor with `XDG_DATA_HOME="$PWD/target/dev-data"`. A plain `cargo build` builds the editor and SDK, without compiling addon executables. See the [addon SDK contract](crates/addon-sdk/README.md) for manifests, packaging, and development.
 
-Codex and OpenCode are optional, independently compiled addons. They occupy the existing right-hand dock. Install either one or both, and use **Addons → Enabled** to choose which run. When both are enabled, status-bearing tabs select the visible panel while both continue processing events. Disabling every right-dock addon gives the width back to the editor. A fresh installation enables Codex by default and leaves OpenCode disabled; existing preferences and remembered sessions migrate from the old settings.
+Codex and OpenCode are optional, independently compiled addons. They occupy the existing right-hand dock. Install either one or both, and use the **Enabled** control in the Addons manager to choose which run. When both are enabled, status-bearing tabs select the visible panel while both continue processing events. Disabling every right-dock addon gives the width back to the editor. A fresh installation enables Codex by default and leaves OpenCode disabled; existing preferences and remembered sessions migrate from the old settings.
 
 To install only selected addons:
 
@@ -121,7 +128,7 @@ Temporarily disable an addon for one launch:
 cargo run --release -- --no-addon codex ~/projects/my-app
 ```
 
-The first build downloads crates from crates.io. Settings are stored in the platform configuration directory, usually `~/.config/focus-editor/settings.toml`. Addon enablement is stored under `[addon_enabled]`; use the Addons menu to change it. The editor stores right-dock selection and width generically. Each assistant addon retains its own Start/Stop controls and non-secret session IDs in its `data/` directory.
+The first build downloads crates from crates.io. Settings are stored in the platform configuration directory, usually `~/.config/focus-editor/settings.toml`. Addon enablement is stored under `[addon_enabled]`; use the Addons manager to change it. The editor stores right-dock selection and width generically. Each assistant addon retains its own Start/Stop controls and non-secret session IDs under `addon-data/<id>/`.
 
 The bundled Rust Dev Container image updates the stable Rust toolchain during its build, installs matching `llvm-tools-preview`, and installs `grcov` with its published lockfile. Use **Dev Container → Rebuild** after changing the Dockerfile. The image also runs the official installers at `https://chatgpt.com/codex/install.sh` and `https://opencode.ai/install`; rebuilding selects their current default releases.
 

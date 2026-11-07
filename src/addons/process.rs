@@ -10,6 +10,7 @@ use std::{
 
 pub(super) struct Process {
     child: Option<Child>,
+    lease: Option<super::packages::Lease>,
     sender: SyncSender<Message>,
     pub receiver: Receiver<Result<Message, String>>,
     pub started: Instant,
@@ -23,6 +24,11 @@ impl Process {
         context: &Context,
         ctx: &egui::Context,
     ) -> Result<Self, String> {
+        let lease = super::packages::Lease::acquire(
+            directory.parent().ok_or("Missing addon directory")?,
+            &manifest.id,
+            true,
+        )?;
         let mut command = Command::new(directory.join(&manifest.executable));
         command
             .current_dir(directory)
@@ -106,6 +112,7 @@ impl Process {
         });
         let process = Self {
             child: Some(child),
+            lease: Some(lease),
             sender,
             receiver,
             started: Instant::now(),
@@ -151,7 +158,9 @@ impl Drop for Process {
     fn drop(&mut self) {
         let _ = self.send(Message::notification("shutdown", ()));
         if let Some(mut child) = self.child.take() {
+            let lease = self.lease.take();
             std::thread::spawn(move || {
+                let _lease = lease;
                 let start = Instant::now();
                 while start.elapsed() < Duration::from_secs(2) {
                     if child.try_wait().ok().flatten().is_some() {

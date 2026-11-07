@@ -150,3 +150,37 @@ Validation passed: 129 tests (four optional integration tests skipped), debug co
 Check editor and addon formatting/tests independently with `cargo fmt --check`, `cargo test --locked`, and `python3 scripts/addons.py --test`. The shared push/release action runs these checks on both native Linux architectures. Release packaging discovers addon manifests and verifies all bundled executables. Python tests cover the archive allowlist, private-state preservation, and selective installation.
 
 Generic dock tests cover one/both/no addons, keyboard focus transfer, retained texture resources across workspace changes, and legacy settings migration. Provider tests retain sessions, approvals, Plan/Go, reasoning, usage, composer scrolling, and asynchronous event handling. The optional `surface-smoke` example exercises built Codex/OpenCode executables through initialization, rendered frames, a workspace change, and shutdown with backend autostart disabled.
+
+### Addon manager and release catalog
+
+Added an Addons activity immediately below Source Control, with searchable
+Installed/Available lists and center-pane details. The manager provides local
+manifest/archive installation, official catalog refresh, explicit updates,
+enable/disable, restart, credentials, rescan, and uninstall. Release builds embed
+their tag; source builds default to latest with an explicit-tag override. The
+host checks editor version, protocol, target, manifest identity, archive paths,
+size, and SHA-256. Downloads and installation run in background workers.
+
+Executable folders remain under addons/<id> beside logs. Non-secret data moves
+to addon-data/<id>; legacy data is migrated without overwriting conflicts.
+Receipts are separate, process leases prevent cross-instance replacement, and
+updates journal the previous installation for rollback/recovery. Uninstall keeps
+data and keyring credentials by default, with explicit non-secret data removal.
+
+Build, test, staging, and packaging scripts discover addons/*/addon.toml rather
+than a fixed addon list. Both native Linux release runners build each addon and
+produce standalone archives and platform catalogs; the publish job validates the
+complete editor/addon matrix, aggregates addons.json, and checks all hashes
+before upload. Branch checks test the SDK and addon projects too. The existing
+release action now passes its required target input and avoids duplicate tests.
+
+Validation: 146 editor tests passed (four optional integration tests skipped),
+three SDK tests, ten GitHub addon tests, five packaging tests, formatting and
+whitespace checks, and workflow YAML/shell validation. Tests cover unsafe and
+mismatched archives, live process leases, retained/migrated data, failed update
+rollback, interrupted replacement recovery, worker failure, manager filtering
+and narrow layouts, activity-bar navigation with retained file tabs, and Python
+release-package installation through the Rust manager. An optimized Linux amd64
+editor/addon build, verified archives/catalog, and isolated actual-addon install
+and reinstall passed. Native arm64 builds and release publication run in hosted
+CI; no release was published during implementation.

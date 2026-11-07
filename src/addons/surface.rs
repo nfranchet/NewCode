@@ -21,6 +21,7 @@ mod tests {
     use super::*;
     fn addon(id: &str) -> Addon {
         Addon {
+            storage: Default::default(),
             manifest: Manifest {
                 id: id.into(),
                 name: id.into(),

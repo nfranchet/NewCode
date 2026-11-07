@@ -5,6 +5,21 @@ use egui;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
+fn duration_label(minutes: u64) -> String {
+    if minutes > 24 * 60 {
+        format!(
+            "{}d {}:{:02}",
+            minutes / 1440,
+            minutes % 1440 / 60,
+            minutes % 60
+        )
+    } else if minutes > 120 {
+        format!("{}h {:02}m", minutes / 60, minutes % 60)
+    } else {
+        format!("{minutes} min")
+    }
+}
+
 fn show_limits(ui: &mut egui::Ui, usage: &Value) {
     let snapshots: Vec<&Value> = usage
         .get("rateLimitsByLimitId")
@@ -28,7 +43,7 @@ fn show_limits(ui: &mut egui::Ui, usage: &Value) {
                 ui.small(format!(
                     "{}: {:.0}% remaining",
                     minutes
-                        .map(|m| format!("{m} min window"))
+                        .map(|m| format!("{} window", duration_label(m.max(0) as u64)))
                         .unwrap_or(key.into()),
                     (100.0 - used).max(0.0)
                 ));
@@ -38,8 +53,8 @@ fn show_limits(ui: &mut egui::Ui, usage: &Value) {
                         .unwrap_or_default()
                         .as_secs();
                     ui.small(format!(
-                        "Resets in {} min",
-                        reset.saturating_sub(now).div_ceil(60)
+                        "Resets in {}",
+                        duration_label(reset.saturating_sub(now).div_ceil(60))
                     ));
                 }
             }
@@ -122,5 +137,27 @@ impl CodexUi {
                 self.refresh_usage();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod duration_tests {
+    use super::duration_label;
+
+    #[test]
+    fn formats_minutes_hours_and_days_at_boundaries() {
+        for (minutes, expected) in [
+            (0, "0 min"),
+            (119, "119 min"),
+            (120, "120 min"),
+            (121, "2h 01m"),
+            (300, "5h 00m"),
+            (1440, "24h 00m"),
+            (1441, "1d 0:01"),
+            (1590, "1d 2:30"),
+            (10080, "7d 0:00"),
+        ] {
+            assert_eq!(duration_label(minutes), expected);
+        }
     }
 }

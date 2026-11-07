@@ -1,3 +1,5 @@
+description = "GitHub issues, pull requests, and issue branch workflows."
+publisher = "Focus Editor project"
 id = "github"
 name = "GitHub"
 version = "0.1.0"
