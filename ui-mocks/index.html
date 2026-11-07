@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en" data-theme="glacier">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Focus Editor UI Concepts</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --page: #dfe6ee;
+      --window: #f7f9fc;
+      --chrome: #edf2f7;
+      --panel: #f8fafc;
+      --panel-raised: #ffffff;
+      --editor: #ffffff;
+      --line: #dce3eb;
+      --line-strong: #c6d0dc;
+      --text: #253242;
+      --muted: #718096;
+      --faint: #9ca9b7;
+      --accent: #2876c7;
+      --accent-soft: #dcecff;
+      --accent-strong: #185da5;
+      --activity: #26384c;
+      --activity-text: #d9e3ed;
+      --selection: #e4f0fd;
+      --hover: #edf3f8;
+      --terminal: #f6f8fb;
+      --terminal-text: #334155;
+      --green: #218c67;
+      --orange: #c87822;
+      --red: #c64d5a;
+      --purple: #7867c7;
+      --radius: 5px;
+      --radius-lg: 8px;
+      --shadow: 0 24px 70px rgba(35, 53, 72, .19), 0 2px 8px rgba(35, 53, 72, .12);
+      --editor-font: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    html[data-theme="linen"] {
+      --page: #e9e4dc;
+      --window: #fbfaf7;
+      --chrome: #f2efe8;
+      --panel: #f8f6f1;
+      --panel-raised: #fffdf9;
+      --editor: #fffefa;
+      --line: #e4dfd5;
+      --line-strong: #cdc5b8;
+      --text: #34332f;
+      --muted: #7f796e;
+      --faint: #aaa397;
+      --accent: #287e75;
+      --accent-soft: #dceeea;
+      --accent-strong: #17645d;
+      --activity: #f0ede6;
+      --activity-text: #6d695f;
+      --selection: #e3f0ed;
+      --hover: #eeebe4;
+      --terminal: #f6f3ed;
+      --terminal-text: #42423d;
+      --green: #3a8460;
+      --orange: #b56d2c;
+      --red: #b85151;
+      --purple: #7765a7;
+      --radius: 2px;
+      --radius-lg: 4px;
+      --shadow: 0 28px 80px rgba(66, 55, 40, .16), 0 2px 7px rgba(66, 55, 40, .09);
+    }
+
+    html[data-theme="nord"] {
+      --page: #d9e1e7;
+      --window: #f4f7f9;
+      --chrome: #e7edf1;
+      --panel: #edf2f5;
+      --panel-raised: #f8fafb;
+      --editor: #fbfcfd;
+      --line: #d3dde3;
+      --line-strong: #b8c7d0;
+      --text: #263746;
+      --muted: #637989;
+      --faint: #91a2ae;
+      --accent: #4b76a2;
+      --accent-soft: #d9e6f0;
+      --accent-strong: #335e88;
+      --activity: #dfe7ec;
+      --activity-text: #4d6373;
+      --selection: #dce8f1;
+      --hover: #e2e9ee;
+      --terminal: #e9eff3;
+      --terminal-text: #314756;
+      --green: #39806f;
+      --orange: #b16c38;
+      --red: #b7545d;
+      --purple: #6c68a8;
+      --radius: 0;
+      --radius-lg: 0;
+      --shadow: 0 20px 55px rgba(39, 59, 73, .18);
+    }
+
+    body {
+      min-width: 1040px;
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      transition: background .2s ease;
+    }
+
+    button, input { font: inherit; }
+
+    .showcase {
+      width: min(1500px, calc(100vw - 48px));
+      margin: 24px auto 34px;
+    }
+
+    .concept-bar {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      min-height: 62px;
+      margin-bottom: 14px;
+      padding: 9px 11px 9px 18px;
+      border: 1px solid color-mix(in srgb, var(--line-strong) 75%, transparent);
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--panel-raised) 88%, transparent);
+      box-shadow: 0 8px 28px rgba(33, 50, 66, .09);
+      backdrop-filter: blur(14px);
+    }
+
+    .concept-title { min-width: 270px; }
+    .concept-title strong { display: block; font-size: 14px; letter-spacing: .02em; }
+    .concept-title span { color: var(--muted); font-size: 12px; }
+
+    .concept-options { display: flex; gap: 6px; margin-left: auto; }
+    .concept-button {
+      min-width: 120px;
+      padding: 10px 15px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      text-align: left;
+    }
+    .concept-button strong { display: block; color: inherit; font-size: 12px; }
+    .concept-button small { display: block; margin-top: 2px; font-size: 10px; opacity: .78; }
+    .concept-button:hover { background: var(--hover); color: var(--text); }
+    .concept-button.active {
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+    }
+
+    .app-window {
+      height: min(870px, calc(100vh - 126px));
+      min-height: 660px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--window);
+      box-shadow: var(--shadow);
+      transition: background .2s, border-color .2s;
+    }
+
+    .titlebar {
+      display: grid;
+      grid-template-columns: 310px 1fr 310px;
+      align-items: center;
+      height: 42px;
+      border-bottom: 1px solid var(--line);
+      background: var(--chrome);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .traffic { display: flex; gap: 7px; padding-left: 14px; }
+    .traffic i { width: 11px; height: 11px; border-radius: 50%; background: var(--line-strong); }
+    .window-name { text-align: center; color: var(--text); font-weight: 600; }
+    .window-actions { display: flex; justify-content: flex-end; gap: 8px; padding-right: 10px; }
+    .toolbar-pill { padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-raised); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 48px 225px minmax(440px, 1fr) 302px;
+      height: calc(100% - 66px);
+    }
+
+    .activity-bar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border-right: 1px solid var(--line);
+      background: var(--activity);
+      color: var(--activity-text);
+    }
+    .activity-button {
+      position: relative;
+      display: grid;
+      place-items: center;
+      width: 48px;
+      height: 48px;
+      color: inherit;
+      opacity: .7;
+    }
+    .activity-button.active { opacity: 1; background: color-mix(in srgb, var(--accent) 13%, transparent); }
+    .activity-button.active::before { content: ""; position: absolute; inset: 7px auto 7px 0; width: 2px; background: var(--accent); }
+    .activity-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+    .activity-spacer { flex: 1; }
+    html[data-theme="glacier"] .activity-button.active { color: white; }
+    html[data-theme="glacier"] .activity-button.active::before { background: #66b7ff; }
+
+    .sidebar, .assistant { min-width: 0; background: var(--panel); }
+    .sidebar { border-right: 1px solid var(--line); }
+    .panel-heading {
+      display: flex;
+      align-items: center;
+      height: 38px;
+      padding: 0 11px 0 13px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .panel-heading .more { margin-left: auto; font-size: 17px; letter-spacing: 0; }
+    .project-row { display: flex; align-items: center; gap: 6px; height: 29px; padding: 0 9px; border-block: 1px solid var(--line); font-size: 11px; font-weight: 700; }
+    .chevron { color: var(--muted); font-size: 9px; }
+    .tree { padding: 5px 0; font-size: 12px; }
+    .tree-row { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; white-space: nowrap; }
+    .tree-row:hover { background: var(--hover); }
+    .tree-row.selected { background: var(--selection); color: var(--accent-strong); }
+    .depth-1 { padding-left: 19px; }
+    .depth-2 { padding-left: 35px; }
+    .depth-3 { padding-left: 51px; }
+    .file-icon { width: 14px; color: var(--accent); font-family: var(--editor-font); font-size: 10px; font-weight: 800; }
+    .file-icon.rs { color: var(--orange); }
+    .file-icon.toml { color: var(--purple); }
+    .file-icon.md { color: var(--accent); }
+    .git-mark { margin-left: auto; color: var(--orange); font-size: 10px; }
+
+    .main-column { display: grid; grid-template-rows: minmax(340px, 1fr) 210px; min-width: 0; background: var(--editor); }
+    .editor-section { display: grid; grid-template-rows: 37px 28px 1fr; min-height: 0; }
+    .tabs { display: flex; min-width: 0; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .tab { display: flex; align-items: center; gap: 7px; min-width: 130px; padding: 0 12px; border-right: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .tab.active { background: var(--editor); color: var(--text); box-shadow: inset 0 2px var(--accent); }
+    .tab .close { margin-left: auto; opacity: .55; }
+    .breadcrumbs { display: flex; align-items: center; gap: 7px; padding: 0 14px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+
+    .code-wrap { overflow: hidden; padding: 15px 0 24px; font: 12px/1.72 var(--editor-font); }
+    .code-line { display: grid; grid-template-columns: 42px 1fr; min-height: 21px; white-space: pre; }
+    .code-line.active { background: color-mix(in srgb, var(--selection) 55%, transparent); }
+    .line-no { padding-right: 12px; color: var(--faint); text-align: right; user-select: none; }
+    .code { padding-left: 8px; }
+    .kw { color: #7959a8; font-weight: 600; }
+    .fn { color: var(--accent-strong); }
+    .type { color: #a26025; }
+    .string { color: #387e5b; }
+    .comment { color: var(--faint); font-style: italic; }
+    .field { color: #9b5266; }
+
+    .bottom-panel { display: grid; grid-template-rows: 34px 1fr; min-height: 0; border-top: 1px solid var(--line-strong); background: var(--terminal); }
+    .bottom-tabs { display: flex; align-items: center; gap: 19px; padding: 0 13px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 650; text-transform: uppercase; }
+    .bottom-tab { display: flex; align-items: center; align-self: stretch; border-bottom: 2px solid transparent; }
+    .bottom-tab.active { border-color: var(--accent); color: var(--text); }
+    .bottom-actions { display: flex; gap: 12px; margin-left: auto; color: var(--muted); font-size: 15px; }
+    .terminal-body { overflow: hidden; padding: 13px 16px; color: var(--terminal-text); font: 11px/1.65 var(--editor-font); }
+    .prompt { color: var(--green); font-weight: 700; }
+    .path { color: var(--accent-strong); }
+    .terminal-muted { color: var(--muted); }
+    .cursor { display: inline-block; width: 7px; height: 14px; margin-left: 3px; background: var(--accent); vertical-align: -2px; }
+
+    .assistant { display: grid; grid-template-rows: 38px 53px 1fr 128px; min-width: 0; border-left: 1px solid var(--line-strong); }
+    .assistant-title { display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 700; }
+    .assistant-title .spark { color: var(--accent); font-size: 16px; }
+    .live-dot { width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 13%, transparent); }
+    .assistant-controls { display: grid; grid-template-columns: 1fr auto; gap: 7px; align-content: center; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+    .select { overflow: hidden; padding: 6px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-raised); color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .new-chat { padding: 4px 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-raised); color: var(--accent-strong); }
+    .conversation { overflow: hidden; padding: 12px 10px; }
+    .message { margin-bottom: 11px; padding: 10px 11px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel-raised); font-size: 11px; line-height: 1.52; }
+    .message.user { margin-left: 28px; border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); background: var(--accent-soft); }
+    .message-label { margin-bottom: 5px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .message p { margin: 0 0 7px; }
+    .message p:last-child { margin: 0; }
+    .plan-row { display: flex; gap: 7px; margin-top: 7px; color: var(--muted); }
+    .plan-row.complete { color: var(--green); }
+    .thinking { display: flex; align-items: center; gap: 7px; margin: 4px 4px 12px; color: var(--muted); font-size: 10px; }
+    .thinking::before { content: ""; width: 12px; height: 1px; background: var(--accent); box-shadow: 4px 3px 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+    .composer { padding: 9px 10px; border-top: 1px solid var(--line-strong); background: var(--chrome); }
+    .compose-box { height: 72px; padding: 9px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--panel-raised); color: var(--faint); font-size: 11px; }
+    .compose-footer { display: flex; align-items: center; margin-top: 7px; color: var(--muted); font-size: 9px; }
+    .send { margin-left: auto; padding: 5px 11px; border-radius: var(--radius); background: var(--accent); color: white; font-weight: 700; }
+
+    .statusbar { display: flex; align-items: center; gap: 15px; height: 24px; padding: 0 10px; background: var(--accent); color: white; font-size: 9px; }
+    .status-spacer { flex: 1; }
+
+    html[data-theme="linen"] .titlebar { box-shadow: inset 0 2px var(--accent); }
+    html[data-theme="linen"] .tab.active { box-shadow: inset 0 -2px var(--accent); }
+    html[data-theme="linen"] .statusbar { background: #316e68; }
+    html[data-theme="nord"] .workspace { grid-template-columns: 44px 232px minmax(440px, 1fr) 310px; }
+    html[data-theme="nord"] .activity-button { width: 44px; height: 44px; }
+    html[data-theme="nord"] .tab.active { box-shadow: inset 0 2px var(--accent), inset 0 -1px var(--editor); }
+    html[data-theme="nord"] .panel-heading { background: color-mix(in srgb, var(--chrome) 72%, transparent); }
+    html[data-theme="nord"] .message { border-left: 3px solid var(--line-strong); }
+    html[data-theme="nord"] .message.user { border-left-color: var(--accent); }
+
+    @media (max-height: 790px) {
+      .showcase { margin-top: 12px; }
+      .concept-bar { min-height: 54px; margin-bottom: 8px; }
+      .app-window { height: calc(100vh - 86px); min-height: 610px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="showcase">
+    <header class="concept-bar">
+      <div class="concept-title">
+        <strong id="concept-name">Glacier</strong>
+        <span id="concept-description">Crisp, familiar, and quietly polished.</span>
+      </div>
+      <nav class="concept-options" aria-label="UI concepts">
+        <button class="concept-button active" data-theme="glacier" type="button">
+          <strong>Glacier</strong><small>Clear + familiar</small>
+        </button>
+        <button class="concept-button" data-theme="linen" type="button">
+          <strong>Linen</strong><small>Warm + editorial</small>
+        </button>
+        <button class="concept-button" data-theme="nord" type="button">
+          <strong>Nord Light</strong><small>Dense + technical</small>
+        </button>
+      </nav>
+    </header>
+
+    <section class="app-window" aria-label="Focus Editor mock interface">
+      <header class="titlebar">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <div class="window-name">Focus Editor · focus-editor</div>
+        <div class="window-actions"><span class="toolbar-pill">Dev Container</span><span class="toolbar-pill">main</span></div>
+      </header>
+
+      <div class="workspace">
+        <aside class="activity-bar" aria-label="Activity bar">
+          <div class="activity-button active" title="Explorer"><svg viewBox="0 0 24 24"><path d="M4 4h6l2 3h8v13H4z"/><path d="M4 9h16"/></svg></div>
+          <div class="activity-button" title="Search"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg></div>
+          <div class="activity-button" title="Source Control"><svg viewBox="0 0 24 24"><circle cx="7" cy="5" r="2"/><circle cx="17" cy="7" r="2"/><circle cx="7" cy="19" r="2"/><path d="M7 7v10M9 15c6 0 8-2 8-6"/></svg></div>
+          <div class="activity-button" title="Addons"><svg viewBox="0 0 24 24"><path d="M8 3v4M16 3v4M5 7h14v5a7 7 0 0 1-14 0zM12 19v3"/></svg></div>
+          <div class="activity-spacer"></div>
+          <div class="activity-button" title="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A8 8 0 0 0 15 6l-.3-2.6h-4L10.4 6A8 8 0 0 0 8 7.1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1A8 8 0 0 0 10.4 18l.3 2.6h4L15 18a8 8 0 0 0 1.5-1.1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .1-1z"/></svg></div>
+        </aside>
+
+        <aside class="sidebar">
+          <div class="panel-heading">Explorer <span class="more">···</span></div>
+          <div class="project-row"><span class="chevron">▼</span> FOCUS-EDITOR</div>
+          <div class="tree">
+            <div class="tree-row depth-1"><span class="chevron">▼</span><span>src</span></div>
+            <div class="tree-row depth-2"><span class="chevron">▼</span><span>editor</span></div>
+            <div class="tree-row depth-3"><span class="file-icon rs">R</span><span>actions.rs</span></div>
+            <div class="tree-row depth-3 selected"><span class="file-icon rs">R</span><span>app.rs</span><span class="git-mark">M</span></div>
+            <div class="tree-row depth-3"><span class="file-icon rs">R</span><span>render.rs</span></div>
+            <div class="tree-row depth-3"><span class="file-icon rs">R</span><span>tabs.rs</span></div>
+            <div class="tree-row depth-2"><span class="chevron">▶</span><span>git_ui</span></div>
+            <div class="tree-row depth-2"><span class="file-icon rs">R</span><span>main.rs</span></div>
+            <div class="tree-row depth-2"><span class="file-icon rs">R</span><span>ui_theme.rs</span><span class="git-mark">M</span></div>
+            <div class="tree-row depth-1"><span class="chevron">▶</span><span>addons</span></div>
+            <div class="tree-row depth-1"><span class="chevron">▶</span><span>crates</span></div>
+            <div class="tree-row depth-1"><span class="file-icon toml">T</span><span>Cargo.toml</span></div>
+            <div class="tree-row depth-1"><span class="file-icon md">M</span><span>README.md</span></div>
+          </div>
+        </aside>
+
+        <section class="main-column">
+          <div class="editor-section">
+            <div class="tabs">
+              <div class="tab active"><span class="file-icon rs">R</span>app.rs <span class="close">×</span></div>
+              <div class="tab"><span class="file-icon rs">R</span>ui_theme.rs <span class="close">×</span></div>
+            </div>
+            <div class="breadcrumbs"><span>src</span><span>›</span><span>editor</span><span>›</span><strong>app.rs</strong><span>›</span><span>impl EditorApp</span></div>
+            <div class="code-wrap" aria-label="Code editor">
+              <div class="code-line"><span class="line-no">38</span><span class="code"><span class="kw">impl</span> <span class="type">EditorApp</span> {</span></div>
+              <div class="code-line"><span class="line-no">39</span><span class="code">    <span class="kw">pub fn</span> <span class="fn">new</span>(workspace: <span class="type">PathBuf</span>) -&gt; <span class="kw">Self</span> {</span></div>
+              <div class="code-line"><span class="line-no">40</span><span class="code">        <span class="kw">let</span> settings = <span class="type">Settings</span>::<span class="fn">load</span>();</span></div>
+              <div class="code-line"><span class="line-no">41</span><span class="code">        <span class="kw">let</span> theme = <span class="type">Theme</span>::<span class="fn">light</span>();</span></div>
+              <div class="code-line"><span class="line-no">42</span><span class="code"></span></div>
+              <div class="code-line active"><span class="line-no">43</span><span class="code">        <span class="kw">Self</span> {</span></div>
+              <div class="code-line"><span class="line-no">44</span><span class="code">            <span class="field">workspace</span>,</span></div>
+              <div class="code-line"><span class="line-no">45</span><span class="code">            <span class="field">theme</span>,</span></div>
+              <div class="code-line"><span class="line-no">46</span><span class="code">            <span class="field">sidebar_width</span>: settings.sidebar_width,</span></div>
+              <div class="code-line"><span class="line-no">47</span><span class="code">            <span class="field">bottom_panel_height</span>: settings.panel_height,</span></div>
+              <div class="code-line"><span class="line-no">48</span><span class="code">            <span class="field">right_dock</span>: <span class="type">RightDock</span>::<span class="fn">default</span>(),</span></div>
+              <div class="code-line"><span class="line-no">49</span><span class="code">            ..<span class="type">Default</span>::<span class="fn">default</span>()</span></div>
+              <div class="code-line"><span class="line-no">50</span><span class="code">        }</span></div>
+              <div class="code-line"><span class="line-no">51</span><span class="code">    }</span></div>
+              <div class="code-line"><span class="line-no">52</span><span class="code"></span></div>
+              <div class="code-line"><span class="line-no">53</span><span class="code">    <span class="comment">// Keep work surfaces stable while switching activities.</span></span></div>
+              <div class="code-line"><span class="line-no">54</span><span class="code">    <span class="kw">pub fn</span> <span class="fn">show_workspace</span>(&amp;<span class="kw">mut self</span>, ui: &amp;<span class="kw">mut</span> <span class="type">Ui</span>) {</span></div>
+            </div>
+          </div>
+
+          <section class="bottom-panel">
+            <div class="bottom-tabs"><span class="bottom-tab active">Terminal</span><span class="bottom-tab">Logs</span><span class="bottom-actions">＋ ↻ ⌃</span></div>
+            <div class="terminal-body">
+              <div><span class="prompt">➜</span> <span class="path">focus-editor</span> cargo check</div>
+              <div class="terminal-muted">&nbsp;&nbsp;&nbsp;Checking focus-editor v0.1.0 (/workspace/focus-editor)</div>
+              <div class="terminal-muted">&nbsp;&nbsp;&nbsp;Finished `dev` profile [unoptimized + debuginfo] in 1.82s</div>
+              <div><span class="prompt">➜</span> <span class="path">focus-editor</span> <span class="cursor"></span></div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="assistant">
+          <div class="assistant-title"><span class="spark">✦</span> Codex <span class="live-dot"></span></div>
+          <div class="assistant-controls"><div class="select">UI refresh · GPT-5.6</div><button class="new-chat" type="button">＋</button><div class="select">High reasoning</div></div>
+          <div class="conversation">
+            <div class="message user"><div class="message-label">You</div>Refine the editor chrome without moving any of the existing panels.</div>
+            <div class="thinking">Reviewed theme and layout modules</div>
+            <div class="message">
+              <div class="message-label">Codex</div>
+              <p>I’ll keep the workspace geometry intact and focus on hierarchy, density, and visual consistency.</p>
+              <div class="plan-row complete">✓ Audit shared color tokens</div>
+              <div class="plan-row complete">✓ Normalize panel borders</div>
+              <div class="plan-row">○ Refine active and hover states</div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="compose-box">Ask a follow-up or describe a change…</div>
+            <div class="compose-footer"><span>Plan ▾</span><span class="send">Send</span></div>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="statusbar"><span>⑂ main*</span><span>↻</span><span class="status-spacer"></span><span>Ln 43, Col 13</span><span>Spaces: 4</span><span>UTF-8</span><span>Rust</span><span>✓ Ready</span></footer>
+    </section>
+  </main>
+
+  <script>
+    const concepts = {
+      glacier: ["Glacier", "Crisp, familiar, and quietly polished."],
+      linen: ["Linen", "Warm, calm, and editorial without losing density."],
+      nord: ["Nord Light", "Technical, compact, and strongly structured."]
+    };
+
+    const name = document.querySelector("#concept-name");
+    const description = document.querySelector("#concept-description");
+    const buttons = document.querySelectorAll(".concept-button");
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const theme = button.dataset.theme;
+        document.documentElement.dataset.theme = theme;
+        name.textContent = concepts[theme][0];
+        description.textContent = concepts[theme][1];
+        buttons.forEach((candidate) => candidate.classList.toggle("active", candidate === button));
+      });
+    });
+  </script>
+</body>
+</html>
