@@ -13,6 +13,9 @@ pub struct Input {
     pub sequence: u64,
     pub input: RawInput,
     pub pixels_per_point: f32,
+    /// Resolved host appearance; absent for older hosts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<crate::ui_theme::Theme>,
 }
 #[derive(Serialize, Deserialize)]
 pub struct Texture {
@@ -75,6 +78,9 @@ pub fn render(
     state: String,
     show: impl FnMut(&mut egui::Ui),
 ) -> Frame {
+    if let Some(theme) = &input.theme {
+        crate::ui_theme::apply_theme(ctx, theme);
+    }
     ctx.set_pixels_per_point(input.pixels_per_point.clamp(0.5, 4.0));
     let mut output = ctx.run_ui(input.input, show);
     let meshes = ctx
@@ -104,6 +110,86 @@ pub fn render(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn host_theme_round_trips_and_is_applied_without_resetting_surface_state() {
+        use crate::ui_theme::{self, Theme};
+        let ctx = egui::Context::default();
+        ui_theme::apply(&ctx);
+        let mut theme = Theme::from_style((*ctx.global_style()).clone());
+        theme.colors.accent = egui::Color32::from_rgb(17, 93, 147);
+        theme.colors.raised = egui::Color32::from_rgb(241, 232, 219);
+        theme.style.visuals.window_corner_radius = egui::CornerRadius::same(2);
+        theme.style.spacing.interact_size.y = 25.0;
+        let id = egui::Id::new("persistent_draft");
+        let mut draft = "keep this draft".to_owned();
+        for sequence in [1, 2] {
+            if sequence == 2 {
+                theme.colors.accent = egui::Color32::from_rgb(141, 51, 97);
+                theme.style.spacing.interact_size.y = 29.0;
+            }
+            let input = Input {
+                generation: 1,
+                sequence,
+                pixels_per_point: 1.0,
+                theme: Some(theme.clone()),
+                input: egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(400.0, 300.0),
+                    )),
+                    ..Default::default()
+                },
+            };
+            let encoded = serde_json::to_value(&input).unwrap();
+            let decoded: Input = serde_json::from_value(encoded).unwrap();
+            assert_eq!(
+                serde_json::to_value(decoded.theme.as_ref().unwrap()).unwrap(),
+                serde_json::to_value(&theme).unwrap()
+            );
+            let frame = render(&ctx, decoded, "Ready".into(), |ui| {
+                assert_eq!(ui_theme::colors(ui).raised, theme.colors.raised);
+                assert_eq!(
+                    ui.spacing().interact_size.y,
+                    theme.style.spacing.interact_size.y
+                );
+                assert_eq!(
+                    ui.visuals().window_corner_radius,
+                    egui::CornerRadius::same(2)
+                );
+                ui.add(egui::TextEdit::singleline(&mut draft).id(id));
+                ui_theme::button(
+                    ui,
+                    ui_theme::Icon::Send,
+                    "Send",
+                    ui_theme::colors(ui).accent,
+                    true,
+                );
+            });
+            assert!(
+                frame
+                    .meshes
+                    .iter()
+                    .any(|(_, mesh)| mesh.vertices.iter().any(|v| v.color == theme.colors.accent))
+            );
+            assert_eq!(draft, "keep this draft");
+            if sequence == 1 {
+                ctx.memory_mut(|memory| memory.request_focus(id));
+            } else {
+                assert!(ctx.memory(|memory| memory.has_focus(id)));
+            }
+        }
+    }
+
+    #[test]
+    fn older_surface_input_without_theme_remains_supported() {
+        let encoded = serde_json::json!({
+            "generation": 1, "sequence": 1, "pixels_per_point": 1.0,
+            "input": egui::RawInput::default(),
+        });
+        let input: Input = serde_json::from_value(encoded).unwrap();
+        assert!(input.theme.is_none());
+    }
+
     #[test]
     fn textures_preserve_premultiplied_pixels() {
         let image = egui::ColorImage::new(

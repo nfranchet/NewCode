@@ -1,72 +1,157 @@
 use egui::{self, Color32, FontId, Rect, Response, Sense, Stroke, Ui, Vec2};
 use std::path::Path;
 
-pub const INK: Color32 = Color32::from_rgb(36, 51, 73);
-pub const MUTED: Color32 = Color32::from_rgb(99, 116, 139);
-pub const BLUE: Color32 = Color32::from_rgb(37, 94, 203);
-pub const BLUE_SOFT: Color32 = Color32::from_rgb(232, 240, 255);
-pub const TEAL: Color32 = Color32::from_rgb(12, 117, 112);
-pub const TEAL_SOFT: Color32 = Color32::from_rgb(229, 246, 243);
-pub const GREEN: Color32 = Color32::from_rgb(31, 119, 70);
-pub const AMBER: Color32 = Color32::from_rgb(146, 88, 8);
-pub const RED: Color32 = Color32::from_rgb(180, 49, 64);
-pub const BORDER: Color32 = Color32::from_rgb(213, 224, 237);
-pub const SURFACE: Color32 = Color32::from_rgb(245, 248, 253);
-pub const NAVY: Color32 = Color32::from_rgb(27, 45, 71);
+/// Host-owned appearance, also used by independently rendered addon surfaces.
+/// Concrete presets belong to the editor; addons only consume semantic roles.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Theme {
+    pub style: egui::Style,
+    pub colors: Colors,
+    pub metrics: Metrics,
+}
 
-pub fn apply(ctx: &egui::Context) {
-    let mut style = (*ctx.style_of(egui::Theme::Light)).clone();
-    style.visuals = egui::Visuals::light();
-    style.visuals.override_text_color = Some(INK);
-    style.visuals.panel_fill = SURFACE;
-    style.visuals.window_fill = Color32::WHITE;
-    style.visuals.extreme_bg_color = Color32::WHITE;
-    style.visuals.faint_bg_color = BLUE_SOFT;
-    style.visuals.code_bg_color = SURFACE;
-    style.visuals.window_corner_radius = egui::CornerRadius::same(8);
-    style.visuals.window_stroke = Stroke::new(1.0_f32, BORDER);
-    style.visuals.selection.bg_fill = Color32::from_rgb(210, 228, 255);
-    style.visuals.selection.stroke = Stroke::new(1.5_f32, BLUE);
-    style.visuals.hyperlink_color = BLUE;
-    style.visuals.warn_fg_color = AMBER;
-    style.visuals.error_fg_color = RED;
-    style.visuals.text_cursor.stroke = Stroke::new(3.0_f32, INK);
-    style.visuals.text_cursor.blink = false;
-    for visuals in [
-        &mut style.visuals.widgets.inactive,
-        &mut style.visuals.widgets.noninteractive,
-    ] {
-        visuals.bg_fill = Color32::WHITE;
-        visuals.weak_bg_fill = Color32::TRANSPARENT;
-        visuals.bg_stroke = Stroke::new(1.0_f32, BORDER);
-        visuals.fg_stroke = Stroke::new(1.0_f32, INK);
-        visuals.corner_radius = egui::CornerRadius::same(5);
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Colors {
+    pub text: Color32,
+    pub muted: Color32,
+    pub faint: Color32,
+    pub accent: Color32,
+    pub accent_soft: Color32,
+    pub accent_strong: Color32,
+    pub on_accent: Color32,
+    pub window: Color32,
+    pub chrome: Color32,
+    pub panel: Color32,
+    pub raised: Color32,
+    pub editor: Color32,
+    pub border: Color32,
+    pub border_strong: Color32,
+    pub activity: Color32,
+    pub activity_text: Color32,
+    pub selection: Color32,
+    pub hover: Color32,
+    pub terminal: Color32,
+    pub terminal_text: Color32,
+    pub success: Color32,
+    pub warning: Color32,
+    pub error: Color32,
+    pub purple: Color32,
+    pub success_soft: Color32,
+    pub warning_soft: Color32,
+    pub error_soft: Color32,
+    pub keyword: Color32,
+    pub string: Color32,
+    pub type_name: Color32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Metrics {
+    pub activity_width: f32,
+    pub tab_height: f32,
+    pub toolbar_height: f32,
+    pub status_height: f32,
+    pub message_border_width: f32,
+}
+
+impl Theme {
+    /// A standalone fallback derived from egui, without depending on an editor preset.
+    pub fn from_style(style: egui::Style) -> Self {
+        let v = &style.visuals;
+        let text = v.text_color();
+        let muted = v.weak_text_color();
+        let accent = v.selection.stroke.color;
+        let panel = v.panel_fill;
+        let colors = Colors {
+            text,
+            muted,
+            faint: muted,
+            accent,
+            accent_soft: v.selection.bg_fill,
+            accent_strong: accent,
+            on_accent: v.extreme_bg_color,
+            window: v.window_fill,
+            chrome: v.faint_bg_color,
+            panel,
+            raised: v.window_fill,
+            editor: v.extreme_bg_color,
+            border: v.widgets.noninteractive.bg_stroke.color,
+            border_strong: v.window_stroke.color,
+            activity: panel,
+            activity_text: muted,
+            selection: v.selection.bg_fill,
+            hover: v.widgets.hovered.bg_fill,
+            terminal: panel,
+            terminal_text: text,
+            success: v.hyperlink_color,
+            warning: v.warn_fg_color,
+            error: v.error_fg_color,
+            purple: accent,
+            success_soft: v.faint_bg_color,
+            warning_soft: v.faint_bg_color,
+            error_soft: v.faint_bg_color,
+            keyword: accent,
+            string: text,
+            type_name: accent,
+        };
+        Self {
+            style,
+            colors,
+            metrics: Metrics {
+                activity_width: 44.0,
+                tab_height: 37.0,
+                toolbar_height: 42.0,
+                status_height: 24.0,
+                message_border_width: 3.0,
+            },
+        }
     }
-    style.visuals.widgets.hovered.bg_fill = BLUE_SOFT;
-    style.visuals.widgets.hovered.weak_bg_fill = BLUE_SOFT;
-    style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, BLUE);
-    style.visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, BLUE);
-    style.visuals.widgets.active.bg_fill = Color32::from_rgb(210, 228, 255);
-    style.visuals.widgets.active.weak_bg_fill = BLUE_SOFT;
-    style.visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, BLUE);
-    style.visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, BLUE);
-    style.spacing.item_spacing = egui::vec2(6.0, 6.0);
-    style.spacing.button_padding = egui::vec2(8.0, 5.0);
-    style.spacing.interact_size = egui::vec2(24.0, 28.0);
-    style
-        .text_styles
-        .insert(egui::TextStyle::Body, FontId::proportional(14.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Button, FontId::proportional(13.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Heading, FontId::proportional(18.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Monospace, FontId::monospace(14.0));
-    ctx.set_theme(egui::Theme::Light);
-    ctx.set_style_of(egui::Theme::Light, style);
+}
+
+fn theme_id() -> egui::Id {
+    egui::Id::new("focus_host_theme")
+}
+
+pub fn current(ctx: &egui::Context) -> Theme {
+    ctx.data(|data| data.get_temp::<Theme>(theme_id()))
+        .unwrap_or_else(|| Theme::from_style((*ctx.global_style()).clone()))
+}
+pub fn colors(ui: &Ui) -> Colors {
+    palette(ui.ctx())
+}
+pub fn palette(ctx: &egui::Context) -> Colors {
+    ctx.data(|data| data.get_temp::<Colors>(theme_id().with("colors")))
+        .unwrap_or_else(|| Theme::from_style((*ctx.global_style()).clone()).colors)
+}
+pub fn metrics(ui: &Ui) -> Metrics {
+    ui.ctx()
+        .data(|data| data.get_temp::<Metrics>(theme_id().with("metrics")))
+        .unwrap_or_else(|| current(ui.ctx()).metrics)
+}
+
+/// Applying appearance never resets widget memory, focus, or provider state.
+pub fn apply_theme(ctx: &egui::Context, theme: &Theme) {
+    let mode = if theme.style.visuals.dark_mode {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    };
+    ctx.set_theme(mode);
+    if *ctx.style_of(mode) != theme.style {
+        ctx.set_style_of(mode, theme.style.clone());
+    }
+    ctx.data_mut(|data| {
+        data.insert_temp(theme_id(), theme.clone());
+        data.insert_temp(theme_id().with("colors"), theme.colors);
+        data.insert_temp(theme_id().with("metrics"), theme.metrics);
+    });
+}
+
+/// Initialize a standalone surface. A host theme supersedes this on surface input.
+pub fn apply(ctx: &egui::Context) {
+    apply_theme(
+        ctx,
+        &Theme::from_style((*ctx.style_of(egui::Theme::Light)).clone()),
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -225,49 +310,58 @@ pub fn icon(ui: &mut Ui, icon: Icon, color: Color32) {
 pub fn button(ui: &mut Ui, icon: Icon, label: &str, accent: Color32, primary: bool) -> Response {
     let galley = ui.painter().layout_no_wrap(
         label.into(),
-        FontId::proportional(13.0),
+        egui::TextStyle::Button.resolve(ui.style()),
         Color32::PLACEHOLDER,
     );
+    let height = ui.spacing().interact_size.y;
+    let radius = ui.visuals().widgets.inactive.corner_radius;
     let width = if label.is_empty() {
-        28.0
+        height
     } else {
-        galley.size().x + 40.0
+        galley.size().x + 34.0
     };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, height), Sense::click());
     let enabled = ui.is_enabled();
     let fill = if primary {
         accent
     } else if response.hovered() || response.has_focus() {
-        BLUE_SOFT
+        colors(ui).hover
     } else {
-        Color32::WHITE
+        colors(ui).raised
     };
     let foreground = if !enabled {
-        MUTED
+        colors(ui).muted
     } else if primary {
-        Color32::WHITE
+        colors(ui).on_accent
     } else {
         accent
     };
     ui.painter()
-        .rect_filled(rect, 5.0, if enabled { fill } else { SURFACE });
+        .rect_filled(rect, radius, if enabled { fill } else { colors(ui).panel });
     ui.painter().rect_stroke(
         rect,
-        5.0,
+        radius,
         Stroke::new(
             if response.has_focus() { 2.0_f32 } else { 1.0 },
-            if response.has_focus() { BLUE } else { BORDER },
+            if response.has_focus() {
+                colors(ui).accent
+            } else {
+                colors(ui).border
+            },
         ),
         egui::StrokeKind::Inside,
     );
     paint_icon(
         ui,
-        Rect::from_min_size(rect.min + egui::vec2(5.0, 6.0), Vec2::splat(16.0)),
+        Rect::from_min_size(
+            egui::pos2(rect.left() + 4.0, rect.center().y - 8.0),
+            Vec2::splat(16.0),
+        ),
         icon,
         foreground,
     );
     ui.painter().galley(
-        rect.min + egui::vec2(29.0, (rect.height() - galley.size().y) / 2.0),
+        rect.min + egui::vec2(25.0, (rect.height() - galley.size().y) / 2.0),
         galley,
         foreground,
     );
@@ -290,42 +384,36 @@ pub fn button(ui: &mut Ui, icon: Icon, label: &str, accent: Color32, primary: bo
 }
 
 pub fn nav_button(ui: &mut Ui, icon: Icon, selected: bool, label: &str) -> Response {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(38.0, 42.0), Sense::click());
+    let width = metrics(ui).activity_width;
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(width), Sense::click());
+    let c = colors(ui);
     if selected || response.hovered() || response.has_focus() {
-        ui.painter().rect_filled(
-            rect.shrink(2.0),
-            6.0,
-            if selected {
-                BLUE
-            } else {
-                Color32::from_rgb(46, 66, 93)
-            },
-        );
+        ui.painter()
+            .rect_filled(rect, 0.0, if selected { c.accent_soft } else { c.hover });
     }
     if response.has_focus() {
         ui.painter().rect_stroke(
             rect.shrink(1.0),
-            6.0,
-            Stroke::new(2.0_f32, Color32::from_rgb(117, 202, 250)),
+            0.0,
+            Stroke::new(1.0, c.accent),
             egui::StrokeKind::Inside,
         );
     }
     if selected {
         ui.painter().rect_filled(
-            Rect::from_min_size(rect.min + egui::vec2(0.0, 12.0), egui::vec2(3.0, 18.0)),
-            2.0,
-            Color32::from_rgb(117, 202, 250),
+            Rect::from_min_max(
+                rect.min + egui::vec2(0.0, 7.0),
+                egui::pos2(rect.left() + 2.0, rect.bottom() - 7.0),
+            ),
+            0.0,
+            c.accent,
         );
     }
     paint_icon(
         ui,
-        Rect::from_center_size(rect.center(), Vec2::splat(21.0)),
+        Rect::from_center_size(rect.center(), Vec2::splat(20.0)),
         icon,
-        if selected {
-            Color32::WHITE
-        } else {
-            Color32::from_rgb(187, 205, 228)
-        },
+        c.activity_text,
     );
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
@@ -336,14 +424,14 @@ pub fn nav_button(ui: &mut Ui, icon: Icon, selected: bool, label: &str) -> Respo
 pub fn heading(ui: &mut Ui, symbol: Icon, text: &str, color: Color32) {
     ui.horizontal(|ui| {
         icon(ui, symbol, color);
-        ui.label(egui::RichText::new(text).size(17.0).strong().color(color));
+        ui.label(egui::RichText::new(text).size(12.0).strong().color(color));
     });
 }
 
 pub fn badge(ui: &mut Ui, text: &str, color: Color32, fill: Color32) -> Response {
     egui::Frame::new()
         .fill(fill)
-        .corner_radius(5)
+        .corner_radius(ui.visuals().widgets.inactive.corner_radius)
         .inner_margin(egui::Margin::symmetric(6, 3))
         .show(ui, |ui| {
             ui.label(egui::RichText::new(text).small().strong().color(color))
@@ -351,22 +439,22 @@ pub fn badge(ui: &mut Ui, text: &str, color: Color32, fill: Color32) -> Response
         .inner
 }
 
-pub fn file_kind(path: &Path) -> (&'static str, Color32) {
+pub fn file_kind(ui: &Ui, path: &Path) -> (&'static str, Color32) {
     match path.extension().and_then(|s| s.to_str()).unwrap_or("") {
-        "rs" => ("RS", Color32::from_rgb(156, 73, 30)),
-        "py" => ("PY", BLUE),
-        "js" | "jsx" => ("JS", AMBER),
-        "ts" | "tsx" => ("TS", BLUE),
-        "json" | "toml" | "yaml" | "yml" => ("{ }", TEAL),
-        "md" | "txt" => ("Aa", MUTED),
-        "html" | "css" | "svg" => ("< >", Color32::from_rgb(132, 67, 165)),
-        "sh" | "bash" => ("$_", GREEN),
-        _ => ("//", MUTED),
+        "rs" => ("R", colors(ui).warning),
+        "py" => ("PY", colors(ui).accent),
+        "js" | "jsx" => ("JS", colors(ui).warning),
+        "ts" | "tsx" => ("TS", colors(ui).accent),
+        "json" | "toml" | "yaml" | "yml" => ("T", colors(ui).purple),
+        "md" | "txt" => ("M", colors(ui).accent),
+        "html" | "css" | "svg" => ("< >", colors(ui).purple),
+        "sh" | "bash" => ("$_", colors(ui).success),
+        _ => ("//", colors(ui).muted),
     }
 }
 
-pub fn file_text(path: &Path, name: &str) -> egui::text::LayoutJob {
-    let (kind, color) = file_kind(path);
+pub fn file_text(ui: &Ui, path: &Path, name: &str) -> egui::text::LayoutJob {
+    let (kind, color) = file_kind(ui, path);
     let mut job = egui::text::LayoutJob::default();
     job.append(
         &format!("{kind}  "),
@@ -380,7 +468,7 @@ pub fn file_text(path: &Path, name: &str) -> egui::text::LayoutJob {
     job.append(
         name,
         0.0,
-        egui::TextFormat::simple(FontId::proportional(13.0), INK),
+        egui::TextFormat::simple(egui::TextStyle::Body.resolve(ui.style()), colors(ui).text),
     );
     job
 }
@@ -389,9 +477,13 @@ pub fn empty_art(ui: &mut Ui, symbol: Icon, accent: Color32) {
     let size = egui::vec2(136.0_f32.min(ui.available_width()), 80.0);
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     let center = rect.center();
-    ui.painter().circle_filled(center, 34.0, BLUE_SOFT);
     ui.painter()
-        .circle_filled(center + egui::vec2(35.0, -19.0), 7.0, TEAL_SOFT);
+        .circle_filled(center, 34.0, colors(ui).accent_soft);
+    ui.painter().circle_filled(
+        center + egui::vec2(35.0, -19.0),
+        7.0,
+        colors(ui).accent_soft,
+    );
     ui.painter()
         .circle_filled(center + egui::vec2(-36.0, 22.0), 4.0, accent);
     paint_icon(
@@ -400,7 +492,7 @@ pub fn empty_art(ui: &mut Ui, symbol: Icon, accent: Color32) {
         symbol,
         accent,
     );
-    let stroke = Stroke::new(1.5_f32, BORDER);
+    let stroke = Stroke::new(1.5_f32, colors(ui).border);
     ui.painter().line_segment(
         [
             center + egui::vec2(38.0, 16.0),
@@ -431,7 +523,7 @@ mod tests {
                     egui::CentralPanel::default().show(root, |ui| {
                         let response = ui
                             .add_enabled_ui(enabled, |ui| {
-                                button(ui, Icon::Save, "Save", BLUE, true)
+                                button(ui, Icon::Save, "Save", colors(ui).accent, true)
                             })
                             .inner;
                         button_id = response.id;

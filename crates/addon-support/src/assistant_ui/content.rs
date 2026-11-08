@@ -2,30 +2,54 @@ use crate::ui_theme as theme;
 use egui;
 pub use egui_commonmark::CommonMarkCache;
 
-pub fn frame(kind: &str) -> egui::Frame {
+pub fn frame(ui: &egui::Ui, kind: &str) -> egui::Frame {
     let fill = match kind {
-        "You" => theme::BLUE_SOFT,
-        "Proposed plan" => theme::TEAL_SOFT,
-        "Error" => egui::Color32::from_rgb(255, 241, 243),
-        "Status" => theme::SURFACE,
-        _ => egui::Color32::WHITE,
+        "You" => theme::colors(ui).accent_soft,
+        "Proposed plan" => theme::colors(ui).accent_soft,
+        "Error" => theme::colors(ui).error_soft,
+        "Status" => theme::colors(ui).panel,
+        _ => theme::colors(ui).raised,
     };
     egui::Frame::new()
         .fill(fill)
-        .stroke(egui::Stroke::new(1.0, theme::BORDER))
-        .corner_radius(7)
+        .stroke(egui::Stroke::new(1.0, theme::colors(ui).border))
+        .corner_radius(ui.visuals().window_corner_radius)
         .inner_margin(10)
 }
+/// Shared message decoration keeps provider adapters independent of appearance.
+pub fn message<R>(
+    ui: &mut egui::Ui,
+    kind: &str,
+    show: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let response = frame(ui, kind).show(ui, show);
+    let rect = response.response.rect;
+    let colors = theme::colors(ui);
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(theme::metrics(ui).message_border_width, rect.height()),
+        ),
+        0.0,
+        if kind == "You" {
+            colors.accent
+        } else {
+            colors.border_strong
+        },
+    );
+    response
+}
+
 pub fn heading(ui: &mut egui::Ui, kind: &str) {
     ui.label(
         egui::RichText::new(kind)
             .small()
             .strong()
             .color(match kind {
-                "You" => theme::BLUE,
-                "Error" => theme::RED,
-                "Status" => theme::GREEN,
-                _ => theme::TEAL,
+                "You" => theme::colors(ui).accent,
+                "Error" => theme::colors(ui).error,
+                "Status" => theme::colors(ui).success,
+                _ => theme::colors(ui).accent,
             }),
     );
 }
@@ -55,10 +79,10 @@ pub fn reasoning(
 pub fn literal(ui: &mut egui::Ui, text: &str) {
     ui.add(egui::Label::new(text).wrap().selectable(true));
 }
-pub fn approval_frame() -> egui::Frame {
+pub fn approval_frame(ui: &egui::Ui) -> egui::Frame {
     egui::Frame::new()
-        .fill(egui::Color32::from_rgb(255, 248, 231))
-        .stroke(egui::Stroke::new(1.0, theme::AMBER))
-        .corner_radius(7)
+        .fill(theme::colors(ui).warning_soft)
+        .stroke(egui::Stroke::new(1.0, theme::colors(ui).warning))
+        .corner_radius(ui.visuals().window_corner_radius)
         .inner_margin(10)
 }

@@ -4,6 +4,7 @@ use super::{
     catalog,
     packages::{self, Prepared, Receipt},
 };
+use crate::ui_theme as theme;
 use focus_addon_sdk::{Catalog, Package};
 
 pub(super) enum Event {
@@ -507,10 +508,10 @@ impl Addons {
             ui.label(&self.manager.progress);
         }
         if let Some(error) = &self.manager.error {
-            ui.colored_label(crate::ui_theme::RED, error);
+            ui.colored_label(theme::colors(ui).error, error);
         }
         if let Some(notice) = &self.notice {
-            ui.colored_label(crate::ui_theme::RED, notice);
+            ui.colored_label(theme::colors(ui).error, notice);
         }
         ui.separator();
         let query = self.manager.query.to_lowercase();
@@ -618,7 +619,7 @@ impl Addons {
                         ui.label("Source: local or legacy installation");
                     }
                     if let Some(error) = &addon.error {
-                        ui.colored_label(crate::ui_theme::RED, error);
+                        ui.colored_label(theme::colors(ui).error, error);
                     }
                     ui.add_enabled_ui(self.manager.pending.is_none(), |ui| {
                         ui.horizontal_wrapped(|ui| {
@@ -648,7 +649,7 @@ impl Addons {
                     }
                     let reason = compatibility(catalog, &package);
                     if let Some(reason) = &reason {
-                        ui.colored_label(crate::ui_theme::AMBER, reason);
+                        ui.colored_label(theme::colors(ui).warning, reason);
                     }
                     let can_install = reason.is_none() && self.manager.pending.is_none()
                         && !installed.is_some_and(|a| a.working);

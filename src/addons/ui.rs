@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui_theme as theme;
 use std::fs;
 
 impl Addons {
@@ -25,7 +26,7 @@ impl Addons {
         };
         ui.heading(&addon.manifest.name);
         if let Some(error) = &addon.error {
-            ui.colored_label(crate::ui_theme::RED, error);
+            ui.colored_label(theme::colors(ui).error, error);
             if ui.button("Restart").clicked() {
                 addon.error = None;
             }

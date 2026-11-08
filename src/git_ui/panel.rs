@@ -1,7 +1,7 @@
 //! Fixed header/composer and a separately scrolling, compact file list.
 use super::{GitUi, actions::Action, presentation::fixed_label};
 use crate::ui_theme::{self as theme, Icon};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::{self, RichText};
 use std::{path::Path, time::Duration};
 
 impl GitUi {
@@ -12,9 +12,13 @@ impl GitUi {
             fixed_label(
                 ui,
                 [width, 28.0],
-                egui::Label::new(RichText::new("Source Control").strong().color(theme::GREEN))
-                    .halign(egui::Align::Min)
-                    .truncate(),
+                egui::Label::new(
+                    RichText::new("Source Control")
+                        .strong()
+                        .color(theme::colors(ui).success),
+                )
+                .halign(egui::Align::Min)
+                .truncate(),
             );
             ui.allocate_ui(egui::vec2(20.0, 28.0), |ui| {
                 ui.set_min_size(egui::vec2(20.0, 28.0));
@@ -40,7 +44,7 @@ impl GitUi {
             });
             refresh = ui
                 .add_enabled_ui(self.workspace.is_some(), |ui| {
-                    theme::button(ui, Icon::Refresh, "", theme::GREEN, false)
+                    theme::button(ui, Icon::Refresh, "", theme::colors(ui).success, false)
                 })
                 .inner
                 .on_hover_text("Refresh repository status")
@@ -68,9 +72,13 @@ impl GitUi {
         fixed_label(
             ui,
             [ui.available_width(), 20.0],
-            egui::Label::new(RichText::new(caption).size(12.0).color(theme::MUTED))
-                .halign(egui::Align::Min)
-                .truncate(),
+            egui::Label::new(
+                RichText::new(caption)
+                    .size(12.0)
+                    .color(theme::colors(ui).muted),
+            )
+            .halign(egui::Align::Min)
+            .truncate(),
         )
         .on_hover_text(
             root.map(|root| format!("{}\n{branch}", root.display()))
@@ -96,8 +104,8 @@ impl GitUi {
         let blocker = self.commit_blocker();
         let button = ui.add_enabled(
             blocker.is_none(),
-            egui::Button::new(RichText::new("Commit staged").color(Color32::WHITE))
-                .fill(theme::GREEN)
+            egui::Button::new(RichText::new("Commit staged").color(theme::colors(ui).on_accent))
+                .fill(theme::colors(ui).success)
                 .stroke(egui::Stroke::NONE)
                 .min_size(egui::vec2(ui.available_width(), 28.0)),
         );
@@ -115,9 +123,13 @@ impl GitUi {
         fixed_label(
             ui,
             [ui.available_width(), 18.0],
-            egui::Label::new(RichText::new(hint).size(12.0).color(theme::MUTED))
-                .halign(egui::Align::Min)
-                .truncate(),
+            egui::Label::new(
+                RichText::new(hint)
+                    .size(12.0)
+                    .color(theme::colors(ui).muted),
+            )
+            .halign(egui::Align::Min)
+            .truncate(),
         )
         .on_hover_text("Git uses saved files. Save editor changes before staging.");
         if clicked {
@@ -137,9 +149,9 @@ impl GitUi {
                         [label_width, 20.0],
                         egui::Label::new(RichText::new(&notice.title).size(12.0).color(
                             if notice.error {
-                                theme::RED
+                                theme::colors(ui).error
                             } else {
-                                theme::GREEN
+                                theme::colors(ui).success
                             },
                         ))
                         .halign(egui::Align::Min)

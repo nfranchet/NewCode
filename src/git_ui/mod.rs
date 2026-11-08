@@ -91,7 +91,7 @@ impl GitUi {
         let manual_refresh = self.panel_header(ui);
         if workspace.is_none() {
             ui.vertical_centered(|ui| {
-                theme::empty_art(ui, Icon::Git, theme::GREEN);
+                theme::empty_art(ui, Icon::Git, theme::colors(ui).success);
                 ui.strong("Open a workspace");
                 ui.label("Review, stage, and commit its saved changes here.");
             });

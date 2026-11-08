@@ -71,8 +71,8 @@ impl Logs {
                 for row in rows {
                     let entry = &entries[row];
                     let color = match entry.level {
-                        log::Level::Error => egui::Color32::from_rgb(190, 45, 55),
-                        log::Level::Warn => egui::Color32::from_rgb(155, 100, 0),
+                        log::Level::Error => crate::ui_theme::colors(ui).error,
+                        log::Level::Warn => crate::ui_theme::colors(ui).warning,
                         _ => ui.visuals().text_color(),
                     };
                     ui.add(

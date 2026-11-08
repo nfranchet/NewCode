@@ -5,7 +5,7 @@ use crate::{
     terminal::Terminal,
     ui_theme::{self as theme, Icon},
 };
-use eframe::egui::{self, Color32};
+use eframe::egui;
 use std::path::Path;
 
 impl EditorApp {
@@ -13,8 +13,7 @@ impl EditorApp {
         if let Some(terminal) = term {
             let style = egui_tty::TerminalStyle {
                 font: crate::terminal_fonts::font_id(),
-                scheme: egui_tty::ColorScheme::Dark,
-                ..Default::default()
+                ..egui_tty::TerminalStyle::from_visuals(ui.visuals())
             };
             terminal.poll();
             terminal.view.set_color_scheme(style.scheme);
@@ -46,7 +45,7 @@ impl EditorApp {
             }
         } else {
             ui.colored_label(
-                Color32::LIGHT_RED,
+                theme::colors(ui).error,
                 error.unwrap_or("Terminal failed to start"),
             );
         }
@@ -87,6 +86,12 @@ impl EditorApp {
         }
         let top_height = self.settings.top_height;
         let top_response = egui::Panel::bottom("top_terminal")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::colors(root).terminal)
+                    .stroke(egui::Stroke::new(1.0, theme::colors(root).border_strong))
+                    .inner_margin(egui::Margin::symmetric(10, 4)),
+            )
             .resizable(true)
             .default_size(top_height)
             .min_size(80.0)
@@ -100,7 +105,7 @@ impl EditorApp {
                     ui.selectable_value(&mut self.bottom_tab, super::logs::Tab::Logs, "Logs");
                     if self.bottom_tab == super::logs::Tab::Terminal {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if theme::button(ui, Icon::Refresh, "", theme::BLUE, false)
+                            if theme::button(ui, Icon::Refresh, "", theme::colors(ui).accent, false)
                                 .on_hover_text("Restart terminal")
                                 .clicked()
                             {

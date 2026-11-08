@@ -48,16 +48,19 @@ impl OpenCodeUi {
             None => {}
         }
         if let Some(error) = &self.error {
-            ui.colored_label(theme::RED, error);
+            ui.colored_label(theme::colors(ui).error, error);
         }
         if self.online && self.models.is_empty() {
             ui.colored_label(
-                theme::AMBER,
+                theme::colors(ui).warning,
                 "No connected models. Configure a provider in OpenCode, then restart.",
             );
         }
         if self.online && self.agents.is_empty() {
-            ui.colored_label(theme::AMBER, "No primary agents available in OpenCode.");
+            ui.colored_label(
+                theme::colors(ui).warning,
+                "No primary agents available in OpenCode.",
+            );
         }
     }
 }

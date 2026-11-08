@@ -9,18 +9,12 @@ mod tests;
 
 pub fn configure(ui: &mut egui::Ui) {
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-    let color = if ui.visuals().dark_mode {
-        egui::Color32::WHITE
-    } else {
-        theme::INK
-    };
-    ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0, color);
     ui.visuals_mut().text_cursor.blink = false;
 }
 
 pub fn empty(ui: &mut egui::Ui) {
     ui.vertical_centered(|ui| {
-        theme::empty_art(ui, Icon::Spark, theme::TEAL);
+        theme::empty_art(ui, Icon::Spark, theme::colors(ui).accent);
         ui.strong("A little help, a lot of progress");
         ui.label("Ask a question, plan a change, or work through a bug.");
         ui.small("Choose a session, model, thinking level, and mode.");
@@ -32,12 +26,13 @@ pub fn body(ui: &egui::Ui, input: &str) -> (egui::Rect, egui::Rect, f32) {
     let rect = ui.available_rect_before_wrap();
     let font = egui::TextStyle::Body.resolve(ui.style());
     let row = ui.fonts_mut(|fonts| fonts.row_height(&font));
+    let color = theme::colors(ui).text;
     let height = ui.fonts_mut(|fonts| {
         fonts
             .layout(
                 input.to_owned(),
                 font,
-                theme::INK,
+                color,
                 (rect.width() - 20.0).max(1.0),
             )
             .size()

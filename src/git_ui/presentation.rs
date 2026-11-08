@@ -30,12 +30,12 @@ pub(super) fn label(code: char) -> &'static str {
     }
 }
 
-pub(super) fn group_color(group: super::model::Group) -> Color32 {
+pub(super) fn group_color(colors: crate::ui_theme::Colors, group: super::model::Group) -> Color32 {
     match group {
-        super::model::Group::Conflicts => crate::ui_theme::RED,
-        super::model::Group::Staged => crate::ui_theme::GREEN,
-        super::model::Group::Changes => crate::ui_theme::INK,
-        super::model::Group::Untracked => crate::ui_theme::BLUE,
+        super::model::Group::Conflicts => colors.error,
+        super::model::Group::Staged => colors.success,
+        super::model::Group::Changes => colors.text,
+        super::model::Group::Untracked => colors.accent,
     }
 }
 
@@ -64,11 +64,5 @@ impl Notice {
 
 pub(super) fn configure_input_style(ui: &mut egui::Ui) {
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-    let cursor_color = if ui.visuals().dark_mode {
-        Color32::WHITE
-    } else {
-        Color32::BLACK
-    };
-    ui.visuals_mut().text_cursor.stroke = egui::Stroke::new(3.0_f32, cursor_color);
     ui.visuals_mut().text_cursor.blink = false;
 }

@@ -3,7 +3,7 @@
 use super::EditorApp;
 use crate::ui_theme::{self as theme, Icon};
 use eframe::egui::{
-    self, Color32,
+    self,
     text::{LayoutJob, LayoutSection},
 };
 use std::{
@@ -65,6 +65,7 @@ pub(super) fn highlight_find_matches(
     text: &str,
     query: &str,
     active_match: Option<usize>,
+    colors: theme::Colors,
 ) {
     let matches = find_ranges(text, query);
     if matches.is_empty() {
@@ -105,12 +106,12 @@ pub(super) fn highlight_find_matches(
                 && start >= active_start
                 && end <= active_end
             {
-                part.format.background = Color32::from_rgb(255, 190, 100);
+                part.format.background = colors.accent_soft;
             } else if byte_matches
                 .iter()
                 .any(|(match_start, match_end)| start >= *match_start && end <= *match_end)
             {
-                part.format.background = Color32::from_rgb(255, 239, 166);
+                part.format.background = colors.warning_soft;
             }
             job.sections.push(LayoutSection {
                 leading_space: part.leading_space,
@@ -215,7 +216,7 @@ impl EditorApp {
             if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 run_search = true;
             }
-            if theme::button(ui, Icon::Search, "", theme::BLUE, false)
+            if theme::button(ui, Icon::Search, "", theme::colors(ui).accent, false)
                 .on_hover_text("Search project · Enter")
                 .clicked()
             {
@@ -230,7 +231,7 @@ impl EditorApp {
             if self.search_results.is_empty() {
                 ui.vertical_centered(|ui| {
                     ui.add_space(12.0);
-                    theme::empty_art(ui, Icon::Search, theme::BLUE);
+                    theme::empty_art(ui, Icon::Search, theme::colors(ui).accent);
                     ui.strong("Find across your project");
                     ui.label("Search saved file contents in the current workspace.");
                 });
@@ -242,7 +243,7 @@ impl EditorApp {
                     .unwrap_or(&group.path)
                     .display()
                     .to_string();
-                ui.add(egui::Label::new(theme::file_text(&group.path, &label)).wrap())
+                ui.add(egui::Label::new(theme::file_text(ui, &group.path, &label)).wrap())
                     .on_hover_text(group.path.display().to_string());
                 for (line, preview) in &group.lines {
                     let result = ui.selectable_label(
@@ -250,7 +251,7 @@ impl EditorApp {
                         egui::RichText::new(format!("{line:>4}  {preview}"))
                             .monospace()
                             .size(12.0)
-                            .color(Color32::from_rgb(95, 95, 95)),
+                            .color(theme::colors(ui).muted),
                     );
                     if result.clicked() {
                         open_result = Some((group.path.clone(), *line));

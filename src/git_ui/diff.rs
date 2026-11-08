@@ -62,7 +62,7 @@ impl GitUi {
             return true;
         }
         if let ReviewStatus::Failed(error) = &self.review_status {
-            ui.colored_label(theme::RED, error);
+            ui.colored_label(theme::colors(ui).error, error);
         }
         let Some(view) = &mut self.diff else {
             if loading {
@@ -73,7 +73,7 @@ impl GitUi {
         let actions_enabled = !busy && !loading && matches!(self.review_status, ReviewStatus::Idle);
         let mut selected = None;
         if let Some(reason) = &view.stale {
-            ui.colored_label(theme::AMBER, reason);
+            ui.colored_label(theme::colors(ui).warning, reason);
         }
         if let Some(notice) = &view.notice {
             ui.label(notice);
@@ -100,9 +100,9 @@ impl GitUi {
             .show(ui, |ui| {
                 for (index, hunk) in view.hunks.iter().enumerate() {
                     let border = if view.selected_hunk == Some(index) {
-                        theme::BLUE
+                        theme::colors(ui).accent
                     } else {
-                        theme::BORDER
+                        theme::colors(ui).border
                     };
                     let response = egui::Frame::new()
                         .stroke(egui::Stroke::new(1.0_f32, border))
@@ -114,9 +114,9 @@ impl GitUi {
                                     |ui| {
                                         ui.colored_label(
                                             if hunk.staged {
-                                                theme::BLUE
+                                                theme::colors(ui).accent
                                             } else {
-                                                theme::MUTED
+                                                theme::colors(ui).muted
                                             },
                                             if hunk.staged { "Staged" } else { "Unstaged" },
                                         );
