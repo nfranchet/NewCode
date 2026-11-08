@@ -1,5 +1,6 @@
 //! Hosting an addon-owned UI surface, independent of its application or provider.
 use super::*;
+use crate::ui_theme as theme;
 use egui::{Event, Rect, TextureHandle, TextureId};
 use focus_addon_support::surface::{Frame, Input};
 use std::{collections::HashMap, time::Instant};
@@ -14,6 +15,7 @@ pub(super) struct Surface {
     focused: bool,
     sequence: u64,
     waiting: Option<Instant>,
+    theme: Option<crate::ui_theme::Theme>,
 }
 
 #[cfg(test)]
@@ -151,6 +153,7 @@ mod tests {
                 generation: 1,
                 sequence: 1,
                 pixels_per_point: 1.0,
+                theme: None,
                 input: egui::RawInput {
                     screen_rect: Some(Rect::from_min_size(
                         egui::Pos2::ZERO,
@@ -192,6 +195,7 @@ impl Surface {
                     sequence: self.sequence,
                     input,
                     pixels_per_point: 1.0,
+                    theme: self.theme.clone(),
                 },
             ));
         }
@@ -254,6 +258,7 @@ impl Surface {
         generation: u64,
     ) -> Result<(), String> {
         let rect = ui.available_rect_before_wrap();
+        self.theme = Some(crate::ui_theme::current(ui.ctx()));
         self.rect = Some(rect);
         ui.allocate_rect(rect, egui::Sense::hover());
         if let Some(frame) = &self.frame {
@@ -278,7 +283,7 @@ impl Surface {
                 egui::Align2::CENTER_CENTER,
                 "Connecting…",
                 egui::FontId::proportional(14.0),
-                crate::ui_theme::MUTED,
+                theme::colors(ui).muted,
             );
         }
         if self
@@ -304,6 +309,7 @@ impl Surface {
                     sequence: self.sequence,
                     input,
                     pixels_per_point: ui.ctx().pixels_per_point(),
+                    theme: self.theme.clone(),
                 },
             ))?;
             self.waiting = Some(Instant::now());
@@ -390,8 +396,8 @@ impl Addons {
             .size_range(260.0..=700.0)
             .frame(
                 egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(242, 250, 248))
-                    .stroke(egui::Stroke::new(1.0, crate::ui_theme::BORDER))
+                    .fill(theme::colors(root).panel)
+                    .stroke(egui::Stroke::new(1.0, theme::colors(root).border_strong))
                     .inner_margin(8),
             )
             .show(root, |ui| {
@@ -427,7 +433,7 @@ impl Addons {
                     .find(|a| a.manifest.id == id)
                     .unwrap();
                 if let Some(error) = &addon.error {
-                    ui.colored_label(crate::ui_theme::RED, error);
+                    ui.colored_label(theme::colors(ui).error, error);
                     if ui.button("Restart").clicked() {
                         addon.error = None;
                         addon.process = None;

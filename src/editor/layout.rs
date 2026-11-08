@@ -2,7 +2,7 @@
 
 use super::{EditorApp, SidebarMode};
 use crate::ui_theme::{self as theme, Icon};
-use eframe::egui::{self, Color32};
+use eframe::egui;
 
 impl EditorApp {
     pub(super) fn update_window_title(&self, ctx: &egui::Context) {
@@ -41,37 +41,47 @@ impl EditorApp {
     pub(super) fn toolbar(&mut self, root: &mut egui::Ui) {
         let context = root.ctx().clone();
         let ctx = &context;
+        let colors = theme::colors(root);
         egui::Panel::top("toolbar")
+            .exact_size(theme::metrics(root).toolbar_height)
             .frame(
                 egui::Frame::new()
-                    .fill(Color32::WHITE)
-                    .stroke(egui::Stroke::new(1.0_f32, theme::BORDER))
-                    .inner_margin(egui::Margin::symmetric(12, 9)),
+                    .fill(colors.chrome)
+                    .stroke(egui::Stroke::new(1.0_f32, colors.border))
+                    .inner_margin(egui::Margin::symmetric(10, 8)),
             )
             .show(root, |ui| {
                 ui.horizontal(|ui| {
-                    theme::icon(ui, Icon::Spark, theme::BLUE);
+                    theme::icon(ui, Icon::Spark, theme::colors(ui).accent);
                     ui.label(
                         egui::RichText::new("Focus")
                             .strong()
-                            .size(18.0)
-                            .color(theme::BLUE),
+                            .size(12.0)
+                            .color(theme::colors(ui).accent),
                     );
                     ui.separator();
-                    if theme::button(ui, Icon::Folder, "Workspace", theme::BLUE, false).clicked() {
+                    if theme::button(
+                        ui,
+                        Icon::Folder,
+                        "Workspace",
+                        theme::colors(ui).accent,
+                        false,
+                    )
+                    .clicked()
+                    {
                         self.choose_workspace();
                     }
                     if let Some(root) = self.settings.workspace.as_ref() {
                         let root = crate::launch::workspace_display_path(root);
                         ui.add_sized(
-                            [180.0, 24.0],
+                            [120.0, 23.0],
                             egui::Label::new(
                                 egui::RichText::new(
                                     root.file_name()
                                         .unwrap_or(root.as_os_str())
                                         .to_string_lossy(),
                                 )
-                                .color(theme::MUTED),
+                                .color(theme::colors(ui).muted),
                             )
                             .truncate(),
                         )
@@ -110,7 +120,13 @@ impl EditorApp {
                     ui.menu_button("Edit", |ui| {
                         if ui
                             .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(ui, Icon::Save, "Save   Ctrl+S", theme::BLUE, false)
+                                theme::button(
+                                    ui,
+                                    Icon::Save,
+                                    "Save   Ctrl+S",
+                                    theme::colors(ui).accent,
+                                    false,
+                                )
                             })
                             .inner
                             .clicked()
@@ -120,7 +136,13 @@ impl EditorApp {
                         }
                         if ui
                             .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(ui, Icon::Copy, "Copy   Ctrl+C", theme::BLUE, false)
+                                theme::button(
+                                    ui,
+                                    Icon::Copy,
+                                    "Copy   Ctrl+C",
+                                    theme::colors(ui).accent,
+                                    false,
+                                )
                             })
                             .inner
                             .clicked()
@@ -130,7 +152,13 @@ impl EditorApp {
                         }
                         if ui
                             .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(ui, Icon::Paste, "Paste   Ctrl+V", theme::BLUE, false)
+                                theme::button(
+                                    ui,
+                                    Icon::Paste,
+                                    "Paste   Ctrl+V",
+                                    theme::colors(ui).accent,
+                                    false,
+                                )
                             })
                             .inner
                             .clicked()
@@ -145,7 +173,7 @@ impl EditorApp {
                                     ui,
                                     Icon::Search,
                                     "Find in File   Ctrl+F",
-                                    theme::BLUE,
+                                    theme::colors(ui).accent,
                                     false,
                                 )
                             })
@@ -172,7 +200,7 @@ impl EditorApp {
                     ui.separator();
                     if ui
                         .add_enabled_ui(self.active_file.is_some(), |ui| {
-                            theme::button(ui, Icon::Save, "Save", theme::BLUE, true)
+                            theme::button(ui, Icon::Save, "Save", theme::colors(ui).accent, true)
                         })
                         .inner
                         .on_hover_text("Save file · Ctrl+S")
@@ -184,28 +212,35 @@ impl EditorApp {
             });
     }
     pub(super) fn status_bar(&mut self, root: &mut egui::Ui) {
+        let colors = theme::colors(root);
         egui::Panel::bottom("status_bar")
-            .exact_size(25.0)
+            .exact_size(theme::metrics(root).status_height)
             .frame(
                 egui::Frame::new()
-                    .fill(theme::BLUE_SOFT)
+                    .fill(colors.accent)
                     .inner_margin(egui::Margin::symmetric(12, 3)),
             )
             .show(root, |ui| {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::Label::new(
-                            egui::RichText::new(&self.status).small().color(theme::INK),
+                            egui::RichText::new(&self.status)
+                                .small()
+                                .color(colors.on_accent),
                         )
                         .truncate(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.small(format!("{} open files", self.open_files.len()));
+                        ui.label(
+                            egui::RichText::new(format!("{} open files", self.open_files.len()))
+                                .small()
+                                .color(colors.on_accent),
+                        );
                         if self.dirty {
                             ui.label(
                                 egui::RichText::new("Unsaved changes")
                                     .small()
-                                    .color(theme::AMBER),
+                                    .color(colors.on_accent),
                             );
                         }
                     });
@@ -213,15 +248,13 @@ impl EditorApp {
             });
     }
     pub(super) fn activity_bar(&mut self, root: &mut egui::Ui) {
+        let colors = theme::colors(root);
         egui::Panel::left("activity_bar")
-            .exact_size(48.0)
+            .exact_size(theme::metrics(root).activity_width)
             .resizable(false)
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::NAVY)
-                    .inner_margin(egui::Margin::symmetric(3, 8)),
-            )
+            .frame(egui::Frame::new().fill(colors.activity).inner_margin(0))
             .show(root, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
                 ui.vertical_centered(|ui| {
                     if theme::nav_button(
                         ui,
@@ -277,8 +310,9 @@ impl EditorApp {
     pub(super) fn document_panel(&mut self, root: &mut egui::Ui, opened_find: bool) {
         let context = root.ctx().clone();
         let ctx = &context;
+        let colors = theme::colors(root);
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(Color32::WHITE).inner_margin(8))
+            .frame(egui::Frame::new().fill(colors.editor).inner_margin(0))
             .show(root, |ui| {
                 self.document_tabs(ui, ctx);
                 if self.sidebar_mode == SidebarMode::AddonManager
@@ -300,18 +334,18 @@ impl EditorApp {
                 } else {
                     ui.vertical_centered(|ui| {
                         ui.add_space((ui.available_height() * 0.23).max(12.0));
-                        theme::empty_art(ui, Icon::File, theme::BLUE);
+                        theme::empty_art(ui, Icon::File, theme::colors(ui).accent);
                         ui.label(
                             egui::RichText::new("Make room for your next idea")
                                 .size(20.0)
                                 .strong()
-                                .color(theme::INK),
+                                .color(theme::colors(ui).text),
                         );
                         ui.label(
                             egui::RichText::new(
                                 "Click a file to preview it; double-click to keep it open.",
                             )
-                            .color(theme::MUTED),
+                            .color(theme::colors(ui).muted),
                         );
                         ui.add_space(12.0);
                         ui.small("Ctrl+S  Save     Ctrl+F  Find     Ctrl+W  Close tab");

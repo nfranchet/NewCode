@@ -30,12 +30,12 @@ impl GitUi {
             .show(ui, |ui| {
                 if snapshot.files.is_empty() {
                     ui.horizontal(|ui| {
-                        theme::icon(ui, Icon::Check, theme::GREEN);
+                        theme::icon(ui, Icon::Check, theme::colors(ui).success);
                         ui.add(
                             egui::Label::new(
                                 RichText::new("Working tree clean")
                                     .strong()
-                                    .color(theme::GREEN),
+                                    .color(theme::colors(ui).success),
                             )
                             .selectable(false)
                             .halign(egui::Align::Min)
@@ -71,7 +71,7 @@ impl GitUi {
                             egui::Label::new(
                                 RichText::new(format!("{} ({})", group.title(), files.len()))
                                     .strong()
-                                    .color(group_color(group)),
+                                    .color(group_color(theme::colors(ui), group)),
                             )
                             .selectable(false)
                             .halign(egui::Align::Min)
@@ -232,7 +232,7 @@ fn file_row(
     let width = ui.available_width();
     let contents = egui::Frame::new()
         .fill(if selected {
-            theme::BLUE_SOFT
+            theme::colors(ui).accent_soft
         } else {
             Color32::TRANSPARENT
         })
@@ -257,9 +257,9 @@ fn file_row(
                             RichText::new(change.status_letter(side).to_string())
                                 .monospace()
                                 .color(if group == Group::Conflicts {
-                                    theme::RED
+                                    theme::colors(ui).error
                                 } else {
-                                    theme::MUTED
+                                    theme::colors(ui).muted
                                 }),
                         )
                         .selectable(false)
@@ -268,9 +268,13 @@ fn file_row(
                     fixed_label(
                         ui,
                         [name_width, 22.0],
-                        egui::Label::new(RichText::new(&change.path).strong().color(theme::INK))
-                            .selectable(false)
-                            .truncate(),
+                        egui::Label::new(
+                            RichText::new(&change.path)
+                                .strong()
+                                .color(theme::colors(ui).text),
+                        )
+                        .selectable(false)
+                        .truncate(),
                     );
                     for (text, width) in count_text.iter().zip(counts) {
                         ui.allocate_ui_with_layout(
@@ -280,7 +284,9 @@ fn file_row(
                                 ui.set_min_size(egui::vec2(width, 22.0));
                                 ui.add(
                                     egui::Label::new(
-                                        RichText::new(text).monospace().color(theme::GREEN),
+                                        RichText::new(text)
+                                            .monospace()
+                                            .color(theme::colors(ui).success),
                                     )
                                     .selectable(false)
                                     .truncate(),
@@ -296,7 +302,7 @@ fn file_row(
         ui.painter().rect_stroke(
             row.rect,
             3.0,
-            egui::Stroke::new(1.0_f32, theme::BLUE),
+            egui::Stroke::new(1.0_f32, theme::colors(ui).accent),
             egui::StrokeKind::Inside,
         );
     }
@@ -312,11 +318,12 @@ fn count_text(counts: LineStats) -> [String; 2] {
 
 fn count_widths(ui: &egui::Ui, snapshot: &Snapshot) -> [f32; 2] {
     let mut widths = [28.0_f32; 2];
+    let color = theme::colors(ui).success;
     for counts in snapshot.counts.iter().flat_map(|side| side.values()) {
         for (width, text) in widths.iter_mut().zip(count_text(*counts)) {
             let measured = ui.fonts_mut(|fonts| {
                 fonts
-                    .layout_no_wrap(text, egui::FontId::monospace(14.0), theme::GREEN)
+                    .layout_no_wrap(text, egui::FontId::monospace(14.0), color)
                     .size()
                     .x
             });

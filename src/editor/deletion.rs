@@ -2,7 +2,7 @@
 
 use super::EditorApp;
 use crate::ui_theme::{self as theme, Icon};
-use eframe::egui::{self, Color32};
+use eframe::egui::{self};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -78,7 +78,12 @@ impl EditorApp {
         let mut confirm = false;
         let modal = egui::Modal::new(egui::Id::new("delete_confirmation")).show(ctx, |ui| {
             ui.set_width(380.0_f32.min(ctx.viewport_rect().width() - 40.0));
-            theme::heading(ui, Icon::Warning, "Delete this entry?", theme::RED);
+            theme::heading(
+                ui,
+                Icon::Warning,
+                "Delete this entry?",
+                theme::colors(ui).error,
+            );
             ui.label(
                 egui::RichText::new(
                     deletion
@@ -93,18 +98,18 @@ impl EditorApp {
             ui.label("This permanently deletes the entry from disk.");
             if fs::symlink_metadata(&deletion.path).is_ok_and(|m| m.is_dir()) {
                 ui.colored_label(
-                    theme::RED,
+                    theme::colors(ui).error,
                     "All files and subfolders inside will also be deleted.",
                 );
             }
             if self.deletion_has_unsaved(&deletion.path) {
                 ui.colored_label(
-                    theme::AMBER,
+                    theme::colors(ui).warning,
                     "Unsaved edits in affected files will be discarded.",
                 );
             }
             if !deletion.error.is_empty() {
-                ui.colored_label(theme::RED, &deletion.error);
+                ui.colored_label(theme::colors(ui).error, &deletion.error);
             }
             ui.add_space(8.0);
             ui.horizontal(|ui| {
@@ -116,8 +121,10 @@ impl EditorApp {
                 cancel = response.clicked();
                 let response = ui
                     .add(
-                        egui::Button::new(egui::RichText::new("Delete").color(Color32::WHITE))
-                            .fill(theme::RED),
+                        egui::Button::new(
+                            egui::RichText::new("Delete").color(theme::colors(ui).on_accent),
+                        )
+                        .fill(theme::colors(ui).error),
                     )
                     .on_hover_text("Permanently delete this entry");
                 // Require an explicit pointer click for the destructive action.

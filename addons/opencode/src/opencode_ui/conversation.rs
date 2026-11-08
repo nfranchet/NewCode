@@ -34,7 +34,7 @@ impl OpenCodeUi {
                         } else {
                             "OpenCode"
                         };
-                        content::frame(role).show(ui, |ui| {
+                        content::message(ui, role, |ui| {
                             ui.set_min_width(ui.available_width());
                             content::heading(ui, role);
                             for (part_index, part) in message.parts.iter().enumerate() {
@@ -115,7 +115,7 @@ impl OpenCodeUi {
                                 .pointer("/error/data/message")
                                 .and_then(serde_json::Value::as_str)
                             {
-                                ui.colored_label(theme::RED, error);
+                                ui.colored_label(theme::colors(ui).error, error);
                             }
                             if index + 1 == self.messages.len() && go_ready {
                                 go = ui
@@ -124,7 +124,7 @@ impl OpenCodeUi {
                                             ui,
                                             theme::Icon::Send,
                                             "Go",
-                                            theme::TEAL,
+                                            theme::colors(ui).accent,
                                             true,
                                         )
                                     })

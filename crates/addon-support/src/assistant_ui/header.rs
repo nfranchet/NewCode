@@ -28,23 +28,28 @@ pub enum Action {
 pub fn show(ui: &mut egui::Ui, view: Header<'_>) -> Option<Action> {
     let mut action = None;
     ui.horizontal_wrapped(|ui| {
-        theme::icon(ui, Icon::Spark, theme::TEAL);
-        ui.label(egui::RichText::new(view.name).strong().color(theme::TEAL));
+        theme::icon(ui, Icon::Spark, theme::colors(ui).accent);
+        ui.label(
+            egui::RichText::new(view.name)
+                .strong()
+                .color(theme::colors(ui).accent),
+        );
         let (color, fill) = match view.state {
-            "Running" => (theme::TEAL, theme::TEAL_SOFT),
-            "Ready" => (theme::GREEN, theme::SURFACE),
-            "Waiting for you" => (theme::AMBER, theme::SURFACE),
-            _ => (theme::MUTED, theme::SURFACE),
+            "Running" => (theme::colors(ui).accent, theme::colors(ui).accent_soft),
+            "Ready" => (theme::colors(ui).success, theme::colors(ui).panel),
+            "Waiting for you" => (theme::colors(ui).warning, theme::colors(ui).panel),
+            _ => (theme::colors(ui).muted, theme::colors(ui).panel),
         };
         theme::badge(ui, view.state, color, fill).on_hover_text(view.status);
         if view.connected {
-            if theme::button(ui, Icon::Stop, "", theme::MUTED, false)
+            if theme::button(ui, Icon::Stop, "", theme::colors(ui).muted, false)
                 .on_hover_text(format!("Stop {}", view.name))
                 .clicked()
             {
                 action = Some(Action::Stop);
             }
-        } else if theme::button(ui, Icon::Spark, "Start", theme::TEAL, true).clicked() {
+        } else if theme::button(ui, Icon::Spark, "Start", theme::colors(ui).accent, true).clicked()
+        {
             action = Some(Action::Start);
         }
     });
@@ -104,7 +109,12 @@ pub fn show(ui: &mut egui::Ui, view: Header<'_>) -> Option<Action> {
     });
     if !view.connected || view.state == "Connecting" {
         ui.add(
-            egui::Label::new(egui::RichText::new(view.status).small().color(theme::MUTED)).wrap(),
+            egui::Label::new(
+                egui::RichText::new(view.status)
+                    .small()
+                    .color(theme::colors(ui).muted),
+            )
+            .wrap(),
         );
     }
     action

@@ -46,6 +46,12 @@ fn main() {
                 generation,
                 sequence: generation,
                 pixels_per_point: 1.25,
+                theme: Some({
+                    let mut theme =
+                        focus_addon_support::ui_theme::Theme::from_style(egui::Style::default());
+                    theme.colors.accent = egui::Color32::from_rgb(37, 113, 87);
+                    theme
+                }),
                 input: egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::pos2(600.0, 30.0),

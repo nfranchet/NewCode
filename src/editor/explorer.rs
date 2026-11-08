@@ -49,10 +49,11 @@ impl EditorApp {
                 let mut folder = state.show_header(ui, |ui| {
                     let (icon_rect, _) =
                         ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-                    theme::paint_icon(ui, icon_rect, Icon::Folder, theme::AMBER);
+                    theme::paint_icon(ui, icon_rect, Icon::Folder, theme::colors(ui).muted);
                     let icon = ui.interact(icon_rect, id.with("icon"), egui::Sense::click());
                     let label = ui.add(
-                        egui::Label::new(egui::RichText::new(name).color(theme::INK)).truncate(),
+                        egui::Label::new(egui::RichText::new(name).color(theme::colors(ui).text))
+                            .truncate(),
                     );
                     let label = ui.interact(
                         label.rect,
@@ -77,10 +78,11 @@ impl EditorApp {
             } else {
                 let response = ui
                     .push_id(("explorer_file", &path), |ui| {
-                        ui.add(
+                        ui.add_sized(
+                            [ui.available_width(), 23.0],
                             egui::Button::selectable(
                                 self.active_file.as_ref() == Some(&path),
-                                theme::file_text(&path, &name),
+                                theme::file_text(ui, &path, &name),
                             )
                             .truncate(),
                         )
@@ -125,7 +127,7 @@ impl EditorApp {
             }
             ui.close();
         }
-        let delete = ui.button(egui::RichText::new("Delete…").color(theme::RED));
+        let delete = ui.button(egui::RichText::new("Delete…").color(theme::colors(ui).error));
         ui.interact(
             delete.rect,
             egui::Id::new(("explorer_delete_action", path)),
@@ -161,7 +163,7 @@ impl EditorApp {
                 egui::Label::new(
                     egui::RichText::new(format!("Create in {}", parent.display()))
                         .small()
-                        .color(theme::BLUE),
+                        .color(theme::colors(ui).accent),
                 )
                 .wrap(),
             );
@@ -176,10 +178,18 @@ impl EditorApp {
             egui::ScrollArea::vertical().show(ui, |ui| self.tree(ui, &root));
         } else {
             ui.vertical_centered(|ui| {
-                theme::empty_art(ui, Icon::Folder, theme::BLUE);
+                theme::empty_art(ui, Icon::Folder, theme::colors(ui).accent);
                 ui.strong("Your project starts here");
                 ui.label("Choose a workspace to browse its files.");
-                if theme::button(ui, Icon::Folder, "Open workspace", theme::BLUE, true).clicked() {
+                if theme::button(
+                    ui,
+                    Icon::Folder,
+                    "Open workspace",
+                    theme::colors(ui).accent,
+                    true,
+                )
+                .clicked()
+                {
                     self.choose_workspace();
                 }
             });

@@ -1,6 +1,7 @@
-use eframe::egui::{Color32, FontId, TextFormat, text::LayoutJob};
+use crate::ui_theme::Colors;
+use eframe::egui::{FontId, TextFormat, text::LayoutJob};
 
-pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
+pub(crate) fn colored_job(text: &str, ext: &str, colors: Colors, font: FontId) -> LayoutJob {
     let mut job = LayoutJob::default();
     let lang = match ext {
         "rs" => "rust",
@@ -30,8 +31,8 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
         _ => "",
     };
     let default = TextFormat {
-        font_id: FontId::monospace(14.0),
-        color: Color32::from_rgb(48, 49, 51),
+        font_id: font,
+        color: colors.text,
         ..Default::default()
     };
     for line in text.split_inclusive('\n') {
@@ -41,7 +42,8 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
                 line,
                 0.0,
                 TextFormat {
-                    color: Color32::from_rgb(0, 128, 0),
+                    color: colors.faint,
+                    italics: true,
                     ..default.clone()
                 },
             );
@@ -58,7 +60,7 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
                         &word,
                         0.0,
                         TextFormat {
-                            color: Color32::from_rgb(163, 21, 21),
+                            color: colors.string,
                             ..default.clone()
                         },
                     );
@@ -67,7 +69,7 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
                 }
             } else if ch == '\'' || ch == '"' || ch == '`' {
                 if !word.is_empty() {
-                    append_word(&mut job, &word, &default, keywords, lang);
+                    append_word(&mut job, &word, &default, keywords, lang, colors);
                     word.clear();
                 }
                 word.push(ch);
@@ -77,28 +79,35 @@ pub(crate) fn colored_job(text: &str, ext: &str) -> LayoutJob {
                 word.push(ch);
             } else {
                 if !word.is_empty() {
-                    append_word(&mut job, &word, &default, keywords, lang);
+                    append_word(&mut job, &word, &default, keywords, lang, colors);
                     word.clear();
                 }
                 job.append(&ch.to_string(), 0.0, default.clone());
             }
         }
         if !word.is_empty() {
-            append_word(&mut job, &word, &default, keywords, lang);
+            append_word(&mut job, &word, &default, keywords, lang, colors);
         }
     }
     job
 }
-fn append_word(job: &mut LayoutJob, word: &str, fmt: &TextFormat, keywords: &str, lang: &str) {
+fn append_word(
+    job: &mut LayoutJob,
+    word: &str,
+    fmt: &TextFormat,
+    keywords: &str,
+    lang: &str,
+    colors: Colors,
+) {
     let color = if keywords
         .split_whitespace()
         .any(|k| k.eq_ignore_ascii_case(word))
     {
-        Color32::from_rgb(175, 0, 219)
+        colors.keyword
     } else if word.parse::<f64>().is_ok() {
-        Color32::from_rgb(9, 134, 88)
+        colors.type_name
     } else if lang == "json" && word.ends_with(':') {
-        Color32::from_rgb(4, 81, 165)
+        colors.accent_strong
     } else {
         fmt.color
     };

@@ -6,6 +6,7 @@ use super::super::{
     review::ReviewStatus,
     stats::LineStats,
 };
+use crate::ui_theme as theme;
 use eframe::egui;
 use std::{collections::HashMap, path::PathBuf, sync::mpsc, time::Instant};
 
@@ -190,7 +191,7 @@ fn compact_rows_have_four_columns_with_aligned_green_counts() {
                         .job
                         .sections
                         .iter()
-                        .all(|section| section.format.color == crate::ui_theme::GREEN)
+                        .all(|section| section.format.color == theme::palette(&ctx).success)
                 );
             }
             let rights = [

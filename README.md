@@ -168,12 +168,12 @@ For component filters, use `RUST_LOG`, for example `RUST_LOG=warn,focus_editor::
 
 - The left activity bar switches between **Explorer**, **Search**, and **Source Control**.
 - The center contains file tabs, the editor, and Git diff previews.
-- The bottom pane is an interactive Bash terminal, with a Restart action.
+- The bottom of the center column contains an interactive terminal and Logs, with a Restart action.
 - **Dev Container** starts a configured Docker Compose service and changes the terminal, Git, and assistants to use it.
 - The optional right pane contains Codex and/or OpenCode. Its header keeps status visible alongside horizontally scrollable session controls; **Usage / status** has its own section below.
 - Drag the dividers to resize the sidebar, terminal, and assistant pane. Their sizes are saved.
 
-The light theme uses blue navigation, teal Codex accents, colored file-type markers, vector icons, and illustrations in empty views. Source Control groups use amber, blue, green, and red. Text labels accompany status colors, and input cursors are thick and steady. The bottom status bar shows file and save feedback.
+Nord Light follows the Nord concept in `ui-mocks/index.html`: cool gray panels, a light activity rail, muted blue accents, square corners, and compact controls. Source Control keeps semantic status colors and text labels. The accent-colored bottom status bar shows file and save feedback. Bundled addon panels receive the editor’s resolved theme automatically, including custom widget colors and spacing. The terminal uses the widget’s supported light palette; native window decorations follow the operating system. Saved panel sizes are retained. See [UI follow-ups](TODO.md) for additional mockup features and future theme selection.
 
 ## Explorer and editing
 

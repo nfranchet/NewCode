@@ -16,9 +16,9 @@ impl OpenCodeUi {
                 for permission in &self.permissions {
                     let id = string(permission, "id");
                     ui.push_id(id, |ui| {
-                        crate::assistant_ui::content::approval_frame().show(ui, |ui| {
+                        crate::assistant_ui::content::approval_frame(ui).show(ui, |ui| {
                             ui.colored_label(
-                                theme::AMBER,
+                                theme::colors(ui).warning,
                                 format!(
                                     "Permission: {}",
                                     permission["permission"]
@@ -69,7 +69,7 @@ impl OpenCodeUi {
                     answers.selected.resize(questions.len(), vec![]);
                     answers.custom.resize(questions.len(), String::new());
                     ui.push_id(id, |ui| {
-                        crate::assistant_ui::content::approval_frame().show(ui, |ui| {
+                        crate::assistant_ui::content::approval_frame(ui).show(ui, |ui| {
                             ui.add_enabled_ui(!answering, |ui| {
                                 for (index, question) in questions.iter().enumerate() {
                                     ui.push_id(index, |ui| {

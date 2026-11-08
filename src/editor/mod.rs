@@ -225,7 +225,6 @@ impl EditorApp {
         self.status_bar(root);
         let cwd = self.settings.workspace.clone();
         let runtime = self.dev_container.runtime().cloned();
-        self.shell_panel(root, cwd.as_deref(), runtime.as_ref());
         self.activity_bar(root);
         self.cancel_creation_for_workspace_change();
         self.sidebar(root);
@@ -234,6 +233,7 @@ impl EditorApp {
             &mut self.settings.right_width,
             &mut self.settings.selected_right_addon,
         );
+        self.shell_panel(root, cwd.as_deref(), runtime.as_ref());
         self.document_panel(root, opened_find);
         self.rename_dialog(ctx);
         self.close_dialog(ctx);

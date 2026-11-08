@@ -91,7 +91,7 @@ impl EditorApp {
                     } else {
                         Icon::File
                     },
-                    theme::BLUE,
+                    theme::colors(ui).accent,
                 );
                 ui.add(
                     egui::TextEdit::singleline(&mut entry.name)
@@ -137,7 +137,7 @@ impl EditorApp {
             return;
         }
         if !entry.error.is_empty() {
-            ui.colored_label(theme::RED, &entry.error);
+            ui.colored_label(theme::colors(ui).error, &entry.error);
         }
         self.creation = Some(entry);
     }

@@ -15,6 +15,8 @@ pub(super) struct EditorLayoutCache {
     query: String,
     active_match: Option<usize>,
     galley: Option<Arc<egui::Galley>>,
+    colors: Option<theme::Colors>,
+    font: Option<FontId>,
 }
 
 impl EditorApp {
@@ -24,8 +26,8 @@ impl EditorApp {
             theme::badge(
                 ui,
                 "Modified",
-                theme::AMBER,
-                Color32::from_rgb(255, 246, 223),
+                theme::colors(ui).warning,
+                theme::colors(ui).warning_soft,
             );
         }
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -39,20 +41,24 @@ impl EditorApp {
         let extension = ext.to_string();
         let mut layouter = move |ui: &egui::Ui, text: &dyn egui::TextBuffer, _wrap_width: f32| {
             let source = text.as_str();
+            let colors = theme::colors(ui);
+            let font = TextStyle::Monospace.resolve(ui.style());
             {
                 let cached = layout_cache.lock().unwrap();
                 if cached.text == source
                     && cached.extension == extension
                     && cached.query == find_query
                     && cached.active_match == find_active
+                    && cached.colors == Some(colors)
+                    && cached.font.as_ref() == Some(&font)
                 {
                     if let Some(galley) = &cached.galley {
                         return galley.clone();
                     }
                 }
             }
-            let mut job = colored_job(source, &extension);
-            highlight_find_matches(&mut job, source, &find_query, find_active);
+            let mut job = colored_job(source, &extension, colors, font.clone());
+            highlight_find_matches(&mut job, source, &find_query, find_active, colors);
             job.wrap.max_width = f32::INFINITY;
             let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
             let mut cached = layout_cache.lock().unwrap();
@@ -61,6 +67,8 @@ impl EditorApp {
             cached.query = find_query.clone();
             cached.active_match = find_active;
             cached.galley = Some(galley.clone());
+            cached.colors = Some(colors);
+            cached.font = Some(font);
             galley
         };
         let editor_id = self.editor_id();
@@ -81,11 +89,16 @@ impl EditorApp {
                     .count()
                     .saturating_sub(usize::from(self.buffer.ends_with('\n')))
                     .max(1);
-                let row_height = ui.fonts_mut(|f| f.row_height(&FontId::monospace(14.0)));
+                let row_height =
+                    ui.fonts_mut(|f| f.row_height(&TextStyle::Monospace.resolve(ui.style())));
                 let digit_width = ui.fonts_mut(|f| {
-                    f.layout_no_wrap("0".into(), FontId::monospace(14.0), Color32::WHITE)
-                        .size()
-                        .x
+                    f.layout_no_wrap(
+                        "0".into(),
+                        TextStyle::Monospace.resolve(ui.style()),
+                        Color32::WHITE,
+                    )
+                    .size()
+                    .x
                 });
                 let gutter_width = digit_width * line_count.to_string().len() as f32 + 16.0;
                 let text_width = (ui.available_width() - gutter_width - 8.0).max(60.0);
@@ -101,6 +114,7 @@ impl EditorApp {
                         .desired_width(text_width)
                         .desired_rows(1)
                         .code_editor()
+                        .frame(egui::Frame::NONE)
                         .layouter(&mut layouter)
                         .show(ui);
                     let visible = ui.clip_rect().intersect(gutter_rect);
@@ -117,8 +131,8 @@ impl EditorApp {
                                 egui::pos2(gutter_rect.right() - 8.0, line_y),
                                 egui::Align2::RIGHT_TOP,
                                 format!("{:>number_width$}", index + 1),
-                                FontId::monospace(14.0),
-                                Color32::from_gray(115),
+                                TextStyle::Monospace.resolve(ui.style()),
+                                theme::colors(ui).faint,
                             );
                         }
                         char_offset += line.chars().count() + 1;

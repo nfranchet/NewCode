@@ -76,7 +76,7 @@ impl CodexUi {
                                 );
                             }
                             _ => {
-                                content::frame(&message.kind).show(ui, |ui| {
+                                content::message(ui, &message.kind, |ui| {
                                     content::heading(ui, &message.kind);
                                     if message.kind == "You" {
                                         content::literal(ui, &message.text);
@@ -93,7 +93,7 @@ impl CodexUi {
                                                     ui,
                                                     Icon::Send,
                                                     "Go",
-                                                    theme::TEAL,
+                                                    theme::colors(ui).accent,
                                                     true,
                                                 )
                                             })
@@ -123,8 +123,13 @@ impl CodexUi {
                     let pending_method = self.pending[index].method.clone();
                     let pending_prompt = self.pending[index].prompt.clone();
                     let pending_answer_key = self.pending[index].answer_key.clone();
-                    content::approval_frame().show(ui, |ui| {
-                        theme::heading(ui, Icon::Warning, "Your response is needed", theme::AMBER);
+                    content::approval_frame(ui).show(ui, |ui| {
+                        theme::heading(
+                            ui,
+                            Icon::Warning,
+                            "Your response is needed",
+                            theme::colors(ui).warning,
+                        );
                         ui.label(&pending_prompt);
                         if pending_method.contains("requestUserInput") {
                             ui.add(

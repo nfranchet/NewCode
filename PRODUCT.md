@@ -8,7 +8,7 @@ A fast, Linux-first Rust desktop editor for project file management, source edit
 
 The left activity bar selects Explorer, Search, or Source Control. The center displays open files or a Source Control diff. An interactive shell occupies the bottom and an optional Codex/OpenCode assistant pane occupies the right. Pane sizes are adjustable and saved.
 
-A coordinated light theme uses blue navigation, teal Codex controls, semantic Git colors, vector icons, colored file-type markers, and small empty-state illustrations. Focus, selected tabs, and status badges remain visible. Labels accompany colors, and input cursors are thick and steady. A bottom status bar reports file/save activity.
+Nord Light uses cool gray surfaces, muted blue accents, compact controls, square corners, and semantic Git colors, based on the Nord concept in `ui-mocks/index.html`. The terminal sits beneath the center editor column, and sidebars extend to the status bar. Bundled addons inherit resolved host appearance through the generic surface theme contract. Focus, selected tabs, status labels, vector icons, colored file markers, and steady input cursors remain visible. A bottom status bar reports file/save activity. New mockup capabilities and other theme presets are tracked in `TODO.md`.
 
 ## Explorer and documents
 
