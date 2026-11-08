@@ -39,177 +39,202 @@ impl EditorApp {
         opened_find
     }
     pub(super) fn toolbar(&mut self, root: &mut egui::Ui) {
-        let context = root.ctx().clone();
-        let ctx = &context;
         let colors = theme::colors(root);
+        let height = theme::metrics(root).toolbar_height;
         egui::Panel::top("toolbar")
-            .exact_size(theme::metrics(root).toolbar_height)
-            .frame(
-                egui::Frame::new()
-                    .fill(colors.chrome)
-                    .stroke(egui::Stroke::new(1.0_f32, colors.border))
-                    .inner_margin(egui::Margin::symmetric(10, 8)),
-            )
+            .exact_size(height)
+            .frame(egui::Frame::new().fill(colors.chrome).inner_margin(0))
             .show(root, |ui| {
-                ui.horizontal(|ui| {
-                    theme::icon(ui, Icon::Spark, theme::colors(ui).accent);
-                    ui.label(
-                        egui::RichText::new("Focus")
-                            .strong()
-                            .size(12.0)
-                            .color(theme::colors(ui).accent),
-                    );
-                    ui.separator();
-                    if theme::button(
+                let rect = ui.available_rect_before_wrap();
+                let side_width = 300.0_f32.min(rect.width() * 0.36);
+                let left = egui::Rect::from_min_max(
+                    rect.min + egui::vec2(10.0, 0.0),
+                    egui::pos2(rect.left() + side_width, rect.bottom()),
+                );
+                let right = egui::Rect::from_min_max(
+                    egui::pos2(rect.right() - side_width, rect.top()),
+                    rect.max - egui::vec2(10.0, 0.0),
+                );
+                let center = egui::Rect::from_min_max(
+                    egui::pos2(rect.left() + side_width, rect.top()),
+                    egui::pos2(rect.right() - side_width, rect.bottom()),
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("toolbar_workspace")
+                        .max_rect(left)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    |ui| {
+                        if theme::button(ui, Icon::Folder, "Workspace", colors.accent, false)
+                            .clicked()
+                        {
+                            self.choose_workspace();
+                        }
+                    },
+                );
+                let title = self
+                    .settings
+                    .workspace
+                    .as_deref()
+                    .map(|path| {
+                        let path = crate::launch::workspace_display_path(path);
+                        format!(
+                            "Focus Editor · {}",
+                            path.file_name()
+                                .unwrap_or(path.as_os_str())
+                                .to_string_lossy()
+                        )
+                    })
+                    .unwrap_or_else(|| "Focus Editor".into());
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("toolbar_title")
+                        .max_rect(center)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    |ui| {
+                        ui.add_sized(
+                            center.size(),
+                            egui::Label::new(egui::RichText::new(title).strong().size(12.0))
+                                .truncate(),
+                        );
+                    },
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .id_salt("toolbar_actions")
+                        .max_rect(right)
+                        .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                    |ui| {
+                        self.toolbar_actions(ui);
+                    },
+                );
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.bottom() - 1.0,
+                    egui::Stroke::new(1.0, colors.border),
+                );
+            });
+    }
+
+    fn toolbar_actions(&mut self, ui: &mut egui::Ui) {
+        let context = ui.ctx().clone();
+        let ctx = &context;
+        if ui
+            .add_enabled_ui(self.active_file.is_some(), |ui| {
+                theme::button(ui, Icon::Save, "Save", theme::colors(ui).accent, true)
+            })
+            .inner
+            .on_hover_text("Save file · Ctrl+S")
+            .clicked()
+        {
+            self.save_file();
+        }
+        ui.separator();
+        ui.menu_button("Edit", |ui| {
+            if ui
+                .add_enabled_ui(self.active_file.is_some(), |ui| {
+                    theme::button(
                         ui,
-                        Icon::Folder,
-                        "Workspace",
+                        Icon::Save,
+                        "Save   Ctrl+S",
                         theme::colors(ui).accent,
                         false,
                     )
-                    .clicked()
-                    {
-                        self.choose_workspace();
-                    }
-                    if let Some(root) = self.settings.workspace.as_ref() {
-                        let root = crate::launch::workspace_display_path(root);
-                        ui.add_sized(
-                            [120.0, 23.0],
-                            egui::Label::new(
-                                egui::RichText::new(
-                                    root.file_name()
-                                        .unwrap_or(root.as_os_str())
-                                        .to_string_lossy(),
-                                )
-                                .color(theme::colors(ui).muted),
-                            )
-                            .truncate(),
-                        )
-                        .on_hover_text(root.display().to_string());
-                    }
-                    ui.separator();
-                    ui.menu_button("Dev Container", |ui| self.dev_container.menu(ui, ctx));
-                    if ctx
-                        .data_mut(|data| {
-                            data.remove_temp::<bool>(egui::Id::new("show_dev_container_logs"))
-                        })
-                        .unwrap_or(false)
-                    {
-                        self.bottom_tab = super::logs::Tab::Logs;
-                        self.logs.source = Some(crate::logging::session::Source::DevContainer);
-                    }
-                    ui.menu_button("Addons", |ui| {
-                        self.addons.menu(ui, &mut self.settings.addon_enabled)
-                    });
-                    self.settings.migrate_addons(
-                        &self
-                            .addons
-                            .entries
-                            .iter()
-                            .map(|a| a.manifest.clone())
-                            .collect::<Vec<_>>(),
-                    );
-                    self.addons
-                        .apply_settings(&self.settings.addon_enabled, &self.settings.addon_state);
-                    if self.addons.take_manager_request() {
-                        self.sidebar_mode = SidebarMode::AddonManager;
-                    }
-                    if self.sidebar_mode == SidebarMode::Addon && self.addons.active.is_none() {
-                        self.sidebar_mode = SidebarMode::Explorer;
-                    }
-                    ui.menu_button("Edit", |ui| {
-                        if ui
-                            .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(
-                                    ui,
-                                    Icon::Save,
-                                    "Save   Ctrl+S",
-                                    theme::colors(ui).accent,
-                                    false,
-                                )
-                            })
-                            .inner
-                            .clicked()
-                        {
-                            self.save_file();
-                            ui.close();
-                        }
-                        if ui
-                            .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(
-                                    ui,
-                                    Icon::Copy,
-                                    "Copy   Ctrl+C",
-                                    theme::colors(ui).accent,
-                                    false,
-                                )
-                            })
-                            .inner
-                            .clicked()
-                        {
-                            self.copy_selection(ctx);
-                            ui.close();
-                        }
-                        if ui
-                            .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(
-                                    ui,
-                                    Icon::Paste,
-                                    "Paste   Ctrl+V",
-                                    theme::colors(ui).accent,
-                                    false,
-                                )
-                            })
-                            .inner
-                            .clicked()
-                        {
-                            self.paste_from_clipboard(ctx);
-                            ui.close();
-                        }
-                        ui.separator();
-                        if ui
-                            .add_enabled_ui(self.active_file.is_some(), |ui| {
-                                theme::button(
-                                    ui,
-                                    Icon::Search,
-                                    "Find in File   Ctrl+F",
-                                    theme::colors(ui).accent,
-                                    false,
-                                )
-                            })
-                            .inner
-                            .clicked()
-                        {
-                            self.find_open = true;
-                            ctx.memory_mut(|memory| {
-                                memory.request_focus(egui::Id::new("find_in_file_query"))
-                            });
-                            ui.close();
-                        }
-                        if ui
-                            .add_enabled(
-                                self.active_file.is_some(),
-                                egui::Button::new("Select All   Ctrl+A"),
-                            )
-                            .clicked()
-                        {
-                            self.select_all(ctx);
-                            ui.close();
-                        }
-                    });
-                    ui.separator();
-                    if ui
-                        .add_enabled_ui(self.active_file.is_some(), |ui| {
-                            theme::button(ui, Icon::Save, "Save", theme::colors(ui).accent, true)
-                        })
-                        .inner
-                        .on_hover_text("Save file · Ctrl+S")
-                        .clicked()
-                    {
-                        self.save_file();
-                    }
-                });
-            });
+                })
+                .inner
+                .clicked()
+            {
+                self.save_file();
+                ui.close();
+            }
+            if ui
+                .add_enabled_ui(self.active_file.is_some(), |ui| {
+                    theme::button(
+                        ui,
+                        Icon::Copy,
+                        "Copy   Ctrl+C",
+                        theme::colors(ui).accent,
+                        false,
+                    )
+                })
+                .inner
+                .clicked()
+            {
+                self.copy_selection(ctx);
+                ui.close();
+            }
+            if ui
+                .add_enabled_ui(self.active_file.is_some(), |ui| {
+                    theme::button(
+                        ui,
+                        Icon::Paste,
+                        "Paste   Ctrl+V",
+                        theme::colors(ui).accent,
+                        false,
+                    )
+                })
+                .inner
+                .clicked()
+            {
+                self.paste_from_clipboard(ctx);
+                ui.close();
+            }
+            ui.separator();
+            if ui
+                .add_enabled_ui(self.active_file.is_some(), |ui| {
+                    theme::button(
+                        ui,
+                        Icon::Search,
+                        "Find in File   Ctrl+F",
+                        theme::colors(ui).accent,
+                        false,
+                    )
+                })
+                .inner
+                .clicked()
+            {
+                self.find_open = true;
+                ctx.memory_mut(|memory| memory.request_focus(egui::Id::new("find_in_file_query")));
+                ui.close();
+            }
+            if ui
+                .add_enabled(
+                    self.active_file.is_some(),
+                    egui::Button::new("Select All   Ctrl+A"),
+                )
+                .clicked()
+            {
+                self.select_all(ctx);
+                ui.close();
+            }
+        });
+        ui.menu_button("Addons", |ui| {
+            self.addons.menu(ui, &mut self.settings.addon_enabled)
+        });
+        self.settings.migrate_addons(
+            &self
+                .addons
+                .entries
+                .iter()
+                .map(|a| a.manifest.clone())
+                .collect::<Vec<_>>(),
+        );
+        self.addons
+            .apply_settings(&self.settings.addon_enabled, &self.settings.addon_state);
+        if self.addons.take_manager_request() {
+            self.sidebar_mode = SidebarMode::AddonManager;
+        }
+        if self.sidebar_mode == SidebarMode::Addon && self.addons.active.is_none() {
+            self.sidebar_mode = SidebarMode::Explorer;
+        }
+        ui.menu_button("Dev Container", |ui| self.dev_container.menu(ui, ctx));
+        if ctx
+            .data_mut(|data| data.remove_temp::<bool>(egui::Id::new("show_dev_container_logs")))
+            .unwrap_or(false)
+        {
+            self.bottom_tab = super::logs::Tab::Logs;
+            self.logs.source = Some(crate::logging::session::Source::DevContainer);
+        }
     }
     pub(super) fn status_bar(&mut self, root: &mut egui::Ui) {
         let colors = theme::colors(root);
@@ -314,6 +339,7 @@ impl EditorApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(colors.editor).inner_margin(0))
             .show(root, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
                 self.document_tabs(ui, ctx);
                 if self.sidebar_mode == SidebarMode::AddonManager
                     && self

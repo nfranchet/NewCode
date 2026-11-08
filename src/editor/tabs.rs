@@ -14,19 +14,23 @@ impl EditorApp {
             egui::Frame::new()
                 .fill(theme::colors(ui).chrome)
                 .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+                    ui.set_min_width(ui.available_width());
                     ui.horizontal(|ui| {
                         let tabs_width = (ui.available_width() - 48.0).max(64.0);
                         ui.allocate_ui_with_layout(
                             egui::vec2(tabs_width, theme::metrics(ui).tab_height),
-                            egui::Layout::left_to_right(egui::Align::Center),
+                            egui::Layout::left_to_right(egui::Align::Min),
                             |ui| {
                                 let mut active_tab_rect = None;
                                 let tab_scroll = egui::ScrollArea::horizontal()
                                     .id_salt("open_file_tabs")
                                     .auto_shrink([false, false])
+                                    .scroll_bar_visibility(
+                                        egui::scroll_area::ScrollBarVisibility::AlwaysHidden,
+                                    )
                                     .show(ui, |ui| {
-                                        ui.horizontal(|ui| {
+                                        ui.horizontal_top(|ui| {
                                             for p in &open_files {
                                                 let active = active_file.as_ref() == Some(p);
                                                 let dirty = self.file_is_dirty(p);
@@ -44,24 +48,21 @@ impl EditorApp {
                                                 } else {
                                                     theme::colors(ui).text
                                                 };
-                                                let job = egui::text::LayoutJob::single_section(
-                                                    format!(
-                                                        "{}  {label}",
-                                                        theme::file_kind(ui, p).0
-                                                    ),
-                                                    egui::TextFormat {
-                                                        font_id: font.clone(),
-                                                        color,
-                                                        italics: preview,
-                                                        ..Default::default()
-                                                    },
-                                                );
+                                                let mut job = theme::file_text(ui, p, &label);
+                                                for section in &mut job.sections {
+                                                    section.format.font_id = font.clone();
+                                                    section.format.italics = preview;
+                                                }
+                                                if let Some(filename) = job.sections.last_mut() {
+                                                    filename.format.color = color;
+                                                }
                                                 let galley =
                                                     ui.fonts_mut(|fonts| fonts.layout_job(job));
                                                 let close_width = 26.0;
                                                 let padding = 12.0;
                                                 let size = egui::vec2(
-                                                    galley.size().x + close_width + padding,
+                                                    (galley.size().x + close_width + 2.0 * padding)
+                                                        .max(theme::metrics(ui).tab_min_width),
                                                     theme::metrics(ui).tab_height,
                                                 );
                                                 let (rect, _) = ui.allocate_exact_size(
@@ -105,6 +106,14 @@ impl EditorApp {
                                                     ui.visuals().widgets.inactive.corner_radius,
                                                     fill,
                                                 );
+                                                ui.painter().vline(
+                                                    rect.right(),
+                                                    rect.y_range(),
+                                                    egui::Stroke::new(
+                                                        1.0,
+                                                        theme::colors(ui).border,
+                                                    ),
+                                                );
                                                 if active {
                                                     ui.painter().rect_filled(
                                                         egui::Rect::from_min_size(
@@ -127,7 +136,7 @@ impl EditorApp {
                                                 ui.painter().galley(
                                                     rect.min
                                                         + egui::vec2(
-                                                            padding * 0.5,
+                                                            padding,
                                                             (size.y - galley.size().y) * 0.5,
                                                         ),
                                                     galley,
@@ -224,7 +233,7 @@ impl EditorApp {
                                 }
                             },
                         );
-                        ui.menu_button(format!("⌄ {}", open_files.len()), |ui| {
+                        ui.menu_button(format!("… {}", open_files.len()), |ui| {
                             ui.set_min_width(240.0);
                             ui.add(
                                 egui::TextEdit::singleline(&mut self.open_file_filter)

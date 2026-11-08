@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 mod explorer;
+mod geometry;
 mod layout;
 mod persistence;
 

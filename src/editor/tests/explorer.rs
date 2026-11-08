@@ -80,6 +80,9 @@ fn folder_context_menu_opens_delete_confirmation_when_closed_or_open() {
             .unwrap()
             .rect;
         click(&mut app, row.center(), egui::PointerButton::Secondary);
+        // read_response reads the previous pass. Allow the popup sizing pass
+        // to settle before clicking its final position beside the full-width row.
+        frame(&mut app, vec![]);
         let delete = ctx
             .read_response(egui::Id::new(("explorer_delete_action", folder.as_path())))
             .expect("Folder context menu must offer Delete")

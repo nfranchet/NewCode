@@ -8,12 +8,20 @@ use std::{fs, path::Path};
 
 impl EditorApp {
     pub(super) fn tree(&mut self, ui: &mut egui::Ui, dir: &Path) {
+        self.tree_at_depth(ui, dir, 0);
+    }
+
+    fn tree_at_depth(&mut self, ui: &mut egui::Ui, dir: &Path, depth: usize) {
+        let metrics = theme::metrics(ui);
         if self
             .creation
             .as_ref()
             .is_some_and(|entry| entry.parent == dir)
         {
-            self.creation_row(ui);
+            ui.horizontal(|ui| {
+                ui.add_space(8.0 + depth as f32 * metrics.tree_indent);
+                ui.vertical(|ui| self.creation_row(ui));
+            });
         }
         let Ok(entries) = fs::read_dir(dir) else {
             return;
@@ -26,14 +34,9 @@ impl EditorApp {
             )
         });
         for path in paths {
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
             if path.is_dir() {
                 let id = ui.make_persistent_id(("folder", &path));
-                let mut clicked = false;
                 let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                     ui.ctx(),
                     id,
@@ -46,54 +49,18 @@ impl EditorApp {
                 {
                     state.set_open(true);
                 }
-                let mut folder = state.show_header(ui, |ui| {
-                    let (icon_rect, _) =
-                        ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-                    theme::paint_icon(ui, icon_rect, Icon::Folder, theme::colors(ui).muted);
-                    let icon = ui.interact(icon_rect, id.with("icon"), egui::Sense::click());
-                    let label = ui.add(
-                        egui::Label::new(egui::RichText::new(name).color(theme::colors(ui).text))
-                            .truncate(),
-                    );
-                    let label = ui.interact(
-                        label.rect,
-                        egui::Id::new(("explorer_folder_name", &path)),
-                        egui::Sense::click(),
-                    );
-                    let response = icon.union(label);
-                    clicked = response.clicked();
-                    response
-                });
-                if clicked {
-                    log::debug!("Explorer folder expansion toggled");
-                    folder.toggle();
+                let response = self.explorer_row(ui, &path, &name, depth, Some(state.is_open()));
+                if response.clicked() {
+                    state.set_open(!state.is_open());
                 }
-                let (toggle, header, _) = folder.body(|ui| self.tree(ui, &path));
-                // The layout response is hover-only. Use the clickable children so
-                // secondary clicks on the name, folder icon, or arrow open the menu.
-                header
-                    .inner
-                    .union(toggle)
-                    .context_menu(|ui| self.file_menu(ui, &path));
+                let open = state.is_open();
+                state.store(ui.ctx());
+                response.context_menu(|ui| self.file_menu(ui, &path));
+                if open {
+                    self.tree_at_depth(ui, &path, depth + 1);
+                }
             } else {
-                let response = ui
-                    .push_id(("explorer_file", &path), |ui| {
-                        ui.add_sized(
-                            [ui.available_width(), 23.0],
-                            egui::Button::selectable(
-                                self.active_file.as_ref() == Some(&path),
-                                theme::file_text(ui, &path, &name),
-                            )
-                            .truncate(),
-                        )
-                        .on_hover_text(path.display().to_string())
-                    })
-                    .inner;
-                ui.interact(
-                    response.rect,
-                    egui::Id::new(("explorer_file_row", &path)),
-                    egui::Sense::hover(),
-                );
+                let response = self.explorer_row(ui, &path, &name, depth, None);
                 if response.double_clicked() {
                     self.open_file(path.clone());
                 } else if response.clicked() {
@@ -102,6 +69,108 @@ impl EditorApp {
                 response.context_menu(|ui| self.file_menu(ui, &path));
             }
         }
+    }
+
+    fn explorer_row(
+        &self,
+        ui: &mut egui::Ui,
+        path: &Path,
+        name: &str,
+        depth: usize,
+        expanded: Option<bool>,
+    ) -> egui::Response {
+        let metrics = theme::metrics(ui);
+        let colors = theme::colors(ui);
+        let (rect, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), metrics.tree_row_height),
+            egui::Sense::hover(),
+        );
+        let id = egui::Id::new((
+            if expanded.is_some() {
+                "explorer_folder_name"
+            } else {
+                "explorer_file_row"
+            },
+            path,
+        ));
+        let response = ui.interact(rect, id, egui::Sense::click());
+        let selected = expanded.is_none() && self.active_file.as_deref() == Some(path);
+        let painter = ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
+        if selected || response.hovered() {
+            painter.rect_filled(
+                rect,
+                0.0,
+                if selected {
+                    colors.selection
+                } else {
+                    colors.hover
+                },
+            );
+        }
+        if response.has_focus() {
+            painter.rect_stroke(
+                rect.shrink(1.0),
+                0.0,
+                egui::Stroke::new(1.0, colors.accent),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let icon_x = rect.left() + 19.0 + depth as f32 * metrics.tree_indent;
+        if let Some(open) = expanded {
+            let center = egui::pos2(icon_x + 6.0, rect.center().y);
+            let points = if open {
+                vec![
+                    center + egui::vec2(-3.5, -2.0),
+                    center + egui::vec2(3.5, -2.0),
+                    center + egui::vec2(0.0, 3.0),
+                ]
+            } else {
+                vec![
+                    center + egui::vec2(-2.0, -3.5),
+                    center + egui::vec2(-2.0, 3.5),
+                    center + egui::vec2(3.0, 0.0),
+                ]
+            };
+            painter.add(egui::Shape::convex_polygon(
+                points,
+                colors.muted,
+                egui::Stroke::NONE,
+            ));
+        } else {
+            let (kind, color) = theme::file_kind(ui, path);
+            painter.text(
+                egui::pos2(icon_x + 6.0, rect.center().y),
+                egui::Align2::CENTER_CENTER,
+                kind,
+                egui::FontId::monospace(10.0),
+                color,
+            );
+        }
+        let text_x = icon_x + 20.0;
+        let mut job = egui::text::LayoutJob::single_section(
+            name.into(),
+            egui::TextFormat::simple(
+                egui::TextStyle::Body.resolve(ui.style()),
+                if selected {
+                    colors.accent_strong
+                } else {
+                    colors.text
+                },
+            ),
+        );
+        job.wrap.max_width = (rect.right() - text_x - 8.0).max(0.0);
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+        painter.galley(
+            egui::pos2(text_x, rect.center().y - galley.size().y * 0.5),
+            galley,
+            colors.text,
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name)
+        });
+        response.on_hover_text(path.display().to_string())
     }
 
     pub(super) fn file_menu(&mut self, ui: &mut egui::Ui, path: &Path) {
@@ -171,11 +240,56 @@ impl EditorApp {
             ui.separator();
         }
         if let Some(root) = workspace {
-            ui.label(
-                egui::RichText::new(root.file_name().unwrap_or_default().to_string_lossy())
-                    .strong(),
+            let colors = theme::colors(ui);
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), theme::metrics(ui).project_row_height),
+                egui::Sense::hover(),
             );
-            egui::ScrollArea::vertical().show(ui, |ui| self.tree(ui, &root));
+            ui.painter().hline(
+                rect.x_range(),
+                rect.top(),
+                egui::Stroke::new(1.0, colors.border),
+            );
+            ui.painter().hline(
+                rect.x_range(),
+                rect.bottom(),
+                egui::Stroke::new(1.0, colors.border),
+            );
+            let label = root
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_uppercase();
+            let chevron = rect.left_center() + egui::vec2(12.0, 0.0);
+            ui.painter().add(egui::Shape::convex_polygon(
+                vec![
+                    chevron + egui::vec2(-3.5, -2.0),
+                    chevron + egui::vec2(3.5, -2.0),
+                    chevron + egui::vec2(0.0, 3.0),
+                ],
+                colors.muted,
+                egui::Stroke::NONE,
+            ));
+            let mut job = egui::text::LayoutJob::simple_singleline(
+                label,
+                egui::FontId::proportional(11.0),
+                colors.text,
+            );
+            job.wrap.max_width = (rect.width() - 30.0).max(0.0);
+            job.wrap.max_rows = 1;
+            let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+            ui.painter().galley(
+                egui::pos2(rect.left() + 22.0, rect.center().y - galley.size().y * 0.5),
+                galley,
+                colors.text,
+            );
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    ui.add_space(5.0);
+                    self.tree(ui, &root);
+                });
         } else {
             ui.vertical_centered(|ui| {
                 theme::empty_art(ui, Icon::Folder, theme::colors(ui).accent);

@@ -45,12 +45,45 @@ pub struct Colors {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Metrics {
     pub activity_width: f32,
     pub tab_height: f32,
     pub toolbar_height: f32,
     pub status_height: f32,
     pub message_border_width: f32,
+    pub panel_header_height: f32,
+    pub project_row_height: f32,
+    pub tree_row_height: f32,
+    pub tree_indent: f32,
+    pub tab_min_width: f32,
+    pub editor_top_padding: f32,
+    pub editor_bottom_padding: f32,
+    pub editor_gutter_width: f32,
+    pub editor_gutter_gap: f32,
+    pub editor_line_height: f32,
+}
+
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            activity_width: 44.0,
+            tab_height: 37.0,
+            toolbar_height: 42.0,
+            status_height: 24.0,
+            message_border_width: 3.0,
+            panel_header_height: 38.0,
+            project_row_height: 29.0,
+            tree_row_height: 26.0,
+            tree_indent: 16.0,
+            tab_min_width: 130.0,
+            editor_top_padding: 15.0,
+            editor_bottom_padding: 24.0,
+            editor_gutter_width: 42.0,
+            editor_gutter_gap: 8.0,
+            editor_line_height: 21.0,
+        }
+    }
 }
 
 impl Theme {
@@ -96,13 +129,7 @@ impl Theme {
         Self {
             style,
             colors,
-            metrics: Metrics {
-                activity_width: 44.0,
-                tab_height: 37.0,
-                toolbar_height: 42.0,
-                status_height: 24.0,
-                message_border_width: 3.0,
-            },
+            metrics: Metrics::default(),
         }
     }
 }
@@ -505,6 +532,19 @@ pub fn empty_art(ui: &mut Ui, symbol: Icon, accent: Color32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn older_theme_metrics_receive_layout_defaults() {
+        let metrics: Metrics = serde_json::from_value(serde_json::json!({
+            "activity_width": 48.0, "tab_height": 34.0, "toolbar_height": 42.0,
+            "status_height": 25.0, "message_border_width": 2.0,
+        }))
+        .unwrap();
+        assert_eq!(metrics.activity_width, 48.0);
+        assert_eq!(metrics.editor_line_height, 21.0);
+        assert_eq!(metrics.editor_gutter_width, 42.0);
+        assert_eq!(metrics.tree_row_height, 26.0);
+    }
 
     #[test]
     fn icon_button_supports_keyboard_activation_and_disabled_state() {
