@@ -82,36 +82,28 @@ pub(crate) struct EditorApp {
 }
 
 impl EditorApp {
-    pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        cc.egui_ctx
-            .memory_mut(|memory| *memory = Default::default());
-        crate::logging::session::attach(&cc.egui_ctx);
-        let args: Vec<_> = std::env::args_os().skip(1).collect();
-        let directory_argument = crate::logging::Arguments::parse(args.clone())
-            .ok()
-            .and_then(|a| a.workspace)
-            .filter(|p| p.is_dir());
-        let (settings, settings_path) = crate::settings::load_workspace(
-            directory_argument.as_deref(),
-        )
-        .unwrap_or_else(|error| {
-            log::warn!("{error}");
-            (Settings::default(), PathBuf::new())
-        });
-        cc.egui_ctx
-            .send_viewport_cmd(egui::ViewportCommand::Title(crate::launch::window_title(
-                settings.workspace.as_deref(),
-            )));
+    pub(crate) fn new(ctx: &egui::Context, arguments: &crate::logging::Arguments) -> Self {
+        ctx.memory_mut(|memory| *memory = Default::default());
+        crate::logging::session::attach(ctx);
+        let directory_argument = arguments.workspace.as_deref().filter(|p| p.is_dir());
+        let (settings, settings_path) = crate::settings::load_workspace(directory_argument)
+            .unwrap_or_else(|error| {
+                log::warn!("{error}");
+                (Settings::default(), PathBuf::new())
+            });
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(crate::launch::window_title(
+            settings.workspace.as_deref(),
+        )));
         log::info!(
             "Workspace initialized selected={}",
             settings.workspace.is_some()
         );
         let cwd = settings.workspace.as_deref();
-        let (top, terminal_error) = match Terminal::spawn("", cwd, cc.egui_ctx.clone()) {
+        let (top, terminal_error) = match Terminal::spawn("", cwd, ctx.clone()) {
             Ok(terminal) => (Some(terminal), None),
             Err(error) => (None, Some(format!("Terminal failed to start: {error}"))),
         };
-        theme::apply(&cc.egui_ctx);
+        theme::apply(ctx);
         let (open_files, active_file, buffer) = restore_open_files(&settings);
         let next_document_id = open_files.len() as u64;
         let document_ids = open_files
@@ -127,9 +119,7 @@ impl EditorApp {
         let mut addons = crate::addons::Addons::default();
         addons.set_workspace_storage(settings.workspace.as_deref());
         addons.discover(&settings.addon_enabled);
-        addons.suppressed = crate::logging::Arguments::parse(args)
-            .map(|a| a.disabled_addons)
-            .unwrap_or_default();
+        addons.suppressed = arguments.disabled_addons.clone();
         addons.apply_settings(&settings.addon_enabled, &settings.addon_state);
         Self {
             settings,
@@ -171,7 +161,15 @@ impl EditorApp {
         }
     }
 
-    fn render(&mut self, root: &mut egui::Ui) {
+    pub(crate) fn has_unsaved_changes(&self) -> bool {
+        self.open_files.iter().any(|path| self.file_is_dirty(path))
+    }
+
+    pub(crate) fn window_title(&self) -> String {
+        crate::launch::window_title(self.settings.workspace.as_deref())
+    }
+
+    pub(crate) fn render(&mut self, root: &mut egui::Ui) {
         let context = root.ctx().clone();
         let ctx = &context;
         self.dev_container

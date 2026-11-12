@@ -126,6 +126,8 @@ fn terminal_captures_keys_from_first_tab_without_editor_actions() {
         *h.capture.0.lock().unwrap(),
         b"\t\x1b[Z\x1b\x1b[A\x1b[D\x06\x17\x13abc \xc3\xa9\x03\x18pasted"
     );
+    h.frame(vec![Event::Ime(egui::ImeEvent::Commit("日本語".into()))]);
+    assert!(h.capture.0.lock().unwrap().ends_with("日本語".as_bytes()));
     let sent = h.capture.0.lock().unwrap().clone();
     h.frame(vec![]);
     assert_eq!(

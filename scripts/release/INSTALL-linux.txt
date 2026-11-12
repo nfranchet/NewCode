@@ -5,6 +5,13 @@ Extract the archive and put focus-editor on your PATH, for example:
   install -m 755 focus-editor ~/.local/bin/focus-editor
   python3 install-addons.py
   focus-editor ~/projects/my-project
+  focus-editor --ui ~/projects/my-project
+
+The default opens your browser using a private localhost session. A browser
+with WebGL 2 is required. Use --ui for the native desktop window. Both modes
+use the same editor, terminals, Git, and addons; no Node.js or Electron is needed.
+Closing the tab allows 60 seconds to reconnect, then stops the backend.
+Close editor stops immediately, asking before discarding modified documents.
 
 The addon installer requires Python 3.11 or newer. It installs all bundled
 addons in $XDG_DATA_HOME/focus-editor/addons/<id> (normally
@@ -16,12 +23,15 @@ The same manager installs individual addons from the release catalog or a
 local addon .tar.gz, checks updates, and enables, restarts, or uninstalls addons.
 
 These binaries are built on Ubuntu 24.04 with glibc (2.39 or newer).
-They are not static binaries. An X11 or Wayland desktop, working OpenGL/EGL
-drivers, and the desktop's shared libraries are required. Use ldd focus-editor
-to identify missing libraries. A desktop portal enables native file dialogs.
+They are not static binaries. Use ldd focus-editor to identify missing shared
+libraries. Native mode needs an X11 or Wayland desktop and working OpenGL/EGL
+drivers. Both modes use local file dialogs through the desktop portal.
 
 Git, Docker, Codex, and OpenCode are separate optional installations.
 Configure provider authentication with each assistant's CLI before enabling it.
 The editor starts in the background; use --foreground to see diagnostics.
+Browser mode prints its private session URL only in the foreground, for manual
+opening if the default browser cannot be launched. Keep the full URL private.
+Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.

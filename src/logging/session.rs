@@ -83,11 +83,11 @@ static STORE: LazyLock<Mutex<Store>> = LazyLock::new(|| Mutex::new(Store::defaul
 pub(crate) fn attach(context: &eframe::egui::Context) {
     STORE.lock().unwrap_or_else(|e| e.into_inner()).context = Some(context.clone());
 }
-pub(crate) fn push(entry: Entry) {
+pub(crate) fn push(entry: Entry, repaint: bool) {
     let context = {
         let mut store = STORE.lock().unwrap_or_else(|e| e.into_inner());
         store.push(entry);
-        store.context.clone()
+        repaint.then(|| store.context.clone()).flatten()
     };
     if let Some(context) = context {
         context.request_repaint();

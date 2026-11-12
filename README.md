@@ -1,6 +1,6 @@
 # Focus Editor
 
-A compact Rust editor for Linux and Apple Silicon macOS. Browse projects, edit source files, review Git changes, and work with a shell, Codex, and OpenCode.
+A compact Rust editor for Linux and Apple Silicon macOS. Opens in your default browser; use `--ui` for the native desktop window. Browse projects, edit source files, review Git changes, and work with a shell, Codex, and OpenCode.
 
 Licensed under the [Apache License 2.0](LICENSE).
 
@@ -14,7 +14,7 @@ Publishing a GitHub release (including a prerelease) builds the tagged source an
 - `addons.json` (the manager catalog) and per-platform catalogs
 - `SHA256SUMS`
 
-Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer, an X11 or Wayland desktop, and working OpenGL/EGL libraries. They are dynamically linked; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
+Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer. Browser mode requires a browser with WebGL 2; native mode (`--ui`) requires an X11 or Wayland desktop and working OpenGL/EGL libraries. Both modes use the same dynamically linked executable; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
 
 Open **Addons** in the activity bar to install individual addons from the release catalog. The editor archives also include addon executables: run `python3 install-addons.py` from the extracted archive to install all of them, or add `--addon github` to select one (Python 3.11 or newer). Use **Rescan installed** in the manager afterward. The installer preserves addon data and installs executables beside logs.
 
@@ -40,7 +40,22 @@ cargo run --release
 
 The first build downloads the pinned Ghostty source and Zig packages. Subsequent builds reuse Cargo's build directory. For a network-free build, prefetch the pinned source and Zig packages and supply `GHOSTTY_SOURCE_DIR` and `GHOSTTY_ZIG_SYSTEM_DIR` as described by `libghostty-vt-sys`. `cargo --offline` alone does not prevent its native build script from fetching missing sources. Release binaries link the VT engine statically; users do not need Zig or the Ghostty application installed.
 
-On Linux, the editor opens in the background and immediately releases the terminal. macOS uses the normal application lifecycle. Each launch opens a separate instance. Its window title is **Focus Editor — workspace-name**, identifying the current workspace in Linux window lists that show window titles. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
+By default, the editor starts a private localhost server on a free port and opens the system's default browser. The existing editor interface renders in a WebGL 2 canvas; files, Git, terminals, Dev Containers, and addons run in the Rust process on your computer. Browser assets are embedded in the executable, with no Node.js, Electron, web build step, or external asset downloads. File/folder selection still uses local desktop dialogs.
+
+Choose either presentation:
+
+```sh
+focus-editor ~/projects/my-app
+focus-editor --ui ~/projects/my-app
+# From source, use the native desktop window:
+cargo run --release -- --ui ~/projects/my-app
+```
+
+On Linux, both modes open in the background and immediately release the terminal. macOS uses the normal application lifecycle. Each launch opens a separate instance. Both browser tabs and native windows use **Focus Editor — workspace-name** as their title. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
+
+Browser sessions accept one active tab at a time and are accessible only on this computer. Refreshing or reconnecting preserves unsaved buffers, running terminals, and addon state in the same backend process. Closing or losing the tab leaves a **60-second reconnect window**, after which the backend saves workspace settings and closes its owned PTY and addon processes. Unsaved buffers are not written to disk automatically. **Close editor** stops the session immediately and asks before discarding unsaved edits. The browser also warns before leaving a tab with modified documents.
+
+Clipboard actions may require browser clipboard permission. Shortcuts reserved by the browser, such as Ctrl+W/Command+W for closing the tab, may take precedence; use the editor's buttons and menus or `--ui` when needed. A browser without WebGL 2 displays instructions to use the desktop mode.
 
 Keep the editor attached to the terminal for debugging:
 
@@ -48,7 +63,11 @@ Keep the editor attached to the terminal for debugging:
 cargo run --release -- --foreground
 # Or, for an installed executable:
 focus-editor --foreground
+# The same debugging option works with the native window:
+focus-editor --ui --foreground
 ```
+
+Browser mode prints its complete session URL in the foreground, including a private `#` fragment needed to connect. If automatic browser opening fails, run with `--foreground` and open that URL manually. Treat the complete URL as a session credential; it is excluded from application diagnostic logs.
 
 Each launch starts a fresh diagnostic file at `$XDG_DATA_HOME/focus-editor/logs/launch.log`, usually `~/.local/share/focus-editor/logs/launch.log`. Failures to create the log or spawn the editor are reported in the launching terminal. Errors after detachment are recorded in the log.
 
@@ -332,6 +351,7 @@ Switching tabs continues processing both backends. Stream reconnects reload auth
 The editor and executable addons compile as separate Cargo projects:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
+- `src/browser/` hosts the default local browser session, embeds its browser client, and transports shared egui meshes, textures, input, and platform commands. Its renderer keeps the same editor state running during reloads and short disconnections; `--ui` uses the native eframe integration instead.
 - `crates/addon-support/src/assistant_ui/` shares assistant headers, cards, Markdown rendering/cache, and bounded scrolling composers; provider modules adapt their own catalogs and protocol actions to these controls.
 - `addons/codex/src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, numeric diff statistics and new-file line counting (`stats`), independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
@@ -341,3 +361,5 @@ The editor and executable addons compile as separate Cargo projects:
 Other top-level modules provide the shared theme/icons, settings, terminal process lifecycle and system font discovery, syntax coloring, and addon host services. Panel methods preserve their widget scopes and IDs; implementation details remain private to their feature module.
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.
+
+After `cargo build`, `python3 scripts/browser-smoke.py` checks browser rendering, editing/saving, clipboard, reloads, terminal input, display scaling, and shutdown in an isolated Chromium profile and workspace. This development check requires Python 3.11+, `websocket-client`, and Pillow. To include built assistant panels without connecting their backends, add `--addon addons/codex --addon addons/opencode`. The screenshot is saved to `target/browser-smoke.png`.

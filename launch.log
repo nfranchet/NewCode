@@ -1,0 +1,14 @@
+2026-11-12T09:49:18.449Z INFO  pid=2628229 [focus_editor] Application starting version=0.1.0
+2026-11-12T09:49:19.522Z INFO  pid=2628229 [focus_editor::editor] Workspace initialized selected=true
+2026-11-12T09:49:20.638Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: stop requested
+2026-11-12T09:49:20.647Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: start requested
+2026-11-12T09:49:20.652Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: spawn requested
+2026-11-12T09:49:23.226Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: Codex session selection existing=true
+2026-11-12T09:49:29.592Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: Codex session selection existing=false
+2026-11-12T09:53:25.993Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: Codex session selection existing=false
+2026-11-12T10:00:21.935Z INFO  pid=2628229 [focus_editor::addons::process] Addon codex: Codex session selection existing=false
+
+thread 'main' (2628229) panicked at /rustc/58cf8f9c35b355199727627d07ae34a4e2846d67/library/core/src/slice/sort/shared/smallsort.rs:854:5:
+user-provided comparison function does not correctly implement a total order
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-11-12T10:13:50.717Z WARN  pid=2628229 [egui_glow::painter] You forgot to call destroy() on the egui glow painter. Resources will leak!

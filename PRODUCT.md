@@ -2,7 +2,7 @@
 
 ## Goal
 
-A fast, Linux-first Rust desktop editor for project file management, source editing, Git review, an interactive shell, and Codex. Keep the working layout compact and make common actions easy to identify.
+A fast, Linux-first Rust editor for project file management, source editing, Git review, an interactive shell, and Codex. Open the existing interface in the default browser, with `--ui` selecting the native desktop window. Keep the working layout compact and make common actions easy to identify.
 
 ## Window and visual design
 
@@ -55,7 +55,7 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 
 ## Platform and boundaries
 
-- Linux and Apple Silicon macOS desktop application using Rust and eframe/egui, with native filesystem operations and a PTY.
+- Linux and Apple Silicon macOS application using Rust and eframe/egui, with native filesystem operations and a PTY. Share editor state and rendering logic between browser and native presentations; browser mode uses an embedded WebGL 2 client with no Node.js or Electron runtime.
 - Support Compose-based Dev Containers directly through Docker and the Docker Compose plugin. The native editor keeps the bind-mounted files on the host while the shell, Git, Codex, and OpenCode execute with `docker exec` in the selected service. Do not require, install, or invoke Node.js or the Dev Container CLI. Containers remain running on editor exit; start, reconnect, stop, and rebuild are explicit toolbar actions.
 - Interpret only the Compose selection fields needed to connect (`dockerComposeFile`, `service`, `workspaceFolder`, and `remoteUser`). Dockerfiles and Compose define provisioning; Dev Container Features and lifecycle commands are not interpreted.
 - Git is required for Source Control; an installed, authenticated Codex CLI is required for the Codex panel. Both capabilities depend on their local tools and configuration.
@@ -67,7 +67,9 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 
 On Linux, launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-addon codex`. Provide `--foreground` for terminal diagnostics. Write current-session background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
 
-Use the native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
+Open the default browser unless `--ui` selects the current native desktop window. Bind browser sessions to a random loopback port, authenticate with a per-launch token, validate Host/Origin, and embed all browser assets in the executable. Exclude the private session URL from diagnostic logs; expose it in foreground stdout for manual opening. Accept one active tab per instance. Retain unsaved buffers and process state through reloads and a 60-second disconnection grace period, then save workspace settings and clean up owned processes. Provide immediate Close editor with unsaved-change confirmation and a browser unload warning. Continue backend event processing during short disconnections and suppress unchanged browser frames. Keep local file/folder dialogs and document browser-reserved shortcuts.
+
+Use the browser tab/native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
 
 ## Diagnostics
 

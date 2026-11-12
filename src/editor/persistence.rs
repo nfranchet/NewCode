@@ -44,7 +44,7 @@ pub(super) fn restore_open_files(settings: &Settings) -> (Vec<PathBuf>, Option<P
 }
 
 impl EditorApp {
-    pub(super) fn save_settings(&self) -> bool {
+    pub(crate) fn save_settings(&self) -> bool {
         if self.settings.workspace.is_none() {
             return true;
         }

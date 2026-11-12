@@ -1,6 +1,10 @@
 Focus Editor for Apple Silicon (macOS 11 or newer)
 
 Drag Focus Editor.app to Applications, then open it from Applications.
+The editor opens in your default browser (WebGL 2 required). For the native
+desktop window, run its executable with --ui. No Node.js or Electron is needed.
+Closing the browser tab allows 60 seconds to reconnect before the backend stops.
+Use Close editor for immediate shutdown with an unsaved-change confirmation.
 To install bundled addons, run python3 install-addons.py from the
 mounted image (Python 3.11 or newer). Add --addon github to install only GitHub.
 Open Addons below Source Control and choose Rescan installed afterward. Addons are
@@ -22,6 +26,9 @@ and /usr/local/bin after the inherited PATH.
 
 For terminal diagnostics or to open a workspace directly:
   /Applications/Focus\ Editor.app/Contents/MacOS/focus-editor ~/projects/my-project
+  /Applications/Focus\ Editor.app/Contents/MacOS/focus-editor --ui ~/projects/my-project
 The macOS application stays attached when launched from a terminal.
+Browser mode prints a private session URL there for manual opening if needed.
+Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.
