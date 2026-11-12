@@ -5,6 +5,9 @@ fn logger_records_current_session_to_both_sinks_and_redacts() {
         super::init_at(&super::Arguments::default(), &path).unwrap();
         assert!(super::session::snapshot().is_empty());
         log::info!(target:"focus_editor::git_ui", "git-session-marker");
+        let context = eframe::egui::Context::default();
+        super::session::attach(&context);
+        context.memory_mut(|_| log::warn!(target: "epaint::tessellator", "renderer-lock-marker"));
         super::process_line("focus_editor::dev_container::compose", "Building image");
         super::process_line("focus_editor::addons::example", "WARN TOKEN=do-not-expose");
         let mut child = std::process::Command::new("sh")
@@ -90,6 +93,34 @@ fn logger_records_current_session_to_both_sinks_and_redacts() {
 }
 
 use super::*;
+#[test]
+fn browser_is_default_and_ui_flag_preserves_other_arguments() {
+    assert!(!Arguments::parse(Vec::<OsString>::new()).unwrap().ui);
+    for args in [
+        vec![
+            "--ui",
+            "project",
+            "--no-addon",
+            "codex",
+            "--log-level=debug",
+        ],
+        vec!["project", "--log-level=debug", "--ui", "--no-addon=codex"],
+    ] {
+        let parsed = Arguments::parse(args.into_iter().map(Into::into)).unwrap();
+        assert!(parsed.ui);
+        assert_eq!(parsed.workspace, Some("project".into()));
+        assert_eq!(parsed.disabled_addons, ["codex"]);
+        assert_eq!(parsed.level, Some(log::LevelFilter::Debug));
+    }
+    let positional = Arguments::parse(["--".into(), "--ui".into()]).unwrap();
+    assert!(!positional.ui);
+    assert_eq!(positional.workspace, Some("--ui".into()));
+    assert!(
+        Arguments::parse(["--ui".into(), "--version".into()])
+            .unwrap()
+            .version
+    );
+}
 #[test]
 fn version_flags_do_not_start_a_workspace_and_respect_separator() {
     for flag in ["--version", "-V"] {

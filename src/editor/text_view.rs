@@ -48,7 +48,9 @@ impl EditorApp {
                     && cached.line_height == line_height
                 {
                     if let Some(galley) = &cached.galley {
-                        return galley.clone();
+                        if galley.pixels_per_point == ui.ctx().pixels_per_point() {
+                            return galley.clone();
+                        }
                     }
                 }
             }

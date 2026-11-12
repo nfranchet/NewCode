@@ -7,6 +7,7 @@ pub(crate) mod session;
 #[derive(Default, Debug)]
 pub(crate) struct Arguments {
     pub(crate) version: bool,
+    pub(crate) ui: bool,
     pub(crate) level: Option<log::LevelFilter>,
     pub(crate) workspace: Option<PathBuf>,
     pub(crate) disabled_addons: Vec<String>,
@@ -17,6 +18,10 @@ impl Arguments {
         let mut args = args.into_iter();
         let mut positional = false;
         while let Some(arg) = args.next() {
+            if !positional && arg == "--ui" {
+                result.ui = true;
+                continue;
+            }
             if !positional && (arg == "--version" || arg == "-V") {
                 result.version = true;
                 continue;
@@ -110,12 +115,19 @@ fn init_at(
                     record.target(),
                     message
                 );
-                session::push(session::Entry {
-                    timestamp: timestamp.clone(),
-                    level: record.level(),
-                    source,
-                    text: text.clone(),
-                });
+                // egui/epaint can log while holding the context lock. Waking that same
+                // context here would recursively acquire it and deadlock the renderer.
+                let repaint =
+                    !matches!(record.target().split("::").next(), Some("egui" | "epaint"));
+                session::push(
+                    session::Entry {
+                        timestamp: timestamp.clone(),
+                        level: record.level(),
+                        source,
+                        text: text.clone(),
+                    },
+                    repaint,
+                );
                 if let Some(file) = disk.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     if let Err(error) = writeln!(file, "{text}").and_then(|_| file.flush()) {
                         eprintln!("Could not write current-session application log: {error}");

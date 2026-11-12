@@ -54,6 +54,10 @@ impl EditorApp {
                 return true;
             }
             match event {
+                Event::Ime(egui::ImeEvent::Commit(text)) => {
+                    *event = Event::Text(text.clone());
+                    true
+                }
                 // Preserve the app's existing Ctrl+C interrupt, even with a selection.
                 Event::Copy if !modifiers.shift && !cfg!(target_os = "macos") => {
                     *event = control_key(egui::Key::C);

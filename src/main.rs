@@ -1,6 +1,7 @@
 use focus_addon_support::assistant_ui;
 mod addons;
 mod app_paths;
+mod browser;
 mod dev_container;
 mod editor;
 mod git_ui;
@@ -35,12 +36,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return Err("Focus Editor supports Linux and macOS".into());
     }
+    if !arguments.ui {
+        browser::validate_runtime()?;
+    }
     if launch::detach()? {
         return Ok(());
     }
     logging::init(&arguments)?;
     log::debug!("Launch arguments validated");
     log::info!("Application starting version={}", env!("CARGO_PKG_VERSION"));
+    if !arguments.ui {
+        browser::run(&arguments)?;
+        log::info!("Application stopped");
+        return Ok(());
+    }
     let options = eframe::NativeOptions {
         persist_window: false,
         viewport: egui::ViewportBuilder::default()
@@ -51,7 +60,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     eframe::run_native(
         "Focus Editor",
         options,
-        Box::new(|cc| Ok(Box::new(EditorApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(EditorApp::new(&cc.egui_ctx, &arguments)))),
     )?;
     log::info!("Application stopped");
     Ok(())

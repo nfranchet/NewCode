@@ -143,6 +143,24 @@ fn source_frame(ctx: &egui::Context, app: &mut EditorApp) -> egui::FullOutput {
 }
 
 #[test]
+fn source_layout_is_rebuilt_when_display_scale_changes() {
+    let ctx = egui::Context::default();
+    theme::apply(&ctx);
+    let mut app = test_app();
+    for scale in [1.0, 2.0, 1.0] {
+        ctx.set_pixels_per_point(scale);
+        let output = source_frame(&ctx, &mut app);
+        let shapes = text_shapes(&output);
+        let source = shapes
+            .iter()
+            .find(|shape| shape.galley.job.text == app.buffer)
+            .unwrap();
+        assert_eq!(source.galley.pixels_per_point, scale);
+        assert_eq!(output.pixels_per_point, scale);
+    }
+}
+
+#[test]
 fn editor_gutter_stays_fixed_and_aligned_when_source_scrolls() {
     let ctx = egui::Context::default();
     theme::apply(&ctx);

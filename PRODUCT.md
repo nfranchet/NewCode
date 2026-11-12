@@ -2,7 +2,7 @@
 
 ## Goal
 
-A fast, Linux-first Rust desktop editor for project file management, source editing, Git review, an interactive shell, and Codex. Keep the working layout compact and make common actions easy to identify.
+A fast, Linux-first Rust editor for project file management, source editing, Git review, an interactive shell, and Codex. Open the existing interface in a dedicated sandboxed Chromium app window, with `--ui` selecting the native desktop window. Keep the working layout compact and make common actions easy to identify.
 
 ## Window and visual design
 
@@ -55,7 +55,7 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 
 ## Platform and boundaries
 
-- Linux and Apple Silicon macOS desktop application using Rust and eframe/egui, with native filesystem operations and a PTY.
+- Linux and Apple Silicon macOS application using Rust and eframe/egui, with native filesystem operations and a PTY. Share editor state and rendering logic between browser and native presentations; browser mode uses an embedded WebGL 2 client with no Node.js or Electron runtime.
 - Support Compose-based Dev Containers directly through Docker and the Docker Compose plugin. The native editor keeps the bind-mounted files on the host while the shell, Git, Codex, and OpenCode execute with `docker exec` in the selected service. Do not require, install, or invoke Node.js or the Dev Container CLI. Containers remain running on editor exit; start, reconnect, stop, and rebuild are explicit toolbar actions.
 - Interpret only the Compose selection fields needed to connect (`dockerComposeFile`, `service`, `workspaceFolder`, and `remoteUser`). Dockerfiles and Compose define provisioning; Dev Container Features and lifecycle commands are not interpreted.
 - Git is required for Source Control; an installed, authenticated Codex CLI is required for the Codex panel. Both capabilities depend on their local tools and configuration.
@@ -67,7 +67,11 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 
 On Linux, launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-addon codex`. Provide `--foreground` for terminal diagnostics. Write current-session background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
 
-Use the native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
+Launch installed Chromium/Chrome in application mode unless `--ui` selects the native desktop window. Provide a resizable window without tabs, an address bar, or a redundant browser-session header. Give each instance a temporary private profile, disable extensions, synchronization, first-run prompts, and background browser operation, and keep the renderer sandbox enabled. Detect Linux executables and macOS app bundles; report missing browsers and startup/sandbox failures with an install/`--ui` diagnostic. Never retry unsandboxed or silently open a regular browser window.
+
+Bind app sessions to a random loopback port, authenticate with a per-launch token, validate Host/Origin, and embed all browser assets in the executable. Exclude the private session URL from diagnostic logs; expose it only in foreground stdout for diagnostics. Route HTTP, HTTPS, and mailto links through an authenticated backend action to the system browser. Retain unsaved buffers and process state through reloads and a 60-second disconnection grace period while the app window remains alive. Closing the owned window warns about unsaved changes, then stops the backend, cleans up owned PTY/addon/browser processes, and deletes only the temporary browser profile. Continue backend events during short disconnections and suppress unchanged frames. Keep local file/folder dialogs and document browser-reserved shortcuts. Rust retains normal host access for editor operations.
+
+Use the browser tab/native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
 
 ## Diagnostics
 
