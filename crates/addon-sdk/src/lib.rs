@@ -34,8 +34,6 @@ pub struct Manifest {
     pub enabled_by_default: bool,
     #[serde(default)]
     pub environment: Vec<String>,
-    #[serde(default)]
-    pub migration: Migration,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,15 +50,6 @@ pub enum Presentation {
     Widgets,
     Surface,
 }
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct Migration {
-    #[serde(default)]
-    pub enabled: Vec<String>,
-    pub selection: Option<String>,
-    pub sessions: Option<String>,
-    pub autostart: Option<String>,
-}
-
 /// Release metadata shared by publishers, the manager, and local package tools.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Catalog {

@@ -42,6 +42,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     log::debug!("Launch arguments validated");
     log::info!("Application starting version={}", env!("CARGO_PKG_VERSION"));
     let options = eframe::NativeOptions {
+        persist_window: false,
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1440.0, 900.0])
             .with_min_inner_size([900.0, 600.0]),

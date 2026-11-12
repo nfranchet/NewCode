@@ -70,6 +70,8 @@ pub(crate) struct Addons {
     pub active: Option<String>,
     pub detail: bool,
     pub suppressed: Vec<String>,
+    storage_root: Option<PathBuf>,
+    empty_storage: Option<tempfile::TempDir>,
     context: Context,
     runtime: Option<Runtime>,
     generation: Arc<AtomicU64>,
@@ -86,11 +88,17 @@ pub(crate) struct Addons {
 impl Default for Addons {
     fn default() -> Self {
         let (tx, rx) = mpsc::channel();
+        let empty_storage = tempfile::tempdir().ok();
+        let storage_root = empty_storage
+            .as_ref()
+            .map(|directory| directory.path().to_path_buf());
         Self {
             entries: vec![],
             active: None,
             detail: false,
             suppressed: vec![],
+            storage_root,
+            empty_storage,
             context: Context::default(),
             runtime: None,
             generation: Arc::new(AtomicU64::new(0)),
@@ -117,6 +125,30 @@ impl Drop for Addons {
 }
 
 impl Addons {
+    pub fn set_workspace_storage(&mut self, workspace: Option<&Path>) {
+        self.empty_storage = None;
+        self.storage_root = None;
+        let result = match workspace {
+            Some(path) => crate::app_paths::workspace_dir(path),
+            None => tempfile::tempdir().map(|directory| {
+                let path = directory.path().to_path_buf();
+                self.empty_storage = Some(directory);
+                path
+            }),
+        };
+        match result {
+            Ok(path) => self.storage_root = Some(path),
+            Err(error) => self.notice = Some(format!("Cannot configure add-on storage: {error}")),
+        }
+    }
+
+    fn addon_storage(&self, id: &str) -> Result<PathBuf, String> {
+        self.storage_root
+            .as_ref()
+            .map(|root| root.join("addon-data").join(id))
+            .ok_or_else(|| "Workspace add-on storage is unavailable".into())
+    }
+
     pub fn apply_settings(
         &mut self,
         enabled: &BTreeMap<String, bool>,
@@ -182,6 +214,10 @@ impl Addons {
             return;
         };
         if addon.process.is_none() {
+            if let Err(error) = std::fs::create_dir_all(&addon.storage) {
+                addon.error = Some(format!("Cannot create workspace add-on storage: {error}"));
+                return;
+            }
             let mut context = self.context.clone();
             context.storage = addon.storage.clone();
             context.state = addon.seed.clone();

@@ -4,7 +4,69 @@ use super::EditorApp;
 use super::deletion::Deletion;
 use crate::ui_theme::{self as theme, Icon};
 use eframe::egui;
-use std::{fs, path::Path};
+use std::{
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+};
+
+struct TreeEntry {
+    path: PathBuf,
+    name: OsString,
+    is_dir: bool,
+}
+
+impl TreeEntry {
+    fn snapshot(path: PathBuf) -> Self {
+        Self {
+            name: path.file_name().unwrap_or_default().to_os_string(),
+            is_dir: path.is_dir(),
+            path,
+        }
+    }
+}
+
+fn sort_entries(entries: &mut [TreeEntry]) {
+    // Filesystem metadata can change mid-sort; compare only captured values.
+    entries.sort_by(|a, b| (!a.is_dir, &a.name).cmp(&(!b.is_dir, &b.name)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sorting_uses_snapshot_after_filesystem_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let mut entries = Vec::new();
+        for (name, is_dir) in [
+            ("z-folder", true),
+            ("z-file", false),
+            ("a-folder", true),
+            ("a-file", false),
+        ] {
+            let path = root.path().join(name);
+            if is_dir {
+                fs::create_dir(&path).unwrap();
+            } else {
+                fs::write(&path, "").unwrap();
+            }
+            entries.push(TreeEntry::snapshot(path));
+        }
+        // Replace one directory with a file and remove the other entirely.
+        fs::remove_dir(root.path().join("z-folder")).unwrap();
+        fs::write(root.path().join("z-folder"), "").unwrap();
+        fs::remove_dir(root.path().join("a-folder")).unwrap();
+        sort_entries(&mut entries);
+        let names: Vec<_> = entries
+            .iter()
+            .map(|entry| entry.name.to_str().unwrap())
+            .collect();
+        assert_eq!(names, ["a-folder", "z-folder", "a-file", "z-file"]);
+        assert!(entries[0].is_dir && entries[1].is_dir);
+        assert!(!entries[2].is_dir && !entries[3].is_dir);
+    }
+}
 
 impl EditorApp {
     pub(super) fn tree(&mut self, ui: &mut egui::Ui, dir: &Path) {
@@ -26,16 +88,15 @@ impl EditorApp {
         let Ok(entries) = fs::read_dir(dir) else {
             return;
         };
-        let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
-        paths.sort_by_key(|p| {
-            (
-                !p.is_dir(),
-                p.file_name().unwrap_or_default().to_os_string(),
-            )
-        });
-        for path in paths {
-            let name = path.file_name().unwrap_or_default().to_string_lossy();
-            if path.is_dir() {
+        let mut entries: Vec<_> = entries
+            .flatten()
+            .map(|entry| TreeEntry::snapshot(entry.path()))
+            .collect();
+        sort_entries(&mut entries);
+        for entry in entries {
+            let path = entry.path;
+            let name = entry.name.to_string_lossy();
+            if entry.is_dir {
                 let id = ui.make_persistent_id(("folder", &path));
                 let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                     ui.ctx(),

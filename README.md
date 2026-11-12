@@ -72,11 +72,13 @@ Installed addons live beside the logs directory:
 ~/.local/share/focus-editor/
 ├── logs/
 ├── addons/github/       # executables and assets
-├── addon-data/github/   # non-secret persistent state
+├── workspaces/<id>/
+│   ├── settings.toml    # workspace settings, tabs, and addon activation
+│   └── addon-data/      # workspace-specific non-secret addon state
 └── addon-receipts/      # installed source/release metadata
 ```
 
-Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. Legacy `addons/<id>/data` is moved to `addon-data/<id>` without overwriting existing data. Updates keep data and OS-keyring credentials. Uninstall keeps both by default; select **Also remove saved addon data** to remove non-secret state. Use **Credentials → Forget** before uninstalling to delete a stored token.
+Linux respects `XDG_DATA_HOME`; macOS uses `~/Library/Application Support/focus-editor/`. Updates keep data and OS-keyring credentials. Uninstall preserves workspace state and OS-keyring credentials. Use **Credentials → Forget** before uninstalling to delete a stored token.
 
 The editor loads installed addons only from this shared application data root. Build and install GitHub from source separately:
 
@@ -87,7 +89,7 @@ cargo run --release -- .
 
 Omit `--addon` to build/install every discovered addon; repeat it to select several. Run `python3 scripts/addons.py --test` to format-check and test the SDK and addon crates. For an isolated Linux development installation, use `--data-root "$PWD/target/dev-data/focus-editor"` and launch the editor with `XDG_DATA_HOME="$PWD/target/dev-data"`. A plain `cargo build` builds the editor and SDK, without compiling addon executables. See the [addon SDK contract](crates/addon-sdk/README.md) for manifests, packaging, and development.
 
-Codex and OpenCode are optional, independently compiled addons. They occupy the existing right-hand dock. Install either one or both, and use the **Enabled** control in the Addons manager to choose which run. When both are enabled, status-bearing tabs select the visible panel while both continue processing events. Disabling every right-dock addon gives the width back to the editor. A fresh installation enables Codex by default and leaves OpenCode disabled; existing preferences and remembered sessions migrate from the old settings.
+Codex and OpenCode are optional, independently compiled addons. They occupy the existing right-hand dock. Install either one or both, and use the **Enabled** control in the Addons manager to choose which run. When both are enabled, status-bearing tabs select the visible panel while both continue processing events. Disabling every right-dock addon gives the width back to the editor. A fresh installation enables Codex by default and leaves OpenCode disabled.
 
 To install only selected addons:
 
@@ -128,7 +130,7 @@ Temporarily disable an addon for one launch:
 cargo run --release -- --no-addon codex ~/projects/my-app
 ```
 
-The first build downloads crates from crates.io. Settings are stored in the platform configuration directory, usually `~/.config/focus-editor/settings.toml`. Addon enablement is stored under `[addon_enabled]`; use the Addons manager to change it. The editor stores right-dock selection and width generically. Each assistant addon retains its own Start/Stop controls and non-secret session IDs under `addon-data/<id>/`.
+The first build downloads crates from crates.io. Launching without a folder opens an empty explorer and editor. Click **Workspace** to select a folder and restore its saved tabs and settings. Each workspace has its own `workspaces/<id>/settings.toml` under the application data root, beside logs and installed addons. The ID is a hash of the canonical folder path, so symlink aliases share a workspace. Addon installation is shared; enablement, dock settings, and addon data are workspace-specific. Switching workspaces prompts to save or discard unsaved edits, or cancel. Settings are read only from workspace records; old global settings and shared addon data are ignored.
 
 The bundled Rust Dev Container image updates the stable Rust toolchain during its build, installs matching `llvm-tools-preview`, and installs `grcov` with its published lockfile. Use **Dev Container → Rebuild** after changing the Dockerfile. The image also runs the official installers at `https://chatgpt.com/codex/install.sh` and `https://opencode.ai/install`; rebuilding selects their current default releases.
 

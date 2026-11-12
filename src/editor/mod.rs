@@ -7,7 +7,6 @@ use persistence::restore_open_files;
 use search::FileMatches;
 use std::{
     collections::HashMap,
-    fs,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -46,6 +45,7 @@ enum SidebarMode {
 pub(crate) struct EditorApp {
     settings: Settings,
     settings_path: PathBuf,
+    pending_workspace: Option<PathBuf>,
     open_files: Vec<PathBuf>,
     active_file: Option<PathBuf>,
     preview_file: Option<PathBuf>,
@@ -83,36 +83,21 @@ pub(crate) struct EditorApp {
 
 impl EditorApp {
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        cc.egui_ctx
+            .memory_mut(|memory| *memory = Default::default());
         crate::logging::session::attach(&cc.egui_ctx);
-        let settings_path = dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("focus-editor/settings.toml");
-        let settings: Settings = match fs::read_to_string(&settings_path) {
-            Ok(text) => match toml::from_str(&text) {
-                Ok(settings) => settings,
-                Err(_) => {
-                    log::warn!("Invalid settings configuration; using defaults");
-                    Settings::default()
-                }
-            },
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Settings::default(),
-            Err(error) => {
-                log::warn!(
-                    "Could not read settings kind={:?}; using defaults",
-                    error.kind()
-                );
-                Settings::default()
-            }
-        };
         let args: Vec<_> = std::env::args_os().skip(1).collect();
         let directory_argument = crate::logging::Arguments::parse(args.clone())
             .ok()
             .and_then(|a| a.workspace)
             .filter(|p| p.is_dir());
-        let mut settings = settings;
-        if let Some(directory) = directory_argument {
-            settings.workspace = Some(directory);
-        }
+        let (settings, settings_path) = crate::settings::load_workspace(
+            directory_argument.as_deref(),
+        )
+        .unwrap_or_else(|error| {
+            log::warn!("{error}");
+            (Settings::default(), PathBuf::new())
+        });
         cc.egui_ctx
             .send_viewport_cmd(egui::ViewportCommand::Title(crate::launch::window_title(
                 settings.workspace.as_deref(),
@@ -140,14 +125,8 @@ impl EditorApp {
             })
             .collect();
         let mut addons = crate::addons::Addons::default();
+        addons.set_workspace_storage(settings.workspace.as_deref());
         addons.discover(&settings.addon_enabled);
-        settings.migrate_addons(
-            &addons
-                .entries
-                .iter()
-                .map(|a| a.manifest.clone())
-                .collect::<Vec<_>>(),
-        );
         addons.suppressed = crate::logging::Arguments::parse(args)
             .map(|a| a.disabled_addons)
             .unwrap_or_default();
@@ -155,6 +134,7 @@ impl EditorApp {
         Self {
             settings,
             settings_path,
+            pending_workspace: None,
             open_files,
             active_file,
             preview_file: None,
@@ -237,6 +217,7 @@ impl EditorApp {
         self.document_panel(root, opened_find);
         self.rename_dialog(ctx);
         self.close_dialog(ctx);
+        self.workspace_switch_dialog(ctx);
         self.addon_dialogs(ctx);
         self.deletion_dialog(ctx);
         self.cancel_unfocused_creation(ctx);
@@ -246,6 +227,9 @@ impl eframe::App for EditorApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         self.addons.route_input(ctx, raw);
         self.route_terminal_input(ctx, raw);
+    }
+    fn persist_egui_memory(&self) -> bool {
+        false
     }
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_settings();

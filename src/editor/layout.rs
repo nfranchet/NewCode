@@ -211,14 +211,6 @@ impl EditorApp {
         ui.menu_button("Addons", |ui| {
             self.addons.menu(ui, &mut self.settings.addon_enabled)
         });
-        self.settings.migrate_addons(
-            &self
-                .addons
-                .entries
-                .iter()
-                .map(|a| a.manifest.clone())
-                .collect::<Vec<_>>(),
-        );
         self.addons
             .apply_settings(&self.settings.addon_enabled, &self.settings.addon_state);
         if self.addons.take_manager_request() {

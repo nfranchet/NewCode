@@ -58,11 +58,12 @@ class PackagingTests(unittest.TestCase):
             (source / "icon.png").write_bytes(b"icon")
             destination = root / "app"
             (destination / "logs").mkdir(parents=True)
-            state = destination / "addons/github/data/state.json"
+            state = destination / "workspaces/project/addon-data/github/state.json"
             state.parent.mkdir(parents=True)
             state.write_text("keep non-secret state")
             installer.install(source.parent, destination)
-            self.assertEqual((destination / "addon-data/github/state.json").read_text(), "keep non-secret state")
+            self.assertEqual(state.read_text(), "keep non-secret state")
+            self.assertFalse((destination / "addon-data").exists())
             self.assertEqual((destination / "addons/github/program").read_bytes(), b"executable")
             self.assertTrue((destination / "addons/github/program").stat().st_mode & 0o111)
             (source / "addon.toml").write_text("id='github'\nprotocol=1\nexecutable='../escape'\nicon='icon.png'\n")

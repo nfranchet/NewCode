@@ -12,6 +12,7 @@ mod persistence;
 fn test_app() -> EditorApp {
     EditorApp {
         settings: Settings::default(),
+        pending_workspace: None,
         settings_path: PathBuf::from("/tmp/focus-layout-test-unused.toml"),
         open_files: vec![PathBuf::from(
             "a_very_long_source_file_name_for_layout_testing.rs",
