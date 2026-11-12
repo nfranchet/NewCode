@@ -2,7 +2,7 @@
 
 ## Goal
 
-A fast, Linux-first Rust editor for project file management, source editing, Git review, an interactive shell, and Codex. Open the existing interface in the default browser, with `--ui` selecting the native desktop window. Keep the working layout compact and make common actions easy to identify.
+A fast, Linux-first Rust editor for project file management, source editing, Git review, an interactive shell, and Codex. Open the existing interface in a dedicated sandboxed Chromium app window, with `--ui` selecting the native desktop window. Keep the working layout compact and make common actions easy to identify.
 
 ## Window and visual design
 
@@ -67,7 +67,9 @@ OpenCode uses an owned localhost server and existing CLI configuration/authentic
 
 On Linux, launch in the background by default, preserving the calling directory, environment, workspace argument, and `--no-addon codex`. Provide `--foreground` for terminal diagnostics. Write current-session background output/errors to the local data directory under `focus-editor/logs/launch.log`; report failures to spawn or open the log in the terminal. Each launch opens an independent editor instance.
 
-Open the default browser unless `--ui` selects the current native desktop window. Bind browser sessions to a random loopback port, authenticate with a per-launch token, validate Host/Origin, and embed all browser assets in the executable. Exclude the private session URL from diagnostic logs; expose it in foreground stdout for manual opening. Accept one active tab per instance. Retain unsaved buffers and process state through reloads and a 60-second disconnection grace period, then save workspace settings and clean up owned processes. Provide immediate Close editor with unsaved-change confirmation and a browser unload warning. Continue backend event processing during short disconnections and suppress unchanged browser frames. Keep local file/folder dialogs and document browser-reserved shortcuts.
+Launch installed Chromium/Chrome in application mode unless `--ui` selects the native desktop window. Provide a resizable window without tabs, an address bar, or a redundant browser-session header. Give each instance a temporary private profile, disable extensions, synchronization, first-run prompts, and background browser operation, and keep the renderer sandbox enabled. Detect Linux executables and macOS app bundles; report missing browsers and startup/sandbox failures with an install/`--ui` diagnostic. Never retry unsandboxed or silently open a regular browser window.
+
+Bind app sessions to a random loopback port, authenticate with a per-launch token, validate Host/Origin, and embed all browser assets in the executable. Exclude the private session URL from diagnostic logs; expose it only in foreground stdout for diagnostics. Route HTTP, HTTPS, and mailto links through an authenticated backend action to the system browser. Retain unsaved buffers and process state through reloads and a 60-second disconnection grace period while the app window remains alive. Closing the owned window warns about unsaved changes, then stops the backend, cleans up owned PTY/addon/browser processes, and deletes only the temporary browser profile. Continue backend events during short disconnections and suppress unchanged frames. Keep local file/folder dialogs and document browser-reserved shortcuts. Rust retains normal host access for editor operations.
 
 Use the browser tab/native window title `Focus Editor — workspace-name`, updating it when a workspace is restored, supplied at launch, or changed in the UI. Use the full path for filesystem roots and `Focus Editor` without a workspace. Keep the application identity stable for Linux desktop grouping.
 

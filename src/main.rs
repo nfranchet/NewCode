@@ -36,6 +36,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return Err("Focus Editor supports Linux and macOS".into());
     }
+    if !arguments.ui {
+        browser::validate_runtime()?;
+    }
     if launch::detach()? {
         return Ok(());
     }

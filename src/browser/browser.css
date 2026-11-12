@@ -1,12 +1,10 @@
 :root { color-scheme: light; font: 13px system-ui, sans-serif; color: #2e3440; background: #eceff4; }
 * { box-sizing: border-box; }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
-header { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid #d8dee9; background: #e5e9f0; user-select: none; }
-#connection { margin-left: 12px; color: #4c566a; font-size: 11px; }
 button, a { font: inherit; color: #2e3440; background: #eceff4; border: 1px solid #b8c5d6; border-radius: 3px; padding: 3px 10px; cursor: pointer; }
 button:hover, a:hover { background: #d8dee9; }
 button:focus-visible, a:focus-visible { outline: 2px solid #5e81ac; outline-offset: 2px; }
-main { height: calc(100% - 30px); }
+main { height: 100%; }
 canvas { width: 100%; height: 100%; display: block; outline: none; touch-action: none; }
 #input { position: fixed; width: 1px; height: 1px; opacity: 0; padding: 0; border: 0; resize: none; z-index: -1; }
 #notice { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); max-width: min(520px, 90vw); padding: 20px; background: #eceff4; border: 1px solid #b8c5d6; box-shadow: 0 8px 40px #2e344033; }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the browser UI with Chromium. Requires Python websocket-client and Pillow.
+"""Exercise the sandboxed Chromium app window. Requires a desktop, websocket-client, and Pillow.
 
 Build first with cargo build, then run python3 scripts/browser-smoke.py.
 All application data, browser profiles, and edited files are isolated in a temporary folder.
@@ -11,8 +11,11 @@ import json
 import os
 from pathlib import Path
 import select
+import shlex
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -37,6 +40,15 @@ class DevTools:
         self.sequence = 0
         self.errors = []
         self.dialogs = 0
+        self.accept_dialogs = True
+
+    def event(self, message):
+        if message.get("method") == "Runtime.exceptionThrown":
+            self.errors.append(message["params"]["exceptionDetails"].get("text", "JavaScript exception"))
+        if message.get("method") == "Page.javascriptDialogOpening":
+            self.dialogs += 1
+            self.sequence += 1
+            self.ws.send(json.dumps({"id": self.sequence, "method": "Page.handleJavaScriptDialog", "params": {"accept": self.accept_dialogs}}))
 
     def send(self, method, params=None):
         self.sequence += 1
@@ -44,12 +56,7 @@ class DevTools:
         self.ws.send(json.dumps({"id": request_id, "method": method, "params": params or {}}))
         while True:
             message = json.loads(self.ws.recv())
-            if message.get("method") == "Runtime.exceptionThrown":
-                self.errors.append(message["params"]["exceptionDetails"].get("text", "JavaScript exception"))
-            if message.get("method") == "Page.javascriptDialogOpening":
-                self.dialogs += 1
-                self.sequence += 1
-                self.ws.send(json.dumps({"id": self.sequence, "method": "Page.handleJavaScriptDialog", "params": {"accept": True}}))
+            self.event(message)
             if message.get("id") == request_id:
                 if "error" in message:
                     raise AssertionError(message["error"])
@@ -60,6 +67,23 @@ class DevTools:
         if "exceptionDetails" in result:
             raise AssertionError(result["exceptionDetails"].get("text", "JavaScript evaluation failed"))
         return result["result"].get("value")
+
+    def pump(self, seconds=0.3):
+        deadline = time.monotonic() + seconds
+        self.ws.settimeout(0.1)
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    message = self.ws.recv()
+                    if not message:
+                        break
+                    self.event(json.loads(message))
+                except websocket.WebSocketTimeoutException:
+                    continue
+                except websocket.WebSocketConnectionClosedException:
+                    break
+        finally:
+            self.ws.settimeout(15)
 
     def click(self, x, y):
         self.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
@@ -105,11 +129,24 @@ def run(binary, browser, screenshot, addons):
             settings.parent.mkdir(parents=True)
             settings.write_text("[addon_enabled]\n" + "".join(f"{json.dumps(id)} = true\n" for id in addon_ids)
                 + "".join(f"\n[addon_state.{json.dumps(id)}]\nautostart = false\n" for id in addon_ids))
-        environment = dict(os.environ, XDG_DATA_HOME=str(root / "data"), XDG_CONFIG_HOME=str(root / "config"), SHELL="/bin/sh", BROWSER="/bin/true", RUST_BACKTRACE="1")
+        real_browser = shutil.which(browser)
+        assert real_browser, "Install Chromium/Chrome before running the app-window smoke test"
+        shims = root / "bin"
+        shims.mkdir()
+        shim = shims / "chromium"
+        arguments_file = root / "browser-arguments"
+        # Attach the test debugger to the product's actual app window. Keep its sandbox enabled.
+        shim.write_text("#!/bin/sh\numask 077\nprintf '%s\\n' \"$@\" > \"$FOCUS_BROWSER_ARGS\"\nprintf '%s' \"$$\" > \"$FOCUS_BROWSER_ARGS.pid\"\nexec "
+            + shlex.quote(real_browser) + " --remote-debugging-port=0 --use-angle=swiftshader --enable-unsafe-swiftshader \"$@\"\n")
+        shim.chmod(0o700)
+        external_opener = root / "external-opener"
+        external_opener.write_text('#!/bin/sh\nprintf "%s" "$1" > "$FOCUS_EXTERNAL_LINK"\n')
+        external_opener.chmod(0o700)
+        environment = dict(os.environ, XDG_DATA_HOME=str(root / "data"), XDG_CONFIG_HOME=str(root / "config"), SHELL="/bin/sh",
+            PATH=str(shims) + os.pathsep + os.environ.get("PATH", ""), BROWSER=str(external_opener), RUST_BACKTRACE="1",
+            FOCUS_BROWSER_ARGS=str(arguments_file), FOCUS_EXTERNAL_LINK=str(root / "external-link"))
         app_log = (root / "app.log").open("w+")
-        browser_log = (root / "browser.log").open("w+")
         app = subprocess.Popen([str(binary), "--foreground", str(workspace)], env=environment, stdout=subprocess.PIPE, stderr=app_log, text=True)
-        chromium = None
         try:
             ready = select.select([app.stdout], [], [], 20)[0]
             assert ready, "Editor did not print its browser URL"
@@ -117,8 +154,12 @@ def run(binary, browser, screenshot, addons):
             assert line.startswith("Focus Editor: http://127.0.0.1:"), "Editor did not select browser mode"
             url = line.removeprefix("Focus Editor: ")
             origin = url.split("/#")[0]
-            profile = root / "chromium"
-            chromium = subprocess.Popen([browser, "--headless=new", "--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--remote-debugging-port=0", f"--user-data-dir={profile}", "about:blank"], stdout=browser_log, stderr=browser_log)
+            wait_until(arguments_file.exists)
+            arguments = arguments_file.read_text().splitlines()
+            assert f"--app={url}" in arguments
+            assert "--no-sandbox" not in arguments and "--disable-web-security" not in arguments
+            profile = Path(next(arg.removeprefix("--user-data-dir=") for arg in arguments if arg.startswith("--user-data-dir=")))
+            assert profile.stat().st_mode & 0o777 == 0o700
             wait_until(lambda: (profile / "DevToolsActivePort").exists())
             port = (profile / "DevToolsActivePort").read_text().splitlines()[0]
             with urlopen(f"http://127.0.0.1:{port}/json/list") as response:
@@ -126,12 +167,34 @@ def run(binary, browser, screenshot, addons):
             dev = DevTools(next(tab["webSocketDebuggerUrl"] for tab in tabs if tab["type"] == "page"))
             dev.send("Page.enable")
             dev.send("Runtime.enable")
+            wait_until(lambda: dev.evaluate("document.title === 'Focus Editor — workspace'"))
+            assert dev.evaluate("document.querySelectorAll('header').length") == 0
+            assert dev.evaluate("window.outerHeight - window.innerHeight < 90"), "Browser navigation controls are visible"
+            if sys.platform.startswith("linux"):
+                browser_pid = int(Path(str(arguments_file) + ".pid").read_text())
+                def renderer_is_sandboxed():
+                    for process in Path("/proc").iterdir():
+                        if not process.name.isdigit():
+                            continue
+                        try:
+                            command = (process / "cmdline").read_bytes()
+                            if b"--type=renderer" not in command or os.getpgid(int(process.name)) != browser_pid:
+                                continue
+                            status = dict(line.split(":", 1) for line in (process / "status").read_text().splitlines())
+                            if status.get("NoNewPrivs", "").strip() == "1" and status.get("Seccomp", "").strip() == "2":
+                                return True
+                        except (OSError, ProcessLookupError):
+                            continue
+                    return False
+                wait_until(renderer_is_sandboxed)
+                print("Dedicated app window, private profile, and renderer sandbox passed", flush=True)
             dev.send("Emulation.setDeviceMetricsOverride", {"width": 1280, "height": 900, "deviceScaleFactor": 1, "mobile": False})
             dev.send("Page.addScriptToEvaluateOnNewDocument", {"source": """
                 window.smokeFrame = null;
                 window.smokeDocument = crypto.randomUUID();
                 const originalFetch = window.fetch;
                 window.fetch = async (...args) => {
+                    window.smokeHeaders = args[1]?.headers;
                     const response = await originalFetch(...args);
                     if (String(args[0]).endsWith('/api/frame') && response.status === 200) {
                         response.clone().json().then(frame => { window.smokeFrame = {
@@ -142,7 +205,7 @@ def run(binary, browser, screenshot, addons):
                     return response;
                 };
             """})
-            dev.send("Page.navigate", {"url": url})
+            dev.send("Page.reload", {"ignoreCache": True})
             wait_until(lambda: dev.evaluate("window.smokeFrame?.meshes > 0"))
             assert dev.evaluate("document.title") == "Focus Editor — workspace"
             assert dev.evaluate("document.querySelector('#notice').hidden")
@@ -150,11 +213,17 @@ def run(binary, browser, screenshot, addons):
             if addon_ids:
                 wait_until(lambda: all(f"Addon {id}: stop requested" in (root / "app.log").read_text() for id in addon_ids))
                 if "opencode" in addon_ids and "codex" in addon_ids:
-                    dev.click(1140, 92)
+                    dev.click(1140, 62)
                 print("Offline addon surfaces started:", ", ".join(addon_ids), flush=True)
 
-            dev.click(150, 157)  # First Explorer entry, below the project header.
-            dev.click(600, 132)
+            dev.evaluate("fetch('/api/open-url', {method: 'POST', headers: window.smokeHeaders, body: JSON.stringify({url: 'https://example.invalid/editor-link'})}).then(response => response.ok)")
+            wait_until(lambda: (root / "external-link").exists())
+            assert (root / "external-link").read_text() == "https://example.invalid/editor-link"
+            assert dev.evaluate("location.origin") == origin
+            print("External links use the system browser", flush=True)
+
+            dev.click(150, 127)  # First Explorer entry, below the project header.
+            dev.click(600, 102)
             dev.shortcut("a")
             expected = "Browser edit: café 世界\n"
             dev.text(expected)
@@ -181,14 +250,14 @@ def run(binary, browser, screenshot, addons):
             previous_document = dev.evaluate("window.smokeDocument")
             dev.send("Page.reload", {"ignoreCache": True})
             wait_until(lambda: dev.evaluate(f"window.smokeDocument !== {json.dumps(previous_document)} && window.smokeFrame?.dirty && document.querySelector('#notice').hidden"))
-            dev.click(600, 132)
+            dev.click(600, 102)
             dev.shortcut("s")
             expected += " unsaved reload"
             wait_until(lambda: source.read_text() == expected)
             assert dev.dialogs >= 1, "Missing unsaved-change unload warning"
             print("Unsaved buffer and title survive reload", flush=True)
 
-            dev.click(600, 760)
+            dev.click(600, 730)
             marker = root / "terminal-marker"
             pid_file = root / "terminal.pid"
             dev.text(f"printf TERMINAL_OK > {marker}; printf $$ > {pid_file}")
@@ -218,28 +287,39 @@ def run(binary, browser, screenshot, addons):
             print("Resize and high DPI rendering passed", flush=True)
 
             # Ensure shutdown confirmation covers unsaved edits too.
-            dev.click(600, 132)
+            dev.click(600, 102)
             dev.text("unsaved on exit")
             wait_until(lambda: dev.evaluate("window.smokeFrame?.dirty"))
             dialogs = dev.dialogs
-            dev.evaluate("document.querySelector('#quit').click()")
+            dev.accept_dialogs = False
+            dev.send("Page.close")
+            dev.pump(0.5)
+            assert dev.dialogs > dialogs and app.poll() is None, "Cancelling close lost the editor session"
+            dev.accept_dialogs = True
+            dialogs = dev.dialogs
+            dev.send("Page.close")
+            dev.pump(0.5)
             wait_until(lambda: app.poll() is not None)
             assert app.returncode == 0
             assert dev.dialogs > dialogs
             wait_until(lambda: not Path(f"/proc/{shell_pid}").exists())
+            wait_until(lambda: not profile.exists())
             assert not dev.errors, dev.errors
             app_log.flush()
             assert url not in (root / "app.log").read_text(), "Session credential leaked to diagnostic output"
-            print(f"Shutdown confirmation and PTY cleanup passed; screenshot: {screenshot}", flush=True)
+            print(f"Window close confirmation, PTY cleanup, and profile cleanup passed; screenshot: {screenshot}", flush=True)
             dev.ws.close()
         except Exception:
             if "dev" in locals():
-                failure = screenshot.with_name(screenshot.stem + "-failure.png")
-                failure.parent.mkdir(parents=True, exist_ok=True)
-                failure.write_bytes(base64.b64decode(dev.send("Page.captureScreenshot", {"format": "png"})["data"]))
-                print("Browser failure screenshot:", failure)
-                print("Browser state:", dev.evaluate("({frame: window.smokeFrame, focus: document.activeElement.id, status: document.querySelector('#message')?.textContent})"))
-                print("Fixture document:", repr(source.read_text()))
+                try:
+                    failure = screenshot.with_name(screenshot.stem + "-failure.png")
+                    failure.parent.mkdir(parents=True, exist_ok=True)
+                    failure.write_bytes(base64.b64decode(dev.send("Page.captureScreenshot", {"format": "png"})["data"]))
+                    print("Browser failure screenshot:", failure)
+                    print("Browser state:", dev.evaluate("({frame: window.smokeFrame, focus: document.activeElement.id, status: document.querySelector('#message')?.textContent})"))
+                    print("Fixture document:", repr(source.read_text()))
+                except Exception:
+                    pass
             # Print diagnostics without exposing the session URL or its token.
             app_log.seek(0)
             diagnostic = app_log.read()
@@ -248,14 +328,29 @@ def run(binary, browser, screenshot, addons):
             print(diagnostic)
             raise
         finally:
-            for process in [chromium, app]:
-                if process and process.poll() is None:
-                    process.terminate()
+            if app.poll() is None:
+                # Exercise the host's normal shutdown path so it can reap its browser too.
+                if "dev" in locals():
                     try:
-                        process.wait(timeout=5)
+                        dev.evaluate("fetch('/api/shutdown', {method: 'POST', headers: window.smokeHeaders})")
+                        app.wait(timeout=5)
+                    except Exception:
+                        pass
+                if app.poll() is None:
+                    try:
+                        owned_pid = int(Path(str(arguments_file) + ".pid").read_text())
+                        if os.getpgid(owned_pid) == owned_pid:
+                            os.killpg(owned_pid, signal.SIGTERM)
+                            app.wait(timeout=5)
+                    except (OSError, ValueError, subprocess.TimeoutExpired):
+                        pass
+                if app.poll() is None:
+                    app.terminate()
+                    try:
+                        app.wait(timeout=5)
                     except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
+                        app.kill()
+                        app.wait()
 
 
 if __name__ == "__main__":

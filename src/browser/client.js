@@ -4,8 +4,6 @@ const input = document.querySelector("#input");
 const notice = document.querySelector("#notice");
 const message = document.querySelector("#message");
 const reconnect = document.querySelector("#reconnect");
-const external = document.querySelector("#external");
-const connection = document.querySelector("#connection");
 const token = location.hash.slice(1);
 const client = crypto.randomUUID();
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -182,11 +180,7 @@ function platform(frame) {
     if (command.OpenUrl) {
       const url = new URL(command.OpenUrl.url, location.href);
       if (!["https:", "http:", "mailto:"].includes(url.protocol)) continue;
-      if (!window.open(url.href, "_blank")) {
-        external.href = url.href;
-        external.hidden = false;
-        showNotice("Your browser blocked a new tab. Use Open link to continue.");
-      }
+      void api("open-url", JSON.stringify({ url: url.href })).catch(error => showNotice(error.message));
     }
   }
   if (frame.paste) void pasteText();
@@ -194,7 +188,7 @@ function platform(frame) {
     const rect = frame.output.ime.cursor_rect;
     const zoom = pixelsPerPoint / Math.min(4, Math.max(0.5, devicePixelRatio || 1));
     input.style.left = `${rect.min.x * zoom}px`;
-    input.style.top = `${30 + rect.max.y * zoom}px`;
+    input.style.top = `${rect.max.y * zoom}px`;
   }
 }
 
@@ -248,7 +242,6 @@ async function tick() {
   } catch (error) {
     if (!running) return;
     running = false;
-    connection.textContent = "Disconnected";
     // Never replay a batch: the host may already have applied its actions.
     showNotice(`${error.message}\nReconnect within one minute to keep this session.`, true);
   }
@@ -272,7 +265,6 @@ async function connect() {
     events = [];
     running = true;
     notice.hidden = true;
-    connection.textContent = "Local session";
     input.focus({ preventScroll: true });
     void tick();
   } catch (error) { showNotice(error.message, true); }
@@ -384,7 +376,13 @@ window.addEventListener("blur", () => {
   queue({ WindowFocused: false });
 });
 window.addEventListener("focus", () => queue({ WindowFocused: true }));
-window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
+window.addEventListener("beforeunload", event => {
+  if (dirty) {
+    void api("close-prompt", "", true).catch(() => {});
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
 window.addEventListener("pagehide", () => {
   if (running) void api("disconnect", "", true).catch(() => {});
   running = false;
@@ -398,23 +396,6 @@ canvas.addEventListener("webglcontextlost", event => {
   showNotice("Browser graphics were interrupted. Reload this tab to reconnect to the editor.");
 });
 reconnect.addEventListener("click", () => void connect());
-notice.addEventListener("click", event => {
-  if (event.target === external) { external.hidden = true; notice.hidden = true; }
-});
 // Nonfatal clipboard/link notices can be dismissed with Escape or a canvas click.
 canvas.addEventListener("pointerdown", () => { if (running) notice.hidden = true; });
-document.querySelector("#quit").addEventListener("click", async () => {
-  if (dirty && !confirm("Discard unsaved changes and close this editor session?")) return;
-  running = false;
-  clearTimeout(timer);
-  try {
-    // Let an already submitted action finish before shutting down its host.
-    await inFlight?.catch(() => {});
-    await api("shutdown");
-    dirty = false;
-    clearTimeout(timer);
-    connection.textContent = "Closed";
-    showNotice("Editor closed. You can close this tab.");
-  } catch (error) { showNotice(error.message, true); }
-});
 void connect();

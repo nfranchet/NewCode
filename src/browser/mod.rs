@@ -1,4 +1,5 @@
 //! Local browser host. Editor state and all filesystem/process access stay in Rust.
+mod launcher;
 mod protocol;
 mod renderer;
 
@@ -14,10 +15,23 @@ const MAX_INPUT: usize = 1024 * 1024;
 const RECONNECT_GRACE: Duration = Duration::from_secs(60);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 
+pub(crate) fn validate_runtime() -> std::io::Result<()> {
+    launcher::browser_executable().map(|_| ())
+}
+
+fn external_url(value: &str) -> Result<reqwest::Url, &'static str> {
+    let url = reqwest::Url::parse(value).map_err(|_| "Invalid external URL")?;
+    if !matches!(url.scheme(), "https" | "http" | "mailto") {
+        return Err("Unsupported external URL scheme");
+    }
+    Ok(url)
+}
+
 struct Session {
     client: Option<String>,
     last_seen: Instant,
     reset_textures: bool,
+    close_prompt: bool,
 }
 
 impl Session {
@@ -33,6 +47,7 @@ impl Session {
         self.client = Some(client.to_owned());
         self.last_seen = now;
         self.reset_textures = true;
+        self.close_prompt = false;
         true
     }
 
@@ -100,13 +115,16 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), Box<dyn std::error::Error
         println!("Focus Editor: {url}");
     }
     log::info!("Browser host listening at {origin}");
-    if webbrowser::open(&url).is_err() {
-        // Some browser launchers include their full arguments in errors. Never log that URL.
-        log::warn!(
-            "Could not open the default browser. Run with --foreground for a URL to open manually, or --ui for the desktop window."
-        );
-    }
-    serve(server, arguments, &host, &origin, &token, RECONNECT_GRACE)
+    let mut window = launcher::AppWindow::start(&url)?;
+    serve(
+        server,
+        arguments,
+        &host,
+        &origin,
+        &token,
+        RECONNECT_GRACE,
+        Some(&mut window),
+    )
 }
 
 fn serve(
@@ -116,6 +134,7 @@ fn serve(
     origin: &str,
     token: &str,
     grace: Duration,
+    mut window: Option<&mut launcher::AppWindow>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer = renderer::Renderer::new(arguments);
     let start = Instant::now();
@@ -123,10 +142,27 @@ fn serve(
         client: None,
         last_seen: start,
         reset_textures: true,
+        close_prompt: false,
     };
     let mut last_save = start;
+    let mut failure = None;
     // Leave time for browser startup, reloads, and short connection interruptions.
-    while session.last_seen.elapsed() < grace {
+    while session.last_seen.elapsed() < grace || (session.close_prompt && window.is_some()) {
+        if let Some(window) = window.as_deref_mut() {
+            match window.poll() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        failure = Some(window.exit_error(status));
+                    }
+                    break;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    failure = Some(error);
+                    break;
+                }
+            }
+        }
         let Some(mut request) = server.recv_timeout(Duration::from_millis(100))? else {
             renderer.background();
             continue;
@@ -163,6 +199,7 @@ fn serve(
         if request.url() == "/api/connect" {
             if session.connect(&client, Instant::now()) {
                 renderer.release_input();
+                session.last_seen = Instant::now();
                 respond(request, 200, "application/json", "{}", false);
             } else {
                 respond(
@@ -186,6 +223,51 @@ fn serve(
             continue;
         }
         match request.url() {
+            "/api/close-prompt" => {
+                // Chromium suspends page timers while an unload confirmation is open.
+                // Keep unsaved buffers until the user responds or closes the owned window.
+                session.close_prompt = true;
+                session.last_seen = Instant::now();
+                respond(request, 200, "application/json", "{}", false);
+            }
+            "/api/open-url" => {
+                if !request.body_length().is_some_and(|n| n <= 16384) {
+                    respond(
+                        request,
+                        413,
+                        "text/plain",
+                        "Link request is too large",
+                        false,
+                    );
+                    continue;
+                }
+                let mut body = Vec::new();
+                let parsed = request
+                    .as_reader()
+                    .take(16385)
+                    .read_to_end(&mut body)
+                    .ok()
+                    .and_then(|_| serde_json::from_slice::<serde_json::Value>(&body).ok());
+                let url = parsed
+                    .as_ref()
+                    .and_then(|value| value["url"].as_str())
+                    .and_then(|url| external_url(url).ok());
+                let Some(url) = url else {
+                    respond(request, 400, "text/plain", "Invalid external URL", false);
+                    continue;
+                };
+                if webbrowser::open(url.as_str()).is_ok() {
+                    respond(request, 200, "application/json", "{}", false);
+                } else {
+                    respond(
+                        request,
+                        500,
+                        "text/plain",
+                        "Could not open the link in your system browser",
+                        false,
+                    );
+                }
+            }
             "/api/frame" => {
                 if !request.body_length().is_some_and(|n| n <= MAX_INPUT) {
                     respond(
@@ -213,7 +295,6 @@ fn serve(
                         continue;
                     }
                 };
-                session.last_seen = Instant::now();
                 let body = match renderer.frame(input, session.reset_textures) {
                     Ok(body) => body,
                     Err(_) => {
@@ -221,6 +302,8 @@ fn serve(
                         continue;
                     }
                 };
+                session.last_seen = Instant::now();
+                session.close_prompt = false;
                 session.reset_textures = false;
                 if let Some(body) = body {
                     respond(request, 200, "application/json", body, true);
@@ -249,6 +332,9 @@ fn serve(
     renderer.save();
     // Dropping EditorApp cleans up its PTY and owned addon processes.
     log::info!("Browser session stopped");
+    if let Some(error) = failure {
+        return Err(error.into());
+    }
     Ok(())
 }
 

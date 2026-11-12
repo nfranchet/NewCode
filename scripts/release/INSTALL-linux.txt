@@ -7,11 +7,14 @@ Extract the archive and put focus-editor on your PATH, for example:
   focus-editor ~/projects/my-project
   focus-editor --ui ~/projects/my-project
 
-The default opens your browser using a private localhost session. A browser
-with WebGL 2 is required. Use --ui for the native desktop window. Both modes
+The default opens a dedicated Chromium app window, without tabs or an address
+bar. Install Chromium or Google Chrome with WebGL 2 and working sandbox support.
+Each launch uses a temporary private profile with extensions and sync disabled;
+the renderer sandbox stays enabled. Use --ui for the native desktop window. Both modes
 use the same editor, terminals, Git, and addons; no Node.js or Electron is needed.
-Closing the tab allows 60 seconds to reconnect, then stops the backend.
-Close editor stops immediately, asking before discarding modified documents.
+Closing the app window warns about unsaved documents, stops the backend, and
+removes its temporary profile. Reloads/short disconnections allow 60 seconds to
+reconnect while the window is alive. External links open in the system browser.
 
 The addon installer requires Python 3.11 or newer. It installs all bundled
 addons in $XDG_DATA_HOME/focus-editor/addons/<id> (normally
@@ -30,8 +33,9 @@ drivers. Both modes use local file dialogs through the desktop portal.
 Git, Docker, Codex, and OpenCode are separate optional installations.
 Configure provider authentication with each assistant's CLI before enabling it.
 The editor starts in the background; use --foreground to see diagnostics.
-Browser mode prints its private session URL only in the foreground, for manual
-opening if the default browser cannot be launched. Keep the full URL private.
+App mode prints its private session URL only in the foreground for diagnostics.
+Keep the full URL private. If Chromium cannot start, inspect --foreground output
+or use --ui. The launcher never retries with the browser sandbox disabled.
 Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.
