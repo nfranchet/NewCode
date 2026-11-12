@@ -176,44 +176,6 @@ pub(super) fn target() -> Option<&'static str> {
         _ => None,
     }
 }
-pub(super) fn data_path(root: &Path, id: &str) -> PathBuf {
-    root.join("addon-data").join(id)
-}
-fn migrate_data(root: &Path, id: &str) -> Result<(), String> {
-    let installation = root.join("addons").join(id);
-    if installation
-        .symlink_metadata()
-        .is_ok_and(|m| m.file_type().is_symlink())
-    {
-        return Err("Addon installation must not be a symlink".into());
-    }
-    let old = installation.join("data");
-    let new = data_path(root, id);
-    directory_checked(root, &root.join("addon-data"))?;
-    if old.exists() {
-        if old
-            .symlink_metadata()
-            .is_ok_and(|m| m.file_type().is_symlink())
-        {
-            return Err("Legacy addon data must not be a symlink".into());
-        }
-        if new.exists() {
-            return Err("Both legacy and new addon data exist. Resolve them before updating; nothing was overwritten.".into());
-        }
-        fs::rename(old, new).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-pub(super) fn ensure_data(root: &Path, id: &str) -> Result<PathBuf, String> {
-    let old = root.join("addons").join(id).join("data");
-    if old.exists() {
-        let _lease = Lease::acquire(&root.join("addons"), id, false)?;
-        migrate_data(root, id)?;
-    }
-    let path = data_path(root, id);
-    directory_checked(root, &path)?;
-    Ok(path)
-}
 pub(super) fn receipt(root: &Path, id: &str) -> Option<Receipt> {
     serde_json::from_slice(&fs::read(root.join("addon-receipts").join(format!("{id}.json"))).ok()?)
         .ok()
@@ -384,8 +346,6 @@ pub(super) fn commit(root: &Path, prepared: Prepared) -> Result<(Manifest, Recei
             "An interrupted installation needs recovery. Rescan installed addons first.".into(),
         );
     }
-    migrate_data(root, id)?;
-    directory_checked(root, &data_path(root, id))?;
     let target = addons.join(id);
     if target
         .symlink_metadata()
@@ -445,7 +405,7 @@ pub(super) fn commit(root: &Path, prepared: Prepared) -> Result<(Manifest, Recei
     }
     Ok((prepared.manifest, prepared.receipt))
 }
-pub(super) fn uninstall(root: &Path, id: &str, delete_data: bool) -> Result<(), String> {
+pub(super) fn uninstall(root: &Path, id: &str) -> Result<(), String> {
     let addons = root.join("addons");
     let _lease = Lease::acquire(&addons, id, false)?;
     if transaction_path(root, id).exists() {
@@ -453,7 +413,6 @@ pub(super) fn uninstall(root: &Path, id: &str, delete_data: bool) -> Result<(), 
             "An interrupted installation needs recovery. Rescan installed addons first.".into(),
         );
     }
-    migrate_data(root, id)?;
     let target = addons.join(id);
     let stage = staging(root)?;
     let saved = stage.path().join("previous");
@@ -468,20 +427,6 @@ pub(super) fn uninstall(root: &Path, id: &str, delete_data: bool) -> Result<(), 
         fs::rename(&target, &saved).map_err(|e| e.to_string())?;
     }
     let result = (|| -> Result<(), String> {
-        if delete_data {
-            let data = data_path(root, id);
-            if data.exists() {
-                if data
-                    .symlink_metadata()
-                    .map_err(|e| e.to_string())?
-                    .file_type()
-                    .is_symlink()
-                {
-                    return Err("Addon data must not be a symlink".into());
-                }
-                fs::rename(data, stage.path().join("data")).map_err(|e| e.to_string())?;
-            }
-        }
         let receipt = root.join("addon-receipts").join(format!("{id}.json"));
         if receipt.exists() {
             fs::rename(receipt, stage.path().join("receipt.json")).map_err(|e| e.to_string())?;
@@ -492,10 +437,6 @@ pub(super) fn uninstall(root: &Path, id: &str, delete_data: bool) -> Result<(), 
         let rollback = (|| -> Result<(), std::io::Error> {
             if existed {
                 fs::rename(saved, target)?;
-            }
-            let data = stage.path().join("data");
-            if data.exists() {
-                fs::rename(data, data_path(root, id))?;
             }
             Ok(())
         })();
@@ -560,27 +501,28 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let one = source("1");
         install(root.path(), one.path());
-        // Simulate a package installed by the previous editor's storage layout.
-        fs::remove_dir(data_path(root.path(), "fixture")).unwrap();
-        let legacy = root.path().join("addons/fixture/data");
-        fs::create_dir_all(&legacy).unwrap();
-        fs::write(legacy.join("state.json"), "keep").unwrap();
+        let state = root
+            .path()
+            .join("workspaces/workspace-a/addon-data/fixture/state.json");
+        fs::create_dir_all(state.parent().unwrap()).unwrap();
+        fs::write(&state, "keep").unwrap();
+        let obsolete = root.path().join("addon-data/fixture/state.json");
+        fs::create_dir_all(obsolete.parent().unwrap()).unwrap();
+        fs::write(&obsolete, "unused").unwrap();
         let two = source("2");
         install(root.path(), two.path());
         assert_eq!(
             fs::read_to_string(root.path().join("addons/fixture/program")).unwrap(),
             "2"
         );
-        assert_eq!(
-            fs::read_to_string(data_path(root.path(), "fixture").join("state.json")).unwrap(),
-            "keep"
-        );
-        uninstall(root.path(), "fixture", false).unwrap();
+        assert_eq!(fs::read_to_string(&state).unwrap(), "keep");
+        uninstall(root.path(), "fixture").unwrap();
         assert!(!root.path().join("addons/fixture").exists());
-        assert!(data_path(root.path(), "fixture").exists());
+        assert_eq!(fs::read_to_string(&state).unwrap(), "keep");
+        assert_eq!(fs::read_to_string(&obsolete).unwrap(), "unused");
         install(root.path(), two.path());
-        uninstall(root.path(), "fixture", true).unwrap();
-        assert!(!data_path(root.path(), "fixture").exists());
+        uninstall(root.path(), "fixture").unwrap();
+        assert_eq!(fs::read_to_string(&state).unwrap(), "keep");
     }
     #[test]
     fn failed_update_restores_previous_package() {

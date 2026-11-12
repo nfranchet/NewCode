@@ -87,8 +87,8 @@ impl Addons {
                             .get(&manifest.id)
                             .copied()
                             .unwrap_or(manifest.enabled_by_default);
-                        let storage =
-                            super::packages::ensure_data(root.parent().unwrap(), &manifest.id)?;
+                        let storage = self.addon_storage(&manifest.id)?;
+                        fs::create_dir_all(&storage).map_err(|e| e.to_string())?;
                         entries.push(Addon {
                             manifest,
                             storage,

@@ -19,7 +19,7 @@ the process; disabling all releases the width. Declarative right panels render
 
 For rich interfaces, implement `runner::Panel` and call `runner::run(panel)`.
 `context` receives workspace/container metadata, private addon storage, and
-migrated non-secret state. `tick` runs even when hidden, `show` renders visible
+workspace-specific non-secret state. `tick` runs even when hidden, `show` renders visible
 content, and `state` supplies the tab status. The addon owns per-workspace drafts,
 session restore, provider connections, approvals, and cleanup.
 
@@ -63,11 +63,6 @@ before emitting it and never persist credentials in state files.
 Optional `runtime`/`authentication` helpers support container commands and atomic
 private JSON credential transfer. Each addon chooses its own tool, environment,
 and auth source/destination. Disabled or absent addons do not transfer credentials.
-
-`[migration]` declares old settings keys: `enabled` (boolean-key array),
-`selection`, `sessions`, and `autostart`. Explicit new preferences win. The host
-passes sessions/autostart via `Context.state`; unconsumed legacy settings remain
-available until the corresponding addon is installed.
 
 ```sh
 python3 scripts/addons.py --addon codex --install

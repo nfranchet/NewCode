@@ -62,13 +62,6 @@ def install(source, destination, ids=None):
             raise ValueError("Invalid addon lock path")
         with lock_path.open("a+") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            data = Path(destination) / "addon-data" / addon_id
-            legacy = target / "data"
-            if legacy.exists():
-                if legacy.is_symlink() or data.exists():
-                    raise ValueError("Cannot migrate legacy data without overwriting existing data")
-                data.parent.mkdir(parents=True, exist_ok=True)
-                legacy.rename(data)
             receipts = Path(destination) / "addon-receipts"
             receipts.mkdir(parents=True, exist_ok=True)
             transactions = addon_root / ".transactions"

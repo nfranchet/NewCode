@@ -27,7 +27,7 @@ pub(super) struct Manager {
     pending: Option<mpsc::Receiver<Event>>,
     progress: String,
     error: Option<String>,
-    uninstall: Option<(String, bool)>,
+    uninstall: Option<String>,
     restart: Option<String>,
 }
 impl Default for Manager {
@@ -47,6 +47,11 @@ impl Default for Manager {
             uninstall: None,
             restart: None,
         }
+    }
+}
+impl Addons {
+    pub fn manager_busy(&self) -> bool {
+        self.manager.pending.is_some()
     }
 }
 enum Action {
@@ -336,7 +341,7 @@ impl Addons {
                     pending: None,
                 })
             }
-            Action::Remove(id) => self.manager.uninstall = Some((id, false)),
+            Action::Remove(id) => self.manager.uninstall = Some(id),
         }
     }
     fn stop_managed(&mut self, id: &str) -> Result<(), String> {
@@ -406,6 +411,13 @@ impl Addons {
                     self.manager.pending = None;
                     let id = manifest.id.clone();
                     if let Ok(root) = crate::app_paths::data_root() {
+                        let storage = match self.addon_storage(&id) {
+                            Ok(storage) => storage,
+                            Err(error) => {
+                                self.manager.error = Some(error);
+                                continue;
+                            }
+                        };
                         let seed = self
                             .entries
                             .iter()
@@ -415,7 +427,7 @@ impl Addons {
                         self.entries.retain(|a| a.manifest.id != id);
                         self.entries.push(Addon {
                             directory: root.join("addons").join(&id),
-                            storage: packages::data_path(&root, &id),
+                            storage,
                             enabled: !self.suppressed.contains(&id)
                                 && enabled_settings
                                     .get(&id)
@@ -616,7 +628,7 @@ impl Addons {
                         ui.label(format!("Source: {} · release {}", receipt.source,
                             receipt.release.as_deref().unwrap_or("local")));
                     } else {
-                        ui.label("Source: local or legacy installation");
+                        ui.label("Source: local installation");
                     }
                     if let Some(error) = &addon.error {
                         ui.colored_label(theme::colors(ui).error, error);
@@ -661,7 +673,9 @@ impl Addons {
                 if let Ok(root) = crate::app_paths::data_root() {
                     ui.separator();
                     ui.label(format!("Installation: {}", root.join("addons").join(&id).display()));
-                    ui.label(format!("Data: {}", packages::data_path(&root, &id).display()));
+                    if let Ok(storage) = self.addon_storage(&id) {
+                        ui.label(format!("Data: {}", storage.display()));
+                    }
                 }
             });
         if let Some(action) = action {
@@ -670,7 +684,7 @@ impl Addons {
         true
     }
     pub fn manager_dialog(&mut self, ctx: &egui::Context) {
-        let Some((id, delete_data)) = &mut self.manager.uninstall else {
+        let Some(id) = &self.manager.uninstall else {
             return;
         };
         let mut confirm = false;
@@ -680,7 +694,7 @@ impl Addons {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.label(format!("Uninstall {id}? Its process will stop."));
-                ui.checkbox(delete_data, "Also remove saved addon data");
+                ui.label("Workspace addon data is preserved.");
                 ui.label("Credentials remain in the OS keyring. Use Credentials → Forget before uninstalling to remove a stored token.");
                 ui.horizontal(|ui| {
                     confirm = ui.button("Uninstall").clicked();
@@ -691,14 +705,14 @@ impl Addons {
             self.manager.uninstall = None;
         }
         if confirm {
-            let (id, delete) = self.manager.uninstall.take().unwrap();
+            let id = self.manager.uninstall.take().unwrap();
             if let Err(error) = self.stop_managed(&id) {
                 self.manager.error = Some(error);
                 return;
             }
             match crate::app_paths::data_root() {
                 Ok(root) => self.worker(ctx, "Uninstalling addon…", move |_| {
-                    packages::uninstall(&root, &id, delete)?;
+                    packages::uninstall(&root, &id)?;
                     Ok(Event::Removed(id))
                 }),
                 Err(e) => self.manager.error = Some(e.to_string()),

@@ -8,8 +8,3 @@ panel = "right"
 ui = "surface"
 enabled_by_default = true
 environment = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID", "CODEX_HOME"]
-[migration]
-enabled = ["codex_enabled"]
-selection = "selected_assistant"
-sessions = "codex_sessions"
-autostart = "codex_app_server"

@@ -8,7 +8,3 @@ panel = "right"
 ui = "surface"
 enabled_by_default = false
 environment = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "OPENAI_API_KEY", "OPENAI_BASE_URL", "GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENCODE_API_KEY", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "XDG_DATA_HOME"]
-[migration]
-enabled = ["opencode_enabled"]
-selection = "selected_assistant"
-sessions = "opencode_sessions"

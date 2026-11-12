@@ -82,9 +82,9 @@ in the OS keyring, attaches them only to the matching HTTPS origin or declared
 program, and returns sanitized results. It does not expose a token-reading API.
 Use `Context.storage` for non-secret persistent addon state; preserve the
 generation/workspace association of pending local operations. This path is
-`<application-data>/focus-editor/addon-data/<id>`, outside the executable folder.
-The host migrates the older `addons/<id>/data` directory. Updates and default
-uninstall preserve this directory and OS-keyring credentials. Do not write
+`<application-data>/focus-editor/workspaces/<workspace-id>/addon-data/<id>`,
+outside the shared executable folder. Updates and uninstall preserve workspace
+data and OS-keyring credentials. Old global state is not imported. Do not write
 runtime state into the installation directory.
 
 The GitHub addon is a complete example. Build it separately with:

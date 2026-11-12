@@ -15,42 +15,8 @@ pub(crate) struct Settings {
     pub(crate) addon_enabled: std::collections::BTreeMap<String, bool>,
     pub(crate) selected_right_addon: Option<String>,
     pub(crate) addon_state: std::collections::BTreeMap<String, serde_json::Value>,
-    #[serde(flatten)]
-    pub(crate) legacy: std::collections::BTreeMap<String, toml::Value>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn manifest_migration_preserves_independent_preferences_and_sessions() {
-        let mut settings:Settings=toml::from_str("codex_enabled = false\nopencode_enabled = true\ncodex_app_server = false\nselected_assistant = 'opencode'\n[opencode_sessions]\n'/workspace' = 'session-42'\n").unwrap();
-        let manifests: Vec<focus_addon_sdk::Manifest> = [
-            include_str!("../addons/codex/addon.toml"),
-            include_str!("../addons/opencode/addon.toml"),
-        ]
-        .into_iter()
-        .map(|s| toml::from_str(s).unwrap())
-        .collect();
-        settings.migrate_addons(&manifests);
-        assert_eq!(settings.addon_enabled.get("codex"), Some(&false));
-        assert_eq!(settings.addon_enabled.get("opencode"), Some(&true));
-        assert_eq!(settings.selected_right_addon.as_deref(), Some("opencode"));
-        assert_eq!(settings.addon_state["codex"]["autostart"], false);
-        assert_eq!(
-            settings.addon_state["opencode"]["sessions"]["/workspace"],
-            "session-42"
-        );
-        settings.addon_enabled.insert("codex".into(), true);
-        settings.migrate_addons(&manifests);
-        assert_eq!(settings.addon_enabled.get("codex"), Some(&true));
-        let text = toml::to_string(&settings).unwrap();
-        let restored: Settings = toml::from_str(&text).unwrap();
-        assert_eq!(restored.addon_state, settings.addon_state);
-        assert!(!text.contains("codex_enabled"));
-        assert!(!text.contains("selected_assistant"));
-    }
-}
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -65,70 +31,142 @@ impl Default for Settings {
             addon_enabled: Default::default(),
             selected_right_addon: None,
             addon_state: Default::default(),
-            legacy: Default::default(),
         }
     }
 }
 
-impl Settings {
-    pub(crate) fn migrate_addons(&mut self, manifests: &[focus_addon_sdk::Manifest]) {
-        let mut consumed = std::collections::HashSet::new();
-        if let Some(disabled) = self
-            .legacy
-            .get("disabled_addons")
-            .and_then(toml::Value::as_array)
-        {
-            for id in disabled.iter().filter_map(toml::Value::as_str) {
-                self.addon_enabled.entry(id.into()).or_insert(false);
-            }
+/// Load only the requested workspace; a plain launch never restores a session.
+pub(crate) fn load_workspace(
+    workspace: Option<&std::path::Path>,
+) -> Result<(Settings, PathBuf), String> {
+    let Some(workspace) = workspace else {
+        return Ok((Settings::default(), PathBuf::new()));
+    };
+    let workspace = crate::app_paths::workspace_path(workspace).map_err(|e| e.to_string())?;
+    let path = crate::app_paths::workspace_dir(&workspace)
+        .map_err(|e| e.to_string())?
+        .join("settings.toml");
+    let settings = load_workspace_file(&workspace, &path)?;
+    Ok((settings, path))
+}
+
+fn load_workspace_file(
+    workspace: &std::path::Path,
+    path: &std::path::Path,
+) -> Result<Settings, String> {
+    let mut settings = match std::fs::read_to_string(path) {
+        Ok(text) => toml::from_str::<Settings>(&text).unwrap_or_else(|_| {
+            log::warn!("Invalid workspace settings; using defaults");
+            Settings::default()
+        }),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Settings::default(),
+        Err(e) => return Err(format!("Cannot read workspace settings: {e}")),
+    };
+    settings.workspace = Some(workspace.to_path_buf());
+    Ok(settings)
+}
+
+pub(crate) fn write_workspace(path: &std::path::Path, settings: &Settings) -> Result<(), String> {
+    use std::io::Write;
+    let parent = path.parent().ok_or("Missing settings directory")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let text = toml::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    file.as_file().sync_all().map_err(|e| e.to_string())?;
+    file.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod workspace_tests {
+    use super::*;
+    #[test]
+    fn plain_launch_has_no_workspace_or_restored_state() {
+        let (settings, path) = load_workspace(None).unwrap();
+        assert!(settings.workspace.is_none());
+        assert!(settings.open_files.is_empty());
+        assert!(settings.active_file.is_none());
+        assert!(settings.addon_enabled.is_empty());
+        assert!(path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn workspace_records_restore_independent_tabs_settings_and_addons() {
+        let root = tempfile::tempdir().unwrap();
+        let a = root.path().join("a");
+        let b = root.path().join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        let file_a = a.join("a.txt");
+        let file_b = b.join("b.txt");
+        std::fs::write(&file_a, "a").unwrap();
+        std::fs::write(&file_b, "b").unwrap();
+        let config_a = root.path().join("state-a/settings.toml");
+        let config_b = root.path().join("state-b/settings.toml");
+        for (workspace, file, path, enabled, width) in [
+            (&a, &file_a, &config_a, true, 240.0),
+            (&b, &file_b, &config_b, false, 350.0),
+        ] {
+            let settings = Settings {
+                workspace: Some(workspace.clone()),
+                session_workspace: Some(workspace.clone()),
+                open_files: vec![file.clone()],
+                active_file: Some(file.clone()),
+                explorer_width: width,
+                addon_enabled: [("codex".into(), enabled)].into(),
+                addon_state: [("codex".into(), serde_json::json!({"test": enabled}))].into(),
+                ..Default::default()
+            };
+            write_workspace(path, &settings).unwrap();
         }
-        for manifest in manifests {
-            let migration = &manifest.migration;
-            consumed.extend(migration.enabled.iter().cloned());
-            consumed.extend(migration.selection.iter().cloned());
-            consumed.extend(migration.sessions.iter().cloned());
-            consumed.extend(migration.autostart.iter().cloned());
-            if !self.addon_enabled.contains_key(&manifest.id) {
-                let enabled = migration
-                    .enabled
-                    .iter()
-                    .filter_map(|key| self.legacy.get(key).and_then(toml::Value::as_bool))
-                    .next();
-                self.addon_enabled.insert(
-                    manifest.id.clone(),
-                    enabled.unwrap_or(manifest.enabled_by_default),
-                );
+        // Rewriting A must not alter B, even when both are open.
+        let mut settings_a = load_workspace_file(&a, &config_a).unwrap();
+        settings_a.right_command = "workspace A".into();
+        write_workspace(&config_a, &settings_a).unwrap();
+        let settings_b = load_workspace_file(&b, &config_b).unwrap();
+        assert!(settings_a.addon_enabled["codex"]);
+        assert!(!settings_b.addon_enabled["codex"]);
+        assert_ne!(settings_a.addon_state, settings_b.addon_state);
+        assert_eq!(settings_a.explorer_width, 240.0);
+        assert_eq!(settings_b.explorer_width, 350.0);
+        assert!(settings_b.right_command.is_empty());
+        assert_eq!(settings_a.open_files, [file_a.clone()]);
+        assert_eq!(settings_a.active_file, Some(file_a));
+        assert_eq!(settings_b.open_files, [file_b.clone()]);
+        assert_eq!(settings_b.active_file, Some(file_b));
+    }
+
+    #[test]
+    fn missing_and_invalid_workspace_settings_use_defaults() {
+        let root = tempfile::tempdir().unwrap();
+        let config = root.path().join("settings.toml");
+        for contents in [None, Some("invalid [")] {
+            if let Some(text) = contents {
+                std::fs::write(&config, text).unwrap();
             }
-            if self.selected_right_addon.is_none()
-                && migration
-                    .selection
-                    .as_ref()
-                    .and_then(|key| self.legacy.get(key))
-                    .and_then(toml::Value::as_str)
-                    == Some(manifest.id.as_str())
-            {
-                self.selected_right_addon = Some(manifest.id.clone());
-            }
-            let state = self
-                .addon_state
-                .entry(manifest.id.clone())
-                .or_insert_with(|| serde_json::json!({}));
-            for (field, key) in [
-                ("sessions", migration.sessions.as_ref()),
-                ("autostart", migration.autostart.as_ref()),
-            ] {
-                if state.get(field).is_none() {
-                    if let Some(value) = key.and_then(|key| self.legacy.get(key)) {
-                        if let Ok(value) = serde_json::to_value(value) {
-                            state[field] = value;
-                        }
-                    }
-                }
-            }
+            let settings = load_workspace_file(root.path(), &config).unwrap();
+            assert_eq!(settings.workspace.as_deref(), Some(root.path()));
+            assert!(settings.open_files.is_empty());
+            assert!(settings.addon_enabled.is_empty());
+            assert_eq!(settings.explorer_width, Settings::default().explorer_width);
         }
-        for key in consumed {
-            self.legacy.remove(&key);
+    }
+
+    #[test]
+    fn obsolete_addon_keys_are_ignored_and_not_saved() {
+        let settings: Settings = toml::from_str("codex_enabled = false\nselected_assistant = 'opencode'\ndisabled_addons = ['codex']\n[opencode_sessions]\n'/workspace' = 'session-42'\n").unwrap();
+        assert!(settings.addon_enabled.is_empty());
+        assert!(settings.selected_right_addon.is_none());
+        assert!(settings.addon_state.is_empty());
+        let text = toml::to_string(&settings).unwrap();
+        for key in [
+            "codex_enabled",
+            "selected_assistant",
+            "disabled_addons",
+            "opencode_sessions",
+        ] {
+            assert!(!text.contains(key));
         }
-        self.legacy.remove("disabled_addons");
     }
 }

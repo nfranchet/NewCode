@@ -236,3 +236,41 @@ fn local_cleanup_refuses_new_commits_and_other_worktrees() {
             .contains("refs/heads/issue-1")
     );
 }
+
+#[test]
+fn runtime_storage_is_workspace_specific_while_installations_are_shared() {
+    let root = tempfile::tempdir().unwrap();
+    let a = root.path().join("a");
+    let b = root.path().join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    let mut host = Addons::default();
+    host.set_workspace_storage(Some(&a));
+    let storage_a = host.addon_storage("codex").unwrap();
+    host.set_workspace_storage(Some(&b));
+    let storage_b = host.addon_storage("codex").unwrap();
+    assert_ne!(storage_a, storage_b);
+    assert_eq!(
+        storage_a,
+        crate::app_paths::workspace_dir(&a)
+            .unwrap()
+            .join("addon-data/codex")
+    );
+    assert_eq!(
+        storage_b,
+        crate::app_paths::workspace_dir(&b)
+            .unwrap()
+            .join("addon-data/codex")
+    );
+    assert_eq!(
+        crate::app_paths::addons().unwrap(),
+        crate::app_paths::data_root().unwrap().join("addons")
+    );
+}
+
+#[test]
+fn unavailable_workspace_storage_never_falls_back_to_shared_data() {
+    let mut host = Addons::default();
+    host.storage_root = None;
+    assert!(host.addon_storage("codex").is_err());
+}

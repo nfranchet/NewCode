@@ -93,7 +93,7 @@ Codex and OpenCode live in separate addon crates with their own transports, auth
 
 Any addon can declare `panel = "left"` (the default) or `panel = "right"`. Right-dock addons can use the existing declarative widgets or the optional versioned UI surface protocol. The shared helper relays typed input, meshes, compressed textures, text clipboard, IME, and safe external links while preserving existing native controls. Codex and OpenCode use this helper and retain Markdown, collapsible reasoning, bounded scrolling composers, sessions, approvals, Plan/Go, and usage controls. Hidden enabled addons continue processing backend events.
 
-Build and release tooling discovers addon manifests. Push/release checks run the SDK, shared helpers, and every bundled addon independently. The installer can select addon IDs and preserves each addon's non-secret data. Manifest-declared migration metadata imports old enablement, selection, and session settings without adding provider-specific logic to the editor.
+Build and release tooling discovers addon manifests. Push/release checks run the SDK, shared helpers, and every bundled addon independently. The installer can select addon IDs and preserves each addon's non-secret data. Each workspace owns its settings, addon activation, and non-secret addon state. Missing workspace records use defaults; old global settings and addon data are not imported.
 
 ## Addon management
 
