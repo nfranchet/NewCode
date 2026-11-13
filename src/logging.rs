@@ -8,10 +8,7 @@ pub(crate) mod session;
 pub(crate) struct Arguments {
     pub(crate) version: bool,
     pub(crate) ui: bool,
-    pub(crate) server: bool,
-    pub(crate) bind: Option<std::net::IpAddr>,
-    pub(crate) port: Option<u16>,
-    pub(crate) server_config: Option<PathBuf>,
+    pub(crate) headless: bool,
     pub(crate) level: Option<log::LevelFilter>,
     pub(crate) workspace: Option<PathBuf>,
     pub(crate) disabled_addons: Vec<String>,
@@ -22,43 +19,20 @@ impl Arguments {
         let mut args = args.into_iter();
         let mut positional = false;
         while let Some(arg) = args.next() {
-            if !positional && arg == "--server" {
-                result.server = true;
+            if !positional && arg == "--headless" {
+                result.headless = true;
                 continue;
             }
-            if !positional {
-                let text = arg.to_string_lossy();
-                let name = text.split('=').next().unwrap_or("");
-                if matches!(name, "--bind" | "--port" | "--server-config") {
-                    let value = if let Some((_, value)) = text.split_once('=') {
-                        OsString::from(value)
-                    } else {
-                        args.next()
-                            .ok_or_else(|| format!("{name} requires a value"))?
-                    };
-                    match name {
-                        "--bind" => {
-                            result.bind = Some(
-                                value
-                                    .to_str()
-                                    .ok_or("Invalid --bind")?
-                                    .parse()
-                                    .map_err(|_| "--bind requires an IP address")?,
-                            )
-                        }
-                        "--port" => {
-                            result.port = Some(
-                                value
-                                    .to_str()
-                                    .ok_or("Invalid --port")?
-                                    .parse()
-                                    .map_err(|_| "--port requires a port from 0 to 65535")?,
-                            )
-                        }
-                        _ => result.server_config = Some(value.into()),
-                    }
-                    continue;
-                }
+            if !positional
+                && matches!(
+                    arg.to_str().unwrap_or("").split('=').next().unwrap_or(""),
+                    "--server" | "--bind" | "--port" | "--server-config" | "--config"
+                )
+            {
+                return Err(
+                    "Server mode moved to focus-editor-server; run focus-editor-server instead"
+                        .into(),
+                );
             }
             if !positional && arg == "--ui" {
                 result.ui = true;
@@ -107,15 +81,8 @@ impl Arguments {
                 result.workspace = Some(arg.into());
             }
         }
-        if result.server
-            && (result.ui || result.workspace.is_some() || !result.disabled_addons.is_empty())
-        {
-            return Err("--server cannot be combined with --ui, a workspace, or --no-addon".into());
-        }
-        if !result.server
-            && (result.bind.is_some() || result.port.is_some() || result.server_config.is_some())
-        {
-            return Err("--bind, --port, and --server-config require --server".into());
+        if result.headless && (result.ui || result.workspace.is_none()) {
+            return Err("--headless requires a workspace and cannot be combined with --ui".into());
         }
         Ok(result)
     }
@@ -134,12 +101,19 @@ fn filter(level: Option<log::LevelFilter>, environment: Option<String>) -> Strin
     }
 }
 pub(crate) fn init(arguments: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
-    let path = if arguments.server {
-        crate::app_paths::data_root()?.join("logs/server.log")
-    } else {
-        session::log_path()?
-    };
-    init_at(arguments, &path)
+    init_at(arguments, &session::log_path()?)
+}
+
+pub(crate) fn init_server(
+    level: Option<log::LevelFilter>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    init_at(
+        &Arguments {
+            level,
+            ..Default::default()
+        },
+        &crate::app_paths::data_root()?.join("logs/server.log"),
+    )
 }
 
 fn init_at(

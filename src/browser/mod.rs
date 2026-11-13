@@ -123,12 +123,22 @@ impl Host {
         mode: &str,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let runtime = runtime::Runtime::new(arguments);
-        let registration = registry::Registration::new(
-            endpoint.into(),
-            token.into(),
-            mode,
-            runtime.renderer.workspace(),
-        )?;
+        let workspace = runtime.renderer.workspace();
+        if arguments.headless
+            && (workspace.is_none()
+                || workspace
+                    != arguments
+                        .workspace
+                        .as_deref()
+                        .and_then(|path| path.canonicalize().ok()))
+        {
+            return Err(
+                "Could not initialize the requested headless workspace; check its saved settings"
+                    .into(),
+            );
+        }
+        let registration =
+            registry::Registration::new(endpoint.into(), token.into(), mode, workspace)?;
         Ok(Self {
             runtime,
             registration,
@@ -170,8 +180,60 @@ impl Host {
             return;
         }
         if request.method() == &Method::Get && request.url() == "/api/info" {
-            let body = serde_json::json!({"id": self.registration.record.id, "version": 1, "title": self.runtime.renderer.title()});
+            let body = serde_json::json!({"id": self.registration.record.id, "version": 1, "title": self.runtime.renderer.title(), "mode": self.registration.record.mode, "pid": self.registration.record.pid});
             respond(request, 200, "application/json", body.to_string(), false);
+            return;
+        }
+        if request.method() == &Method::Post && request.url() == "/api/manage/stop" {
+            if self.registration.record.mode != "headless" {
+                respond(
+                    request,
+                    403,
+                    "application/json",
+                    r#"{"error":"Close local editors from their own window"}"#,
+                    false,
+                );
+                return;
+            }
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Stop {
+                #[serde(default)]
+                choice: Option<String>,
+            }
+            let stop = read_body(&mut request, 1024)
+                .ok()
+                .and_then(|body| serde_json::from_slice::<Stop>(&body).ok());
+            let Some(stop) = stop.filter(|stop| {
+                stop.choice
+                    .as_deref()
+                    .is_none_or(|choice| matches!(choice, "save" | "discard"))
+            }) else {
+                respond(
+                    request,
+                    400,
+                    "application/json",
+                    r#"{"error":"Invalid stop choice"}"#,
+                    false,
+                );
+                return;
+            };
+            if self.runtime.renderer.dirty() && stop.choice.is_none() {
+                respond(request, 409, "application/json", r#"{"dirty":true}"#, false);
+                return;
+            }
+            if stop.choice.as_deref() == Some("save") && !self.runtime.renderer.save_documents() {
+                respond(
+                    request,
+                    422,
+                    "application/json",
+                    r#"{"error":"Could not save all documents; editor remains running"}"#,
+                    false,
+                );
+                return;
+            }
+            self.stop = true;
+            respond(request, 200, "application/json", "{}", false);
             return;
         }
         if request.method() != &Method::Post {
@@ -319,6 +381,24 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), Box<dyn std::error::Error
         RECONNECT_GRACE,
         Some(&mut window),
     )
+}
+
+pub(crate) fn run_headless(arguments: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
+    let server = Server::http("127.0.0.1:0").map_err(std::io::Error::other)?;
+    let origin = format!(
+        "http://{}",
+        server.server_addr().to_ip().ok_or("Invalid listener")?
+    );
+    let mut host = Host::new(arguments, &origin, &registry::random_id()?, "headless")?;
+    log::info!("Headless editor started");
+    while !host.stop {
+        if let Some(request) = server.recv_timeout(Duration::from_millis(30))? {
+            host.handle(request);
+        }
+        host.tick();
+    }
+    log::info!("Headless editor stopped");
+    Ok(())
 }
 
 fn serve(

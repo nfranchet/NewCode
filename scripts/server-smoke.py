@@ -125,7 +125,7 @@ def run(binary, browser):
             env = dict(environment, PATH="/no-browser-installed")
             env.pop("DISPLAY", None)
             env.pop("WAYLAND_DISPLAY", None)
-            proc = launch([str(binary), "--server", "--port", "0", "--server-config", str(config)], env)
+            proc = launch([str(binary.with_name("focus-editor-server")), "--port", "0", "--config", str(config)], env)
             assert select.select([proc.stdout], [], [], 15)[0], "Server did not start"
             line = proc.stdout.readline().strip()
             match = re.search(r"http://0\.0\.0\.0:(\d+)$", line)
@@ -188,7 +188,7 @@ def run(binary, browser):
                 return dev.evaluate(f"(() => {{ const w = document.querySelector('#view').contentWindow; return ({expression}); }})()")
             def choose(identity):
                 wait_until(lambda: dev.evaluate(f"Boolean(document.querySelector('[data-id=\"{identity}\"]'))"))
-                dev.evaluate(f"document.querySelector('[data-id=\"{identity}\"]').click()")
+                dev.evaluate(f"document.querySelector('[data-id=\"{identity}\"] .editor-select').click()")
                 wait_until(lambda: view("w.smokeFrame?.meshes.length > 0 && w.document.querySelector('#notice').hidden"))
             def click(x, y):
                 offset = dev.evaluate("(() => {const r=document.querySelector('#view').getBoundingClientRect(); return [r.x,r.y]})()")

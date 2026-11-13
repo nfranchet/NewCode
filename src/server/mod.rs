@@ -1,16 +1,29 @@
 //! An authenticated gateway to private, independently owned editor sessions.
 mod config;
-use crate::{
-    browser::{self, registry},
-    logging::Arguments,
-};
+mod discovery;
+mod workspaces;
+use crate::browser::{self, registry};
 use std::{sync::Arc, time::Duration};
 use tiny_http::{Header, Method, Request, Response, Server};
 
-pub(crate) fn run(args: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
-    let config = Arc::new(config::Config::load(args)?);
+pub(crate) fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let args = config::Arguments::parse(std::env::args_os().skip(1))?;
+    if args.version {
+        println!("focus-editor-server {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+    let config = Arc::new(config::Config::load(&args)?);
     let server = Arc::new(Server::http(config.address).map_err(std::io::Error::other)?);
-    crate::logging::init(args)?;
+    let _discovery = discovery::Discovery::start()?;
+    let state = workspaces::State::new()?;
+    crate::logging::init_server(args.level)?;
+    // Import already-running editors as well as saved paths before the first page request.
+    for record in registry::records()? {
+        if let Some(path) = record.workspace {
+            let _ = crate::workspaces::remember(&path);
+        }
+    }
+    let _ = crate::workspaces::list()?;
     let address = server
         .server_addr()
         .to_ip()
@@ -21,6 +34,7 @@ pub(crate) fn run(args: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..8 {
         let server = server.clone();
         let config = config.clone();
+        let state = state.clone();
         workers.push(std::thread::spawn(move || {
             let client = reqwest::blocking::Client::builder()
                 .no_proxy()
@@ -29,7 +43,7 @@ pub(crate) fn run(args: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
                 .build()
                 .unwrap();
             while let Ok(request) = server.recv() {
-                handle(request, &config, &client);
+                handle(request, &config, &client, &state);
             }
         }));
     }
@@ -39,7 +53,12 @@ pub(crate) fn run(args: &Arguments) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn handle(mut request: Request, config: &config::Config, client: &reqwest::blocking::Client) {
+fn handle(
+    mut request: Request,
+    config: &config::Config,
+    client: &reqwest::blocking::Client,
+    state: &workspaces::State,
+) {
     if !browser::header(&request, "Authorization")
         .is_some_and(|authorization| config.authorized(authorization))
     {
@@ -69,6 +88,102 @@ fn handle(mut request: Request, config: &config::Config, client: &reqwest::block
             browser::respond(request, 403, "text/plain", "Invalid request origin", false);
             return;
         }
+    }
+    if request.url() == "/api/workspaces" && request.method() == &Method::Get {
+        let result = registry::records().and_then(|records| state.catalog(&records));
+        match result {
+            Ok(catalog) => browser::respond(
+                request,
+                200,
+                "application/json",
+                serde_json::to_vec(&catalog).unwrap(),
+                true,
+            ),
+            Err(_) => browser::respond(
+                request,
+                503,
+                "application/json",
+                r#"{"error":"Cannot load workspaces"}"#,
+                false,
+            ),
+        }
+        return;
+    }
+    if request.url() == "/api/workspaces" && request.method() == &Method::Post {
+        #[derive(serde::Deserialize)]
+        struct Add {
+            path: std::path::PathBuf,
+        }
+        let result = browser::read_body(&mut request, 16384)
+            .ok()
+            .and_then(|body| serde_json::from_slice::<Add>(&body).ok())
+            .ok_or_else(|| "Enter a workspace folder path".to_owned())
+            .and_then(|body| {
+                if !body.path.is_absolute() {
+                    return Err("Enter an absolute path on the editor host".into());
+                }
+                crate::workspaces::remember(&body.path)
+                    .map_err(|error| format!("Cannot add workspace: {error}"))
+            });
+        match result {
+            Ok(workspace) => browser::respond(
+                request,
+                201,
+                "application/json",
+                serde_json::to_vec(&workspace).unwrap(),
+                false,
+            ),
+            Err(error) => browser::respond(
+                request,
+                400,
+                "application/json",
+                serde_json::json!({"error":error}).to_string(),
+                false,
+            ),
+        }
+        return;
+    }
+    if request.method() == &Method::Post && request.url().starts_with("/api/workspaces/") {
+        let id = request
+            .url()
+            .strip_prefix("/api/workspaces/")
+            .and_then(|path| path.strip_suffix("/start"));
+        let workspace = crate::workspaces::list().ok().and_then(|workspaces| {
+            workspaces
+                .into_iter()
+                .find(|workspace| Some(workspace.id.as_str()) == id)
+        });
+        let Some(workspace) = workspace else {
+            browser::respond(
+                request,
+                404,
+                "application/json",
+                r#"{"error":"Unknown workspace"}"#,
+                false,
+            );
+            return;
+        };
+        // Drain any request body with a small bound, including chunked requests.
+        if browser::read_body(&mut request, 1024).is_err() {
+            browser::respond(request, 413, "text/plain", "Invalid request size", false);
+            return;
+        }
+        let result = registry::records()
+            .map_err(|_| "Cannot read editor registrations".to_owned())
+            .and_then(|records| state.start(workspace, &records));
+        match result {
+            Ok((status, body)) => {
+                browser::respond(request, status, "application/json", body.to_string(), false)
+            }
+            Err(error) => browser::respond(
+                request,
+                503,
+                "application/json",
+                serde_json::json!({"error":error}).to_string(),
+                false,
+            ),
+        }
+        return;
     }
     if request.method() == &Method::Get {
         let asset = match request.url() {
@@ -117,18 +232,23 @@ fn handle(mut request: Request, config: &config::Config, client: &reqwest::block
     if request.method() != &Method::Post
         || !matches!(
             action.as_str(),
-            "connect" | "frame" | "claim" | "disconnect"
+            "connect" | "frame" | "claim" | "disconnect" | "stop"
         )
     {
         browser::respond(request, 404, "text/plain", "Not found", false);
         return;
     }
-    let Some(viewer) = browser::header(&request, "X-Focus-Client")
-        .filter(|id| !id.is_empty() && id.len() <= 100)
-        .map(str::to_owned)
-    else {
-        browser::respond(request, 400, "text/plain", "Missing viewer identity", false);
-        return;
+    let viewer = if action == "stop" {
+        String::new()
+    } else {
+        let Some(viewer) = browser::header(&request, "X-Focus-Client")
+            .filter(|id| !id.is_empty() && id.len() <= 100)
+            .map(str::to_owned)
+        else {
+            browser::respond(request, 400, "text/plain", "Missing viewer identity", false);
+            return;
+        };
+        viewer
     };
     let body = match browser::read_body(&mut request, 1024 * 1024) {
         Ok(body) => body,
@@ -144,9 +264,24 @@ fn handle(mut request: Request, config: &config::Config, client: &reqwest::block
         browser::respond(request, 410, "text/plain", "This editor has closed", false);
         return;
     };
+    if action == "stop" && record.mode != "headless" {
+        browser::respond(
+            request,
+            403,
+            "application/json",
+            r#"{"error":"Close local editors from their own window"}"#,
+            false,
+        );
+        return;
+    }
+    let upstream = if action == "stop" {
+        "manage/stop"
+    } else {
+        action.as_str()
+    };
     let result = client
         .post(format!(
-            "{}/api/{action}",
+            "{}/api/{upstream}",
             record.endpoint.trim_end_matches('/')
         ))
         .header("Origin", &record.endpoint)

@@ -6,7 +6,7 @@ use eframe::egui;
 
 impl EditorApp {
     pub(super) fn update_window_title(&self, ctx: &egui::Context) {
-        let title = crate::launch::window_title(self.settings.workspace.as_deref());
+        let title = self.window_title();
         let id = egui::Id::new("workspace_window_title");
         let changed = ctx.data_mut(|data| {
             if data.get_temp::<String>(id).as_ref() == Some(&title) {

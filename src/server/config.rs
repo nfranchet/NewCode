@@ -1,4 +1,70 @@
-use crate::logging::Arguments;
+use std::ffi::OsString;
+
+#[derive(Default)]
+pub(super) struct Arguments {
+    pub bind: Option<std::net::IpAddr>,
+    pub port: Option<u16>,
+    pub config: Option<std::path::PathBuf>,
+    pub level: Option<log::LevelFilter>,
+    pub version: bool,
+}
+impl Arguments {
+    pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self, String> {
+        let mut result = Self::default();
+        let mut args = args.into_iter();
+        while let Some(arg) = args.next() {
+            let text = arg.to_string_lossy();
+            if matches!(text.as_ref(), "--version" | "-V") {
+                result.version = true;
+                continue;
+            }
+            let (name, inline) = text
+                .split_once('=')
+                .map_or((text.as_ref(), None), |(name, value)| (name, Some(value)));
+            if !matches!(name, "--bind" | "--port" | "--config" | "--log-level") {
+                return Err(format!("Unknown server argument: {name}"));
+            }
+            let value = match inline {
+                Some(value) => OsString::from(value),
+                None => args
+                    .next()
+                    .ok_or_else(|| format!("{name} requires a value"))?,
+            };
+            match name {
+                "--bind" => {
+                    result.bind = Some(
+                        value
+                            .to_str()
+                            .ok_or("Invalid bind address")?
+                            .parse()
+                            .map_err(|_| "--bind requires an IP address")?,
+                    )
+                }
+                "--port" => {
+                    result.port = Some(
+                        value
+                            .to_str()
+                            .ok_or("Invalid port")?
+                            .parse()
+                            .map_err(|_| "--port requires a port from 0 to 65535")?,
+                    )
+                }
+                "--config" => result.config = Some(value.into()),
+                _ => {
+                    result.level = Some(
+                        value
+                            .to_str()
+                            .ok_or("Invalid log level")?
+                            .parse()
+                            .map_err(|_| "Invalid --log-level")?,
+                    )
+                }
+            }
+        }
+        Ok(result)
+    }
+}
+
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -31,17 +97,13 @@ impl Config {
     }
 
     pub fn load(args: &Arguments) -> Result<Self, Box<dyn std::error::Error>> {
-        let path = match &args.server_config {
+        let path = match &args.config {
             Some(path) => path.clone(),
             None => Self::path()?,
         };
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => Some(text),
-            Err(error)
-                if error.kind() == io::ErrorKind::NotFound && args.server_config.is_none() =>
-            {
-                None
-            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound && args.config.is_none() => None,
             Err(error) => {
                 return Err(format!(
                     "Cannot read server configuration {}: {}",
@@ -137,5 +199,40 @@ mod tests {
         assert_eq!(config.address.to_string(), "127.0.0.1:9001");
         assert!(config.authorized(&format!("Basic {}", STANDARD.encode("env:override"))));
         assert!(Config::resolve(&Arguments::default(), FileConfig::default(), None, None).is_err());
+    }
+}
+
+#[cfg(test)]
+mod argument_tests {
+    use super::*;
+    #[test]
+    fn standalone_server_arguments() {
+        let args = Arguments::parse(
+            [
+                "--bind=127.0.0.1",
+                "--port",
+                "9001",
+                "--config",
+                "/tmp/config.toml",
+                "--log-level=debug",
+            ]
+            .into_iter()
+            .map(Into::into),
+        )
+        .unwrap();
+        assert_eq!(args.bind.unwrap().to_string(), "127.0.0.1");
+        assert_eq!(args.port, Some(9001));
+        assert_eq!(args.config, Some("/tmp/config.toml".into()));
+        assert_eq!(args.level, Some(log::LevelFilter::Debug));
+        for args in [
+            vec!["--ui"],
+            vec!["project"],
+            vec!["--server"],
+            vec!["--port=65536"],
+            vec!["--bind=example.com"],
+            vec!["--config"],
+        ] {
+            assert!(Arguments::parse(args.into_iter().map(Into::into)).is_err());
+        }
     }
 }

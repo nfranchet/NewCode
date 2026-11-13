@@ -4,6 +4,7 @@ use eframe::egui;
 use serde::Deserialize;
 mod compose;
 mod diagnostics;
+mod persistence;
 use compose::compose;
 use std::{
     path::{Path, PathBuf},
@@ -286,6 +287,7 @@ fn start(configuration: &Configuration, rebuild: bool) -> Result<Runtime, String
         args.push("--build");
     }
     args.push(&configuration.service);
+    persistence::prepare(configuration)?;
     compose::start(configuration, args)?;
     let container_id = compose(configuration, ["ps", "-q", configuration.service.as_str()])?;
     let container_id = String::from_utf8_lossy(&container_id).trim().to_owned();
@@ -301,6 +303,7 @@ fn start(configuration: &Configuration, rebuild: bool) -> Result<Runtime, String
         workspace_folder: configuration.workspace_folder.clone(),
         remote_user: configuration.remote_user.clone(),
     };
+    persistence::initialize(&runtime)?;
     Ok(runtime)
 }
 

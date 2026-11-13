@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
+default-run = "focus-editor"
+
+[[bin]]
+name = "focus-editor-server"
+path = "src/server_main.rs"
 
 [dependencies]
 eframe = { version = "0.36.2", default-features = false, features = ["persistence", "default_fonts", "glow", "wayland", "x11", "accesskit"] }

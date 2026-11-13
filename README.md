@@ -14,7 +14,7 @@ Publishing a GitHub release (including a prerelease) builds the tagged source an
 - `addons.json` (the manager catalog) and per-platform catalogs
 - `SHA256SUMS`
 
-Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer. The default app window requires installed Chromium or Google Chrome with WebGL 2 and a working browser sandbox. Native mode (`--ui`) requires an X11 or Wayland desktop and working OpenGL/EGL libraries. Both modes use the same dynamically linked executable; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install the executable with `install -m 755 focus-editor ~/.local/bin/focus-editor` after creating that directory.
+Linux binaries are built on Ubuntu 24.04 and require glibc 2.39 or newer. The default app window requires installed Chromium or Google Chrome with WebGL 2 and a working browser sandbox. Native mode (`--ui`) requires an X11 or Wayland desktop and working OpenGL/EGL libraries. Both modes use the same dynamically linked executable; run `ldd focus-editor` to identify missing runtime libraries. A desktop portal provides native file dialogs. Extract the archive and install both executables with `install -m 755 focus-editor focus-editor-server ~/.local/bin/` after creating that directory.
 
 Open **Addons** in the activity bar to install individual addons from the release catalog. The editor archives also include addon executables: run `python3 install-addons.py` from the extracted archive to install all of them, or add `--addon github` to select one (Python 3.11 or newer). Use **Rescan installed** in the manager afterward. The installer preserves addon data and installs executables beside logs.
 
@@ -61,17 +61,17 @@ Clipboard actions may require browser clipboard permission. Browser-reserved sho
 
 ### Shared remote server
 
-Run one gateway to access all your running editors from a normal browser:
+Start the separate server when you want browser access:
 
 ```sh
-focus-editor --server
-# Override the configured bind address and port:
-focus-editor --server --bind 0.0.0.0 --port 8999
-# Use another configuration file:
-focus-editor --server --server-config /path/to/server.toml
+focus-editor-server
+focus-editor-server --bind 0.0.0.0 --port 8999
+focus-editor-server --config /path/to/server.toml
+# From source:
+cargo run --release --bin focus-editor-server
 ```
 
-The gateway stays in the foreground and defaults to **0.0.0.0:8999**. It does not launch a window or require Chromium or a display. Configure its HTTP Basic Auth username and password before starting. On Linux, the default file is `$XDG_CONFIG_HOME/focus-editor/server.toml`, normally `~/.config/focus-editor/server.toml`. On macOS it is `~/Library/Application Support/focus-editor/server.toml`:
+The server stays in the foreground and defaults to **0.0.0.0:8999**. It requires no display or Chromium installation. Configure its HTTP Basic Auth username and password before starting. On Linux, the default file is `$XDG_CONFIG_HOME/focus-editor/server.toml`, normally `~/.config/focus-editor/server.toml`. On macOS it is `~/Library/Application Support/focus-editor/server.toml`:
 
 ```toml
 bind = "0.0.0.0"
@@ -80,11 +80,17 @@ username = "nicolas"
 password = "replace-with-your-password"
 ```
 
-Keep the file readable only by your user (`chmod 600 /path/to/server.toml`). CLI bind/port values override the file. `FOCUS_EDITOR_SERVER_USERNAME` and `FOCUS_EDITOR_SERVER_PASSWORD` override file credentials. Missing credentials or invalid configuration stop startup; there is no default password. The gateway writes diagnostics to `focus-editor/logs/server.log` under the application data root.
+Keep the file readable only by your user (`chmod 600 /path/to/server.toml`). CLI bind/port values override the file. `FOCUS_EDITOR_SERVER_USERNAME` and `FOCUS_EDITOR_SERVER_PASSWORD` override file credentials. Missing credentials or invalid configuration stop startup; there is no default password. Diagnostics go to `focus-editor/logs/server.log` under the application data root. `--log-level` and `--version` are available on both executables. The old `focus-editor --server` command now reports the separate binary to run.
 
-Open `http://HOST-IP:8999` and enter that login once. The sidebar discovers existing and newly launched editors for the same OS user and application data directory, including both app windows and `--ui` windows. Each page displays the actual live session, with its unsaved buffers, cursor, terminal, Git, and addon state. Select an editor, then **Take control** to send input. Other viewers remain connected; the local window can take control back. Only one viewer controls an editor at a time. Remote workspace/file selection browses files on the editor host. Clipboard permissions and some browser shortcuts depend on the browser; ordinary HTTP supports keyboard copy/paste as well.
+Open `http://HOST-IP:8999` and log in once. The sidebar lists running editors and known workspaces for the same OS user and application data directory. Regular app-window and `--ui` launches register automatically. They work independently when the server is absent and announce themselves again when it returns.
 
-Closing a remote tab or stopping/restarting the gateway leaves local editors and their processes running. Closing the local editor ends that session and removes it from the hub. The gateway uses private per-user instance registrations and authenticated loopback bridges; individual editors do not bind public ports. After upgrading from a version without the gateway, restart existing editors once so they can register. TLS and external network routing can be provided separately.
+The **Workspaces** list remembers folders opened locally, including previously saved workspaces. **Add workspace** accepts an absolute folder path on the editor host. Click **Start** to launch a stopped workspace without opening a local window; its live editor appears in the same page. Running workspaces offer **Open** links instead. Simultaneous Start requests share one launch. Missing folders remain listed as unavailable. Install `focus-editor` beside `focus-editor-server` or put it on the server's `PATH` so new sessions can be launched. Headless startup diagnostics are stored in `focus-editor/logs/headless-<workspace-id>.log`.
+
+Select an editor and click **Take control** to send input. Multiple viewers share its actual unsaved buffers, cursor, terminal, Git, and addon state, with one controller at a time. The local window can take control back. Remote workspace/file selection browses files on the editor host. Browser clipboard permissions and shortcuts depend on the browser; keyboard copy/paste also works over ordinary HTTP.
+
+Closing a browser or stopping/restarting the server leaves **all editor sessions running**, including sessions started from the page. Restart the server to reattach to the same processes and unsaved state. Use **Stop** to end a browser-only session; dirty documents offer **Save and stop**, **Discard and stop**, or **Cancel**. Failed saves keep the editor running. Local app/native sessions close through their own windows. Saved workspace history remains available afterward; stopping a session does not preserve discarded unsaved buffers.
+
+The server uses private per-user discovery, authenticated loopback registration, and private editor bridges. Individual editors do not bind public ports. Only one server runs for each user/data directory. TLS and external network routing can be provided separately. Restart binaries from versions predating instance registration once after upgrading. Release archives contain both executables; `cargo run` still defaults to the desktop editor.
 
 Keep the editor attached to the terminal for debugging:
 
@@ -169,6 +175,8 @@ Focus Editor can use a Docker Compose development container without Node.js or t
 The built-in backend supports Compose-based configurations with `dockerComposeFile`, `service`, `workspaceFolder`, and optional `remoteUser`. It starts the service with Docker Compose, then runs the integrated shell, Source Control commands, Codex, and OpenCode with `docker exec` in that container. Explorer, search, editing, and saved files stay on the host bind mount.
 
 The launcher resolves build settings relative to the first Compose file's directory, matching Compose's normal build-context rules. For example, `.devcontainer/docker-compose.yml` with `context: .` and `dockerfile: ./vscode/Dockerfile` builds from `.devcontainer`, so `COPY ./vscode/files/toto.txt` reads `.devcontainer/vscode/files/toto.txt`. Start and Rebuild supply these resolved build settings through an in-memory override for every buildable service. The runtime project identity and workspace bind mounts retain their existing workspace-root resolution. No configuration, Dockerfile, or source file is rewritten, and Docker reports missing build files instead of the launcher guessing a replacement.
+
+Focus Editor mounts `.devcontainer/mounted_files/` from each host workspace to persist Codex and OpenCode data across container restarts and rebuilds. It adds this directory to the workspace’s root `.gitignore` before writing data. Existing container histories are migrated on first startup without overwriting persisted data. Deleting this directory removes the saved container assistant data. Connected window and browser titles include **Devcontainer**.
 
 Docker Engine and the Docker Compose plugin are required. Node.js and `@devcontainers/cli` are not required or installed. The bundled image installs Codex and OpenCode using their official curl installers as `vscode`, with both commands available to noninteractive `docker exec`. Custom images must provide the tools you enable. Dev Container Features and lifecycle commands are not interpreted by Focus Editor; express required setup in the Dockerfile or Compose service instead.
 
@@ -380,7 +388,7 @@ Switching tabs continues processing both backends. Stream reconnects reload auth
 The editor and executable addons compile as separate Cargo projects:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
-- `src/browser/` hosts the default local browser session, embeds its browser client, and transports shared egui meshes, textures, input, and platform commands. Its launcher owns the sandboxed app window and temporary profile; its renderer preserves state during reloads and short disconnections. `--ui` uses a native eframe viewer of the same authoritative session. `src/server/` implements the authenticated shared gateway and discovery page.
+- `src/browser/` hosts the default local browser session, embeds its browser client, and transports shared egui meshes, textures, input, and platform commands. Its launcher owns the sandboxed app window and temporary profile; its renderer preserves state during reloads and short disconnections. `--ui` uses a native eframe viewer of the same authoritative session. `src/server/` implements the separate authenticated server, automatic registration, and workspace launcher.
 - `crates/addon-support/src/assistant_ui/` shares assistant headers, cards, Markdown rendering/cache, and bounded scrolling composers; provider modules adapt their own catalogs and protocol actions to these controls.
 - `addons/codex/src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, numeric diff statistics and new-file line counting (`stats`), independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
@@ -391,4 +399,4 @@ Other top-level modules provide the shared theme/icons, settings, terminal proce
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.
 
-After `cargo build`, `python3 scripts/browser-smoke.py` checks the actual app window, profile isolation, renderer sandbox, editing/saving, clipboard, external links, reloads, terminal input, display scaling, and window-close cleanup. It requires a desktop session, installed Chromium with working sandbox support, Python 3.11+, `websocket-client`, and Pillow. It attaches a test debugger through a temporary launcher shim; the normal launcher does not enable remote debugging. To include built assistant panels without connecting their backends, add `--addon addons/codex --addon addons/opencode`. The screenshot is saved to `target/browser-smoke.png`. `python3 scripts/server-smoke.py` additionally checks the hub on a network IP over ordinary HTTP, both editor modes, shared unsaved state, controller handoff, multiple viewers, remote terminal input, and gateway shutdown/restart. It uses a temporary test login and data directory; its screenshot is saved to `target/debug/server-smoke.png`.
+After `cargo build`, `python3 scripts/browser-smoke.py` checks the actual app window, profile isolation, renderer sandbox, editing/saving, clipboard, external links, reloads, terminal input, display scaling, and window-close cleanup. It requires a desktop session, installed Chromium with working sandbox support, Python 3.11+, `websocket-client`, and Pillow. It attaches a test debugger through a temporary launcher shim; the normal launcher does not enable remote debugging. To include built assistant panels without connecting their backends, add `--addon addons/codex --addon addons/opencode`. The screenshot is saved to `target/browser-smoke.png`. `python3 scripts/server-smoke.py` additionally checks the hub on a network IP over ordinary HTTP, both editor modes, shared unsaved state, controller handoff, multiple viewers, remote terminal input, and gateway shutdown/restart. `python3 scripts/workspace-smoke.py` tests adding/starting/stopping workspaces and reattaching to unsaved headless sessions entirely through the browser, without desktop access for editor processes. Both server smoke tests use temporary logins and data directories. Their screenshots are saved to `target/debug/server-smoke.png` and `target/debug/workspace-smoke.png`.

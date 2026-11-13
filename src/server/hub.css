@@ -8,3 +8,23 @@ button strong,button small { display:block; overflow:hidden; text-overflow:ellip
 main { flex:1; min-width:0; height:100%; } iframe { width:100%; height:100%; border:0; display:block; }
 #empty { height:100%; display:grid; align-content:center; padding:40px; text-align:center; color:#4c566a; }
 [hidden] { display:none!important; } @media(max-width:700px) { aside { width:160px; padding:12px 8px; } h1 { font-size:17px; } }
+.editor-row { display:flex; align-items:center; gap:2px; }
+.editor-select { flex:1; min-width:0; }
+.stop-editor { font-size:11px; padding:5px; }
+.workspace-heading { display:flex; align-items:center; justify-content:space-between; gap:4px; margin-top:24px; }
+h2 { font-size:16px; }
+.workspace-heading button { font-size:11px; padding:5px; border-color:#b8c5d6; }
+.workspace { padding:12px 0; border-bottom:1px solid #d8dee9; }
+.workspace strong,.workspace small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.workspace small { font-size:11px; color:#4c566a; margin:4px 0; }
+.workspace-state { font-size:11px; color:#4c566a; margin-right:8px; }
+.workspace button { font-size:12px; padding:4px 8px; border-color:#b8c5d6; }
+button:disabled { cursor:default; opacity:0.5; }
+button:focus-visible { outline:2px solid #5e81ac; outline-offset:2px; }
+.workspace-error,#action-error,#add-error,#stop-error { color:#963b41; font-size:12px; overflow-wrap:anywhere; }
+dialog { color:#2e3440; background:#eceff4; border:1px solid #b8c5d6; border-radius:6px; padding:24px; width:min(540px,90vw); box-shadow:0 12px 60px #2e344044; }
+dialog::backdrop { background:#2e344077; }
+dialog h2 { margin-top:0; } dialog label { display:block; margin-bottom:8px; }
+dialog input { width:100%; padding:8px; font:inherit; border:1px solid #b8c5d6; border-radius:3px; background:white; color:inherit; }
+.dialog-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:20px; }
+.dialog-actions button { border-color:#b8c5d6; }

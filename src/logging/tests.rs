@@ -234,39 +234,25 @@ fn filters_enable_expected_levels_without_dependency_debug_noise() {
 }
 
 #[test]
-fn server_flags_validate_scope_and_values() {
-    for options in [
-        vec![
-            "--server",
-            "--bind",
-            "127.0.0.1",
-            "--port=9123",
-            "--server-config",
-            "/tmp/server.toml",
-        ],
-        vec![
-            "--port",
-            "9123",
-            "--bind=127.0.0.1",
-            "--server-config=/tmp/server.toml",
-            "--server",
-        ],
+fn server_flags_redirect_and_headless_requires_workspace() {
+    for flag in [
+        "--server",
+        "--port=1234",
+        "--bind",
+        "--server-config",
+        "--config",
     ] {
-        let args = Arguments::parse(options.into_iter().map(Into::into)).unwrap();
-        assert!(args.server);
-        assert_eq!(args.bind.unwrap().to_string(), "127.0.0.1");
-        assert_eq!(args.port, Some(9123));
-        assert_eq!(args.server_config, Some("/tmp/server.toml".into()));
+        assert!(
+            Arguments::parse([flag.into()])
+                .unwrap_err()
+                .contains("focus-editor-server")
+        );
     }
-    for options in [
-        vec!["--server", "--ui"],
-        vec!["--server", "project"],
-        vec!["--server", "--no-addon=codex"],
-        vec!["--port=1234"],
-        vec!["--server", "--port=65536"],
-        vec!["--server", "--bind=example.com"],
-        vec!["--server", "--server-config"],
-    ] {
-        assert!(Arguments::parse(options.into_iter().map(Into::into)).is_err());
-    }
+    assert!(Arguments::parse(["--headless".into()]).is_err());
+    assert!(Arguments::parse(["--headless".into(), "--ui".into(), "project".into()]).is_err());
+    assert!(
+        Arguments::parse(["--headless".into(), "project".into()])
+            .unwrap()
+            .headless
+    );
 }

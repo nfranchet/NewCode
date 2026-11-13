@@ -166,7 +166,11 @@ impl EditorApp {
     }
 
     pub(crate) fn window_title(&self) -> String {
-        crate::launch::window_title(self.settings.workspace.as_deref())
+        let mut title = crate::launch::window_title(self.settings.workspace.as_deref());
+        if self.dev_container.runtime().is_some() {
+            title.push_str(" — Devcontainer");
+        }
+        title
     }
     pub(crate) fn workspace(&self) -> Option<std::path::PathBuf> {
         self.settings.workspace.clone()

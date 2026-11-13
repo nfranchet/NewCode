@@ -5,3 +5,5 @@ __pycache__/
 
 addons/**/target
 crates/**/target
+
+/.devcontainer/mounted_files/

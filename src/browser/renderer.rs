@@ -68,6 +68,9 @@ impl Renderer {
         self.app.save_settings();
     }
 
+    pub fn dirty(&self) -> bool {
+        self.app.has_unsaved_changes()
+    }
     pub fn title(&self) -> String {
         self.app.window_title()
     }

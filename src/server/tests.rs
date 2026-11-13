@@ -34,9 +34,8 @@ fn authenticated_catalog_and_private_proxy() {
         "username = 'smoke'\npassword = 'test-password'\n",
     )
     .unwrap();
-    let config = config::Config::load(&Arguments {
-        server: true,
-        server_config: Some(config_path),
+    let config = config::Config::load(&config::Arguments {
+        config: Some(config_path),
         ..Default::default()
     })
     .unwrap();
@@ -87,6 +86,7 @@ fn authenticated_catalog_and_private_proxy() {
     let public = Server::http("127.0.0.1:0").unwrap();
     let origin = format!("http://{}", public.server_addr().to_ip().unwrap());
     let public_stop = stop.clone();
+    let state = workspaces::State::new().unwrap();
     let gateway = std::thread::spawn(move || {
         let client = reqwest::blocking::Client::builder()
             .no_proxy()
@@ -95,7 +95,7 @@ fn authenticated_catalog_and_private_proxy() {
             .unwrap();
         while !public_stop.load(Ordering::Acquire) {
             if let Some(request) = public.recv_timeout(Duration::from_millis(50)).unwrap() {
-                handle(request, &config, &client);
+                handle(request, &config, &client, &state);
             }
         }
     });
@@ -123,6 +123,8 @@ fn authenticated_catalog_and_private_proxy() {
         "/client.js",
         "/browser.css",
         "/api/editors",
+        "/api/workspaces",
+        "/api/workspaces/unknown/start",
         &format!("/editors/{id}/"),
         &format!("/api/editors/{id}/frame"),
     ] {

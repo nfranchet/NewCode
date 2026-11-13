@@ -7,7 +7,8 @@ services:
     volumes:
       - .:/workspaces/NewCode
       - cargo-cache-newcode:/usr/local/cargo:rw
-    command: sleep infinity
+    # Repair ownership on existing cache volumes after root-owned build installs.
+    command: ["sh", "-c", "chown -R vscode:rustlang /usr/local/cargo && exec sleep infinity"]
 
 
 volumes:
