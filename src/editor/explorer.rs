@@ -245,16 +245,11 @@ impl EditorApp {
             ui.close();
         }
         if ui.button("Move to…").clicked() {
-            if let Some(dest) = rfd::FileDialog::new()
-                .set_directory(path.parent().unwrap_or(Path::new(".")))
-                .save_file()
-            {
-                if let Err(e) = fs::rename(path, &dest) {
-                    self.status = format!("Move failed: {e}");
-                } else {
-                    self.update_open_path(path, &dest);
-                }
-            }
+            crate::file_picker::request(
+                ui.ctx(),
+                crate::file_picker::Purpose::Move(path.to_path_buf()),
+                path.parent(),
+            );
             ui.close();
         }
         let delete = ui.button(egui::RichText::new("Delete…").color(theme::colors(ui).error));
@@ -365,7 +360,7 @@ impl EditorApp {
                 )
                 .clicked()
                 {
-                    self.choose_workspace();
+                    self.choose_workspace(ui.ctx());
                 }
             });
         }

@@ -9,7 +9,8 @@
 </head>
 <body>
   <main><canvas id="editor" tabindex="0" aria-label="Focus Editor workspace"></canvas></main>
+  <aside id="control" hidden><span id="owner"></span> <button id="claim">Take control</button></aside>
   <textarea id="input" aria-label="Editor text input" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
-  <section id="notice" role="status"><p id="message">Connecting to your local editor…</p><button id="reconnect" hidden>Reconnect</button></section>
+  <section id="notice" role="status"><p id="message">Connecting to the editor…</p><a id="external-link" target="_blank" rel="noopener noreferrer" hidden>Open link</a><button id="reconnect" hidden>Reconnect</button></section>
 </body>
 </html>

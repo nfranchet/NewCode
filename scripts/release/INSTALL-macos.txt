@@ -6,7 +6,7 @@ Chrome (WebGL 2 required), without tabs or an address bar. It uses a temporary
 private browser profile and keeps the renderer sandbox enabled. For the native
 desktop window, run its executable with --ui. No Node.js or Electron is needed.
 Closing the window warns about unsaved documents, stops the backend, and removes
-the temporary profile. Reloads/short disconnections allow 60 seconds to reconnect
+the temporary profile. Reloads and connection loss retain the session
 while the window is alive. External links open in the normal system browser.
 To install bundled addons, run python3 install-addons.py from the
 mounted image (Python 3.11 or newer). Add --addon github to install only GitHub.
@@ -36,3 +36,23 @@ start, inspect the error or use --ui; the launcher never retries unsandboxed.
 Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.
+
+Shared remote server:
+  focus-editor --server
+  focus-editor --server --bind 0.0.0.0 --port 8999
+  focus-editor --server --server-config /path/to/server.toml
+
+The gateway stays in the foreground, defaults to 0.0.0.0:8999, and requires no
+browser or display. Set username and password in the user configuration file
+focus-editor/server.toml (Linux: ~/.config; macOS: ~/Library/Application Support):
+  bind = "0.0.0.0"
+  port = 8999
+  username = "your-login"
+  password = "your-password"
+Use chmod 600 on this file. FOCUS_EDITOR_SERVER_USERNAME/PASSWORD override file
+credentials; CLI bind/port override file values. Open http://HOST-IP:8999 and
+log in once to see every live editor for the same user/data directory. Both app
+and --ui windows appear automatically. Select one and click Take control; other
+viewers observe the same live state. Closing the browser or gateway leaves local
+editors running. Restart older editor binaries once after upgrading to register.
+See README.md for configuration paths, clipboard behavior, and routing details.

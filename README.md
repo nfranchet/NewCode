@@ -40,7 +40,7 @@ cargo run --release
 
 The first build downloads the pinned Ghostty source and Zig packages. Subsequent builds reuse Cargo's build directory. For a network-free build, prefetch the pinned source and Zig packages and supply `GHOSTTY_SOURCE_DIR` and `GHOSTTY_ZIG_SYSTEM_DIR` as described by `libghostty-vt-sys`. `cargo --offline` alone does not prevent its native build script from fetching missing sources. Release binaries link the VT engine statically; users do not need Zig or the Ghostty application installed.
 
-By default, the editor opens a dedicated, resizable Chromium app window with no tabs or address bar. It uses a private temporary browser profile, with extensions and synchronization disabled, and keeps Chromium's renderer sandbox enabled. Your personal browser profile is separate. The editor interface renders in a WebGL 2 canvas connected to a private localhost server; files, Git, terminals, Dev Containers, and addons run in the Rust process with normal host access. Browser assets are embedded in the executable, with no Node.js, Electron, web build step, or external asset downloads. File/folder selection still uses local desktop dialogs.
+By default, the editor opens a dedicated, resizable Chromium app window with no tabs or address bar. It uses a private temporary browser profile, with extensions and synchronization disabled, and keeps Chromium's renderer sandbox enabled. Your personal browser profile is separate. The editor interface renders in a WebGL 2 canvas connected to a private localhost server; files, Git, terminals, Dev Containers, and addons run in the Rust process with normal host access. Browser assets are embedded in the executable, with no Node.js, Electron, web build step, or external asset downloads. Local file/folder selection uses desktop dialogs; remote controllers use an in-editor host filesystem picker.
 
 On Linux, the launcher searches `PATH` for `chromium`, `chromium-browser`, `google-chrome`, and `google-chrome-stable`. On macOS it also checks Chrome and Chromium app bundles in `/Applications` and `~/Applications`. If no compatible browser is installed, install one or use `--ui`. Browser startup or sandbox failures are reported in diagnostics; the launcher never retries without the sandbox. External links open in your normal system browser.
 
@@ -55,9 +55,36 @@ cargo run --release -- --ui ~/projects/my-app
 
 On Linux, both modes open in the background and immediately release the terminal. macOS uses the normal application lifecycle. Each launch opens a separate instance. App windows and native windows use **Focus Editor — workspace-name** as their title. Relative workspace paths are resolved for display: launching with `.` shows the actual folder name in the title and toolbar, with the full resolved path in the toolbar tooltip.
 
-The app window is accessible only on this computer. Refreshing or reconnecting preserves unsaved buffers, running terminals, and addon state in the same backend process. A temporary connection loss allows **60 seconds to reconnect** while the app window is still running. Closing the window warns about unsaved documents, then saves workspace settings, stops owned PTY and addon processes, and removes the temporary browser profile. Waiting at that warning keeps the session alive until you respond. Unsaved buffers are not written to disk automatically. Separate launches use independent browser profiles and editor instances.
+Each app window uses a private loopback connection. Refreshing or reconnecting preserves unsaved buffers, running terminals, and addon state in the same backend process. The session stays alive while its app window is running, including during temporary connection loss. Closing the window warns about unsaved documents, then saves workspace settings, stops owned PTY and addon processes, and removes the temporary browser profile. Waiting at that warning keeps the session alive until you respond. Unsaved buffers are not written to disk automatically. Separate launches use independent browser profiles and editor instances.
 
 Clipboard actions may require browser clipboard permission. Browser-reserved shortcuts can still take precedence; use the editor's buttons and menus or `--ui` when needed. The app window displays an instruction to use desktop mode if WebGL 2 is unavailable.
+
+### Shared remote server
+
+Run one gateway to access all your running editors from a normal browser:
+
+```sh
+focus-editor --server
+# Override the configured bind address and port:
+focus-editor --server --bind 0.0.0.0 --port 8999
+# Use another configuration file:
+focus-editor --server --server-config /path/to/server.toml
+```
+
+The gateway stays in the foreground and defaults to **0.0.0.0:8999**. It does not launch a window or require Chromium or a display. Configure its HTTP Basic Auth username and password before starting. On Linux, the default file is `$XDG_CONFIG_HOME/focus-editor/server.toml`, normally `~/.config/focus-editor/server.toml`. On macOS it is `~/Library/Application Support/focus-editor/server.toml`:
+
+```toml
+bind = "0.0.0.0"
+port = 8999
+username = "nicolas"
+password = "replace-with-your-password"
+```
+
+Keep the file readable only by your user (`chmod 600 /path/to/server.toml`). CLI bind/port values override the file. `FOCUS_EDITOR_SERVER_USERNAME` and `FOCUS_EDITOR_SERVER_PASSWORD` override file credentials. Missing credentials or invalid configuration stop startup; there is no default password. The gateway writes diagnostics to `focus-editor/logs/server.log` under the application data root.
+
+Open `http://HOST-IP:8999` and enter that login once. The sidebar discovers existing and newly launched editors for the same OS user and application data directory, including both app windows and `--ui` windows. Each page displays the actual live session, with its unsaved buffers, cursor, terminal, Git, and addon state. Select an editor, then **Take control** to send input. Other viewers remain connected; the local window can take control back. Only one viewer controls an editor at a time. Remote workspace/file selection browses files on the editor host. Clipboard permissions and some browser shortcuts depend on the browser; ordinary HTTP supports keyboard copy/paste as well.
+
+Closing a remote tab or stopping/restarting the gateway leaves local editors and their processes running. Closing the local editor ends that session and removes it from the hub. The gateway uses private per-user instance registrations and authenticated loopback bridges; individual editors do not bind public ports. After upgrading from a version without the gateway, restart existing editors once so they can register. TLS and external network routing can be provided separately.
 
 Keep the editor attached to the terminal for debugging:
 
@@ -353,7 +380,7 @@ Switching tabs continues processing both backends. Stream reconnects reload auth
 The editor and executable addons compile as separate Cargo projects:
 
 - `src/editor/mod.rs` owns application state and coordinates the window. Its sibling modules separate layout/sidebar routing, document lifecycle and preview state, tab rendering, clipboard and close-dialog actions, document path changes, text rendering, Explorer, inline creation, confirmed deletion, search/Find, shell rendering, and persistence.
-- `src/browser/` hosts the default local browser session, embeds its browser client, and transports shared egui meshes, textures, input, and platform commands. Its launcher owns the sandboxed app window and temporary profile; its renderer preserves state during reloads and short disconnections. `--ui` uses the native eframe integration instead.
+- `src/browser/` hosts the default local browser session, embeds its browser client, and transports shared egui meshes, textures, input, and platform commands. Its launcher owns the sandboxed app window and temporary profile; its renderer preserves state during reloads and short disconnections. `--ui` uses a native eframe viewer of the same authoritative session. `src/server/` implements the authenticated shared gateway and discovery page.
 - `crates/addon-support/src/assistant_ui/` shares assistant headers, cards, Markdown rendering/cache, and bounded scrolling composers; provider modules adapt their own catalogs and protocol actions to these controls.
 - `addons/codex/src/codex_ui/mod.rs` owns Codex panel state and connection lifecycle. Its sibling modules separate the header, transcript, composer, catalog helpers, usage, outgoing requests, incoming responses/events, message updates, indexed reasoning sections, and completed-plan/Go state.
 - `src/git_ui/mod.rs` owns Source Control state. Its sibling modules separate repository access/status parsing, numeric diff statistics and new-file line counting (`stats`), independent status/operation/review requests (`actions`), shared grouping and eligibility rules (`model`), fixed panel controls (`panel`), compact change rows (`file_list`), comparison rendering (`diff`, `diff_rows`), byte-preserving patch parsing (`patch_model`), retained reviews (`review`), file/index validation (`fingerprint`), hunk application (`patch`), and presentation helpers. Git tests live in `src/git_ui/tests.rs` and `src/git_ui/tests/`.
@@ -364,4 +391,4 @@ Other top-level modules provide the shared theme/icons, settings, terminal proce
 
 See [PRODUCT.md](PRODUCT.md) for the current product scope and [PLAN.md](PLAN.md) for implementation and validation notes.
 
-After `cargo build`, `python3 scripts/browser-smoke.py` checks the actual app window, profile isolation, renderer sandbox, editing/saving, clipboard, external links, reloads, terminal input, display scaling, and window-close cleanup. It requires a desktop session, installed Chromium with working sandbox support, Python 3.11+, `websocket-client`, and Pillow. It attaches a test debugger through a temporary launcher shim; the normal launcher does not enable remote debugging. To include built assistant panels without connecting their backends, add `--addon addons/codex --addon addons/opencode`. The screenshot is saved to `target/browser-smoke.png`.
+After `cargo build`, `python3 scripts/browser-smoke.py` checks the actual app window, profile isolation, renderer sandbox, editing/saving, clipboard, external links, reloads, terminal input, display scaling, and window-close cleanup. It requires a desktop session, installed Chromium with working sandbox support, Python 3.11+, `websocket-client`, and Pillow. It attaches a test debugger through a temporary launcher shim; the normal launcher does not enable remote debugging. To include built assistant panels without connecting their backends, add `--addon addons/codex --addon addons/opencode`. The screenshot is saved to `target/browser-smoke.png`. `python3 scripts/server-smoke.py` additionally checks the hub on a network IP over ordinary HTTP, both editor modes, shared unsaved state, controller handoff, multiple viewers, remote terminal input, and gateway shutdown/restart. It uses a temporary test login and data directory; its screenshot is saved to `target/debug/server-smoke.png`.

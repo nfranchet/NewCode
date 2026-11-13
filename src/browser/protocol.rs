@@ -4,12 +4,14 @@ use eframe::egui::{self, ColorImage, TextureId, TextureOptions, epaint::ImageDel
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Input {
     pub size: [f32; 2],
     pub pixels_per_point: f32,
     pub focused: bool,
     pub events: Vec<egui::Event>,
+    #[serde(default)]
+    pub epoch: Option<u64>,
 }
 
 impl Input {
@@ -71,23 +73,23 @@ fn texture_id(id: TextureId) -> String {
     }
 }
 
-#[derive(Serialize)]
-struct Mesh {
-    clip: [f32; 4],
-    texture: String,
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub(super) struct Mesh {
+    pub clip: [f32; 4],
+    pub texture: String,
     /// Little-endian x/y/u/v float32 values followed by four premultiplied RGBA bytes.
-    vertices: String,
+    pub vertices: String,
     /// Little-endian uint32 triangle indices.
-    indices: String,
+    pub indices: String,
 }
 
-#[derive(Serialize)]
-struct Texture {
-    id: String,
-    size: [usize; 2],
-    pos: Option<[usize; 2]>,
-    options: TextureOptions,
-    pixels: String,
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+pub(super) struct Texture {
+    pub id: String,
+    pub size: [usize; 2],
+    pub pos: Option<[usize; 2]>,
+    pub options: TextureOptions,
+    pub pixels: String,
 }
 
 impl Texture {
@@ -118,6 +120,12 @@ impl Texture {
 pub(super) struct Textures(HashMap<TextureId, (ColorImage, TextureOptions)>);
 
 impl Textures {
+    pub fn full(&self) -> Vec<Texture> {
+        self.0
+            .iter()
+            .map(|(&id, (image, options))| Texture::new(id, image, None, *options))
+            .collect()
+    }
     fn update(&mut self, id: TextureId, delta: ImageDelta) -> Texture {
         let egui::ImageData::Color(image) = delta.image;
         let texture = Texture::new(id, &image, delta.pos, delta.options);
@@ -138,16 +146,27 @@ impl Textures {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
+pub(super) struct Control {
+    pub owned: bool,
+    pub owner: Option<String>,
+    pub epoch: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub(super) struct Frame {
-    meshes: Vec<Mesh>,
-    textures: Vec<Texture>,
-    free: Vec<String>,
+    pub meshes: Vec<Mesh>,
+    pub textures: Vec<Texture>,
+    pub free: Vec<String>,
     pub output: egui::PlatformOutput,
     pub title: Option<String>,
     pub paste: bool,
     pub dirty: bool,
     pub pixels_per_point: f32,
+    pub size: [f32; 2],
+    pub revision: u64,
+    pub reset: bool,
+    pub control: Control,
 }
 
 impl Frame {
@@ -223,6 +242,10 @@ impl Frame {
             paste: false,
             dirty: false,
             pixels_per_point: output.pixels_per_point,
+            size: [ctx.viewport_rect().width(), ctx.viewport_rect().height()],
+            revision: 0,
+            reset,
+            control: Control::default(),
         };
         if let Some(viewport) = output.viewport_output.get(&egui::ViewportId::ROOT) {
             for command in &viewport.commands {
@@ -308,6 +331,7 @@ mod tests {
             pixels_per_point: 1.0,
             focused: true,
             events: vec![],
+            epoch: None,
         };
         assert!(invalid.raw(0.0, 1.0).is_err());
     }

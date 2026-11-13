@@ -13,8 +13,8 @@ Each launch uses a temporary private profile with extensions and sync disabled;
 the renderer sandbox stays enabled. Use --ui for the native desktop window. Both modes
 use the same editor, terminals, Git, and addons; no Node.js or Electron is needed.
 Closing the app window warns about unsaved documents, stops the backend, and
-removes its temporary profile. Reloads/short disconnections allow 60 seconds to
-reconnect while the window is alive. External links open in the system browser.
+removes its temporary profile. Reloads and connection loss retain the session
+while the window is alive. External links open in the system browser.
 
 The addon installer requires Python 3.11 or newer. It installs all bundled
 addons in $XDG_DATA_HOME/focus-editor/addons/<id> (normally
@@ -39,3 +39,23 @@ or use --ui. The launcher never retries with the browser sandbox disabled.
 Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.
+
+Shared remote server:
+  focus-editor --server
+  focus-editor --server --bind 0.0.0.0 --port 8999
+  focus-editor --server --server-config /path/to/server.toml
+
+The gateway stays in the foreground, defaults to 0.0.0.0:8999, and requires no
+browser or display. Set username and password in the user configuration file
+focus-editor/server.toml (Linux: ~/.config; macOS: ~/Library/Application Support):
+  bind = "0.0.0.0"
+  port = 8999
+  username = "your-login"
+  password = "your-password"
+Use chmod 600 on this file. FOCUS_EDITOR_SERVER_USERNAME/PASSWORD override file
+credentials; CLI bind/port override file values. Open http://HOST-IP:8999 and
+log in once to see every live editor for the same user/data directory. Both app
+and --ui windows appear automatically. Select one and click Take control; other
+viewers observe the same live state. Closing the browser or gateway leaves local
+editors running. Restart older editor binaries once after upgrading to register.
+See README.md for configuration paths, clipboard behavior, and routing details.

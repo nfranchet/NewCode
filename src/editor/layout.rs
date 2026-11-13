@@ -68,7 +68,7 @@ impl EditorApp {
                         if theme::button(ui, Icon::Folder, "Workspace", colors.accent, false)
                             .clicked()
                         {
-                            self.choose_workspace();
+                            self.choose_workspace(ui.ctx());
                         }
                     },
                 );

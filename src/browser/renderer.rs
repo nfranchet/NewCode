@@ -1,7 +1,7 @@
 use super::protocol::{Frame, Input, Textures};
 use crate::{editor::EditorApp, logging::Arguments};
 use eframe::{App, egui};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub(super) struct Renderer {
     ctx: egui::Context,
@@ -10,8 +10,6 @@ pub(super) struct Renderer {
     pending: egui::FullOutput,
     input: egui::RawInput,
     start: Instant,
-    last_render: Instant,
-    last_body: Vec<u8>,
 }
 
 impl Renderer {
@@ -32,8 +30,6 @@ impl Renderer {
                 ..Default::default()
             },
             start,
-            last_render: start,
-            last_body: Vec::new(),
         }
     }
 
@@ -43,49 +39,73 @@ impl Renderer {
         self.app.raw_input_hook(&self.ctx, &mut input);
         self.pending
             .append(self.ctx.run_ui(input, |ui| self.app.render(ui)));
-        self.last_render = Instant::now();
     }
 
     pub fn release_input(&mut self) {
         let mut raw = self.input.clone();
         raw.time = Some(self.start.elapsed().as_secs_f64());
         raw.focused = false;
-        raw.events = vec![egui::Event::WindowFocused(false), egui::Event::PointerGone];
+        raw.events = vec![
+            egui::Event::ModifiersChanged(Default::default()),
+            egui::Event::WindowFocused(false),
+            egui::Event::PointerGone,
+        ];
         self.render(raw);
-        self.ctx
-            .input_mut(|input| input.pointer = Default::default());
-    }
-
-    pub fn background(&mut self) {
-        if self.last_render.elapsed() < Duration::from_millis(100) {
-            return;
-        }
-        // Continue processing addon events and PTY output while a tab is hidden or reloading.
-        let mut raw = self.input.clone();
-        raw.time = Some(self.start.elapsed().as_secs_f64());
-        self.render(raw);
-    }
-
-    pub fn frame(&mut self, input: Input, reset: bool) -> Result<Option<Vec<u8>>, String> {
-        let raw = input.raw(self.start.elapsed().as_secs_f64(), self.ctx.zoom_factor())?;
-        self.render(raw);
-        let output = std::mem::take(&mut self.pending);
-        let mut frame = Frame::new(&self.ctx, output, &mut self.textures, reset);
-        frame.dirty = self.app.has_unsaved_changes();
-        frame.title = Some(self.app.window_title());
-        // AccessKit is native-specific; serializing a tree adds no browser accessibility support.
-        frame.output.accesskit_update = None;
-        let body = serde_json::to_vec(&frame).map_err(|e| e.to_string())?;
-        if !reset && frame.output.commands.is_empty() && !frame.paste && body == self.last_body {
-            Ok(None)
-        } else {
-            self.last_body = body.clone();
-            Ok(Some(body))
+        self.ctx.input_mut(|input| {
+            input.pointer = Default::default();
+            input.keys_down.clear();
+            input.modifiers = Default::default();
+        });
+        self.pending.platform_output.commands.clear();
+        for viewport in self.pending.viewport_output.values_mut() {
+            viewport
+                .commands
+                .retain(|command| !matches!(command, egui::ViewportCommand::RequestPaste));
         }
     }
 
     pub fn save(&self) {
         self.app.save_settings();
+    }
+
+    pub fn title(&self) -> String {
+        self.app.window_title()
+    }
+    pub fn set_waker(&self, viewer: egui::Context) {
+        self.ctx
+            .set_request_repaint_callback(move |info| viewer.request_repaint_after(info.delay));
+    }
+    pub fn save_documents(&mut self) -> bool {
+        self.app.save_documents()
+    }
+    pub fn workspace(&self) -> Option<std::path::PathBuf> {
+        self.app.workspace()
+    }
+    pub fn atlas(&self) -> Vec<super::protocol::Texture> {
+        self.textures.full()
+    }
+    pub fn render_frame(&mut self, input: Option<Input>, remote: bool) -> Result<Frame, String> {
+        self.ctx
+            .data_mut(|data| data.insert_temp(egui::Id::new("remote_controller"), remote));
+        let raw = match input {
+            Some(input) => input.raw(self.start.elapsed().as_secs_f64(), self.ctx.zoom_factor())?,
+            None => {
+                let mut raw = self.input.clone();
+                raw.time = Some(self.start.elapsed().as_secs_f64());
+                raw
+            }
+        };
+        self.render(raw);
+        let mut frame = Frame::new(
+            &self.ctx,
+            std::mem::take(&mut self.pending),
+            &mut self.textures,
+            false,
+        );
+        frame.dirty = self.app.has_unsaved_changes();
+        frame.title = Some(self.app.window_title());
+        frame.output.accesskit_update = None;
+        Ok(frame)
     }
 }
 

@@ -4,18 +4,20 @@ mod app_paths;
 mod browser;
 mod dev_container;
 mod editor;
+mod file_picker;
 mod git_ui;
 mod launch;
 mod logging;
 mod platform;
 mod repository_jobs;
+mod server;
 mod settings;
 mod syntax;
 mod terminal;
 mod terminal_fonts;
 mod ui_theme;
 
-use editor::EditorApp;
+#[cfg(test)]
 use eframe::egui;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,6 +38,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(any(target_os = "linux", target_os = "macos")) {
         return Err("Focus Editor supports Linux and macOS".into());
     }
+    if arguments.server {
+        return server::run(&arguments);
+    }
     if !arguments.ui {
         browser::validate_runtime()?;
     }
@@ -50,18 +55,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         log::info!("Application stopped");
         return Ok(());
     }
-    let options = eframe::NativeOptions {
-        persist_window: false,
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1440.0, 900.0])
-            .with_min_inner_size([900.0, 600.0]),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Focus Editor",
-        options,
-        Box::new(|cc| Ok(Box::new(EditorApp::new(&cc.egui_ctx, &arguments)))),
-    )?;
+    browser::run_native(&arguments)?;
     log::info!("Application stopped");
     Ok(())
 }

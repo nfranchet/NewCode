@@ -270,26 +270,7 @@ impl Addons {
                 });
             }
             Action::Local => {
-                if let Some(source) = rfd::FileDialog::new()
-                    .add_filter("Addon manifest or package", &["toml", "gz"])
-                    .pick_file()
-                {
-                    let root = match crate::app_paths::data_root() {
-                        Ok(p) => p,
-                        Err(e) => {
-                            self.manager.error = Some(e.to_string());
-                            return;
-                        }
-                    };
-                    self.worker(ctx, "Validating local addon…", move |_| {
-                        if source.extension().is_some_and(|e| e == "toml") {
-                            packages::prepare_local(&root, &source)
-                        } else {
-                            packages::prepare_archive(&root, &source, None)
-                        }
-                        .map(Event::Prepared)
-                    });
-                }
+                crate::file_picker::request(ctx, crate::file_picker::Purpose::Addon, None)
             }
             Action::Install(package, release) => {
                 let root = match crate::app_paths::data_root() {
@@ -357,6 +338,29 @@ impl Addons {
             }
         }
         Ok(())
+    }
+    pub(crate) fn install_local(&mut self, ctx: &egui::Context, source: std::path::PathBuf) {
+        if self.manager.pending.is_some() {
+            return;
+        }
+        let root = match crate::app_paths::data_root() {
+            Ok(path) => path,
+            Err(error) => {
+                self.manager.error = Some(error.to_string());
+                return;
+            }
+        };
+        self.worker(ctx, "Validating local addon…", move |_| {
+            if source
+                .extension()
+                .is_some_and(|extension| extension == "toml")
+            {
+                packages::prepare_local(&root, &source)
+            } else {
+                packages::prepare_archive(&root, &source, None)
+            }
+            .map(Event::Prepared)
+        });
     }
     pub fn manager_tick(&mut self, ctx: &egui::Context, enabled_settings: &BTreeMap<String, bool>) {
         let mut events = Vec::new();
