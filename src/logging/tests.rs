@@ -232,3 +232,27 @@ fn filters_enable_expected_levels_without_dependency_debug_noise() {
         )
     );
 }
+
+#[test]
+fn server_flags_redirect_and_headless_requires_workspace() {
+    for flag in [
+        "--server",
+        "--port=1234",
+        "--bind",
+        "--server-config",
+        "--config",
+    ] {
+        assert!(
+            Arguments::parse([flag.into()])
+                .unwrap_err()
+                .contains("focus-editor-server")
+        );
+    }
+    assert!(Arguments::parse(["--headless".into()]).is_err());
+    assert!(Arguments::parse(["--headless".into(), "--ui".into(), "project".into()]).is_err());
+    assert!(
+        Arguments::parse(["--headless".into(), "project".into()])
+            .unwrap()
+            .headless
+    );
+}

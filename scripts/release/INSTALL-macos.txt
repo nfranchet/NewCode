@@ -6,7 +6,7 @@ Chrome (WebGL 2 required), without tabs or an address bar. It uses a temporary
 private browser profile and keeps the renderer sandbox enabled. For the native
 desktop window, run its executable with --ui. No Node.js or Electron is needed.
 Closing the window warns about unsaved documents, stops the backend, and removes
-the temporary profile. Reloads/short disconnections allow 60 seconds to reconnect
+the temporary profile. Reloads and connection loss retain the session
 while the window is alive. External links open in the normal system browser.
 To install bundled addons, run python3 install-addons.py from the
 mounted image (Python 3.11 or newer). Add --addon github to install only GitHub.
@@ -36,3 +36,30 @@ start, inspect the error or use --ui; the launcher never retries unsandboxed.
 Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.
+
+Shared remote server (or use /Applications/Focus\ Editor.app/Contents/MacOS/focus-editor-server):
+  focus-editor-server
+  focus-editor-server --bind 0.0.0.0 --port 8999
+  focus-editor-server --config /path/to/server.toml
+
+Install focus-editor-server beside focus-editor. The server stays in the foreground,
+requires no browser or display, and defaults to 0.0.0.0:8999. Configure its HTTP Basic
+Auth login in focus-editor/server.toml in the user configuration directory
+(Linux: ~/.config; macOS: ~/Library/Application Support):
+  bind = "0.0.0.0"
+  port = 8999
+  username = "your-login"
+  password = "your-password"
+Use chmod 600 on this file. FOCUS_EDITOR_SERVER_USERNAME/PASSWORD override file
+credentials; CLI bind/port override file values. The old focus-editor --server
+flag directs you to the separate binary.
+
+Open http://HOST-IP:8999. App and --ui editors automatically register, including
+when the server starts after them or restarts. The Workspaces list remembers
+previously opened folders; Add workspace accepts a host folder path. Start opens
+a stopped workspace in a browser-only session; Open selects an existing session.
+Click Take control to edit; other viewers remain connected. Closing the browser
+or stopping the server leaves all sessions running. Restart the server to reattach
+to the same unsaved buffers, terminals, and addons. Stop ends a browser-only session
+with save/discard/cancel choices for dirty documents. Close local editors from
+their own windows. See README.md for configuration and troubleshooting details.

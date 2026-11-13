@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Focus Editor</title><link rel="stylesheet" href="/hub.css"><script type="module" src="/hub.js"></script></head>
+<body>
+<aside><h1>Focus Editor</h1><p class="subtitle">Running editors</p><nav id="editors" aria-label="Running editors"></nav><p id="status" role="status">Loading editors…</p><div class="workspace-heading"><h2>Workspaces</h2><button id="add-workspace" type="button">Add workspace</button></div><div id="workspaces"></div><p id="action-error" role="alert" hidden></p></aside>
+<main><section id="empty"><h2>Your editors, in one place</h2><p>Start a known workspace or add a folder on this host. Editors opened locally also appear automatically.</p></section><iframe id="view" title="Selected editor" allow="clipboard-read; clipboard-write" hidden></iframe></main>
+<dialog id="add-dialog"><form id="add-form"><h2>Add workspace</h2><label for="workspace-path">Folder on the editor host</label><input id="workspace-path" name="path" placeholder="/home/user/projects/my-app" required autocomplete="off"><p id="add-error" role="alert" hidden></p><div class="dialog-actions"><button id="add-submit" type="submit">Add</button><button id="add-cancel" type="button">Cancel</button></div></form></dialog>
+<dialog id="stop-dialog"><h2>Unsaved changes</h2><p id="stop-message"></p><p id="stop-error" role="alert" hidden></p><div class="dialog-actions"><button id="stop-save" type="button">Save and stop</button><button id="stop-discard" type="button">Discard and stop</button><button id="stop-cancel" type="button">Cancel</button></div></dialog>
+</body></html>

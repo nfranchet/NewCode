@@ -27,6 +27,9 @@ class PackagingTests(unittest.TestCase):
             binary = root / "built-binary"
             binary.write_bytes(b"fixture executable")
             binary.chmod(0o755)
+            server = root / "focus-editor-server"
+            server.write_bytes(b"fixture server executable")
+            server.chmod(0o755)
             stage = root / "stage"
             stage.mkdir()
             (stage / "auth.json").write_text("must not ship")
@@ -40,9 +43,11 @@ class PackagingTests(unittest.TestCase):
                     (addon / name).chmod(0o755)
             package_linux(binary, output, stage, addon)
             with tarfile.open(output) as archive:
-                self.assertEqual(set(archive.getnames()), {"focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py"} | set(ADDON_ASSETS))
+                self.assertEqual(set(archive.getnames()), {"focus-editor", "focus-editor-server", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py"} | set(ADDON_ASSETS))
                 self.assertEqual(archive.extractfile("LICENSE").read(), Path("LICENSE").read_bytes())
                 self.assertTrue(archive.getmember("focus-editor").mode & 0o111)
+                self.assertTrue(archive.getmember("focus-editor-server").mode & 0o111)
+                self.assertEqual(archive.extractfile("focus-editor-server").read(), server.read_bytes())
                 self.assertEqual(archive.extractfile("focus-editor").read(), binary.read_bytes())
                 for name in ADDON_EXECUTABLES:
                     self.assertTrue(archive.getmember(name).mode & 0o111)

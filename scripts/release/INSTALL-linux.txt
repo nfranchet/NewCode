@@ -2,7 +2,7 @@ Focus Editor for Linux
 
 Extract the archive and put focus-editor on your PATH, for example:
   mkdir -p ~/.local/bin
-  install -m 755 focus-editor ~/.local/bin/focus-editor
+  install -m 755 focus-editor focus-editor-server ~/.local/bin/
   python3 install-addons.py
   focus-editor ~/projects/my-project
   focus-editor --ui ~/projects/my-project
@@ -13,8 +13,8 @@ Each launch uses a temporary private profile with extensions and sync disabled;
 the renderer sandbox stays enabled. Use --ui for the native desktop window. Both modes
 use the same editor, terminals, Git, and addons; no Node.js or Electron is needed.
 Closing the app window warns about unsaved documents, stops the backend, and
-removes its temporary profile. Reloads/short disconnections allow 60 seconds to
-reconnect while the window is alive. External links open in the system browser.
+removes its temporary profile. Reloads and connection loss retain the session
+while the window is alive. External links open in the system browser.
 
 The addon installer requires Python 3.11 or newer. It installs all bundled
 addons in $XDG_DATA_HOME/focus-editor/addons/<id> (normally
@@ -39,3 +39,30 @@ or use --ui. The launcher never retries with the browser sandbox disabled.
 Browser-reserved shortcuts can take precedence; use editor menus or --ui.
 Use --version to display the application version without opening a window.
 See the project README for features and troubleshooting.
+
+Shared remote server:
+  focus-editor-server
+  focus-editor-server --bind 0.0.0.0 --port 8999
+  focus-editor-server --config /path/to/server.toml
+
+Install focus-editor-server beside focus-editor. The server stays in the foreground,
+requires no browser or display, and defaults to 0.0.0.0:8999. Configure its HTTP Basic
+Auth login in focus-editor/server.toml in the user configuration directory
+(Linux: ~/.config; macOS: ~/Library/Application Support):
+  bind = "0.0.0.0"
+  port = 8999
+  username = "your-login"
+  password = "your-password"
+Use chmod 600 on this file. FOCUS_EDITOR_SERVER_USERNAME/PASSWORD override file
+credentials; CLI bind/port override file values. The old focus-editor --server
+flag directs you to the separate binary.
+
+Open http://HOST-IP:8999. App and --ui editors automatically register, including
+when the server starts after them or restarts. The Workspaces list remembers
+previously opened folders; Add workspace accepts a host folder path. Start opens
+a stopped workspace in a browser-only session; Open selects an existing session.
+Click Take control to edit; other viewers remain connected. Closing the browser
+or stopping the server leaves all sessions running. Restart the server to reattach
+to the same unsaved buffers, terminals, and addons. Stop ends a browser-only session
+with save/discard/cancel choices for dirty documents. Close local editors from
+their own windows. See README.md for configuration and troubleshooting details.

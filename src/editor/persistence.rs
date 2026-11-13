@@ -61,10 +61,12 @@ impl EditorApp {
         }
     }
 
-    pub(super) fn choose_workspace(&mut self) {
-        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-            self.request_workspace(path);
-        }
+    pub(super) fn choose_workspace(&mut self, ctx: &eframe::egui::Context) {
+        crate::file_picker::request(
+            ctx,
+            crate::file_picker::Purpose::Workspace,
+            self.settings.workspace.as_deref(),
+        );
     }
 
     pub(super) fn request_workspace(&mut self, path: PathBuf) {

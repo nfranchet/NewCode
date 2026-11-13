@@ -2,10 +2,11 @@ FROM mcr.microsoft.com/devcontainers/rust:1-1-bookworm
 
 RUN rustup update stable && \
     rustup default stable && \
-    rustup component add --toolchain stable llvm-tools-preview && \
+    rustup component add --toolchain stable llvm-tools-preview rustfmt && \
     sudo apt update && \
     sudo apt install -y tig zsh-antigen curl ca-certificates unzip fonts-dejavu-core python3 xz-utils && \
-    cargo +stable install --locked grcov
+    cargo +stable install --locked grcov && \
+    chown -R vscode:rustlang /usr/local/cargo
 
 # The Compose build context is .devcontainer; pin the same toolchain as CI.
 ARG ZIG_VERSION=0.15.2

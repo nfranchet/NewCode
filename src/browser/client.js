@@ -5,20 +5,42 @@ const notice = document.querySelector("#notice");
 const message = document.querySelector("#message");
 const reconnect = document.querySelector("#reconnect");
 const token = location.hash.slice(1);
-const client = crypto.randomUUID();
+const remoteId = location.pathname.match(/^\/editors\/([a-f0-9]{48})\/$/)?.[1];
+const remote = Boolean(remoteId);
+const apiBase = remote ? `/api/editors/${remoteId}/` : "/api/";
+// getRandomValues works on ordinary HTTP as well as secure browser contexts.
+const client = Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => byte.toString(16).padStart(2, "0")).join("");
+const controlBar = document.querySelector("#control");
+const ownerLabel = document.querySelector("#owner");
+const claimButton = document.querySelector("#claim");
+const externalLink = document.querySelector("#external-link");
+let control = { owned: false, epoch: 0 };
+let view = { scale: 1, x: 0, y: 0, zoom: 1 };
+function setControl(next) {
+  if (next.epoch < control.epoch) return;
+  if (next.epoch !== control.epoch || next.owned !== control.owned) {
+    events = [];
+    composing = false;
+    input.value = "";
+  }
+  control = next;
+  controlBar.hidden = control.owned;
+  ownerLabel.textContent = control.owner ? `${control.owner} has control.` : "Viewing this editor.";
+}
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 let events = [], running = false, dirty = false, composing = false, timer, inFlight;
 let lastComposition = null;
-let pixelsPerPoint = devicePixelRatio;
+
 
 function showNotice(text, retry = false) {
+  externalLink.hidden = true;
   message.textContent = text;
   notice.hidden = false;
   reconnect.hidden = !retry;
 }
 
 async function api(path, body = "", keepalive = false) {
-  const response = await fetch(`/api/${path}`, {
+  const response = await fetch(`${apiBase}${path}`, {
     method: "POST", body, keepalive, cache: "no-store",
     headers: { "X-Focus-Token": token, "X-Focus-Client": client, "Content-Type": "application/json" },
   });
@@ -98,6 +120,7 @@ class Painter {
 
   paint(frame) {
     const gl = this.gl;
+    if (frame.reset) this.reset();
     for (const update of frame.textures) {
       let texture = this.textures.get(update.id);
       if (!texture) { texture = gl.createTexture(); this.textures.set(update.id, texture); }
@@ -118,20 +141,26 @@ class Painter {
     const dpr = Math.min(4, Math.max(0.5, devicePixelRatio || 1));
     const width = Math.round(canvas.clientWidth * dpr), height = Math.round(canvas.clientHeight * dpr);
     if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
-    const scale = frame.pixels_per_point;
-    pixelsPerPoint = scale;
-    gl.viewport(0, 0, width, height);
+    const displayScale = Math.min(canvas.clientWidth / frame.size[0], canvas.clientHeight / frame.size[1]);
+    view = { scale: displayScale,
+      x: (canvas.clientWidth - frame.size[0] * displayScale) / 2,
+      y: (canvas.clientHeight - frame.size[1] * displayScale) / 2,
+      zoom: frame.pixels_per_point / dpr };
+    const scale = displayScale * dpr;
+    const viewportWidth = Math.round(frame.size[0] * scale), viewportHeight = Math.round(frame.size[1] * scale);
+    const offsetX = Math.round(view.x * dpr), offsetY = Math.round(view.y * dpr);
+    gl.viewport(offsetX, height - offsetY - viewportHeight, viewportWidth, viewportHeight);
     gl.disable(gl.SCISSOR_TEST);
     gl.clearColor(0.93, 0.94, 0.96, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.uniform2f(this.screen, width / scale, height / scale);
+    gl.uniform2f(this.screen, ...frame.size);
     gl.enable(gl.SCISSOR_TEST);
     for (const mesh of frame.meshes) {
       const texture = this.textures.get(mesh.texture);
       if (!texture) continue;
       const [left, top, right, bottom] = mesh.clip;
-      const x = Math.max(0, Math.round(left * scale)), y = Math.max(0, Math.round(top * scale));
-      const x2 = Math.min(width, Math.round(right * scale)), y2 = Math.min(height, Math.round(bottom * scale));
+      const x = Math.max(0, offsetX + Math.round(left * scale)), y = Math.max(0, offsetY + Math.round(top * scale));
+      const x2 = Math.min(width, offsetX + Math.round(right * scale)), y2 = Math.min(height, offsetY + Math.round(bottom * scale));
       if (x2 <= x || y2 <= y) continue;
       gl.scissor(x, height - y2, x2 - x, y2 - y);
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -174,26 +203,34 @@ async function pasteText() {
 function platform(frame) {
   dirty = frame.dirty;
   if (frame.title) document.title = frame.title;
-  canvas.style.cursor = cursors[frame.output.cursor_icon] || "default";
+  setControl(frame.control);
+  canvas.style.cursor = control.owned ? cursors[frame.output.cursor_icon] || "default" : "default";
+  if (!control.owned) return;
   for (const command of frame.output.commands) {
     if (command.CopyText !== undefined) void copyText(command.CopyText);
     if (command.OpenUrl) {
       const url = new URL(command.OpenUrl.url, location.href);
       if (!["https:", "http:", "mailto:"].includes(url.protocol)) continue;
-      void api("open-url", JSON.stringify({ url: url.href })).catch(error => showNotice(error.message));
+      if (remote) {
+        const opened = window.open(url.href, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          showNotice("Follow this link in your browser:");
+          externalLink.href = url.href;
+          externalLink.hidden = false;
+        }
+      } else void api("open-url", JSON.stringify({ url: url.href })).catch(error => showNotice(error.message));
     }
   }
   if (frame.paste) void pasteText();
   if (frame.output.ime) {
     const rect = frame.output.ime.cursor_rect;
-    const zoom = pixelsPerPoint / Math.min(4, Math.max(0.5, devicePixelRatio || 1));
-    input.style.left = `${rect.min.x * zoom}px`;
-    input.style.top = `${rect.max.y * zoom}px`;
+    input.style.left = `${view.x + rect.min.x * view.scale}px`;
+    input.style.top = `${view.y + rect.max.y * view.scale}px`;
   }
 }
 
 function queue(event) {
-  if (!running) return;
+  if (!running || !control.owned) return;
   // Collapse consecutive motion events; preserve ordering around button/key events.
   if (event.PointerMoved && events.at(-1)?.PointerMoved) events[events.length - 1] = event;
   else events.push(event);
@@ -204,37 +241,22 @@ let painter;
 async function tick() {
   if (!running) return;
   const start = performance.now();
-  // Resolve pointer transitions separately, and keep a key with the text it
-  // produced. In particular, an IME/text-only insertion must precede Enter in
-  // its own frame so the terminal cannot pair that text with the Enter key.
-  let count = 0, pressedKey = false, textSeen = false;
-  for (const event of events) {
-    if (count === 4096) break;
-    let endAfter = event.PointerButton || event === "Copy" || event === "Cut";
-    if (event.Key?.pressed) {
-      if (pressedKey || textSeen) break;
-      pressedKey = true;
-      const key = event.Key;
-      const textKey = /^[A-Z]$/.test(key.key) || /^Num[0-9]$/.test(key.key) || Object.values(punctuation).includes(key.key);
-      if (!textKey || key.modifiers.command || key.modifiers.ctrl) endAfter = true;
-    }
-    if (event.Text || event.Paste || event.Ime) textSeen = true;
-    count++;
-    if (endAfter) break;
-  }
-  const batch = events.splice(0, count);
+  // The owner processes logical input boundaries locally, including terminal keys.
+  const batch = events.splice(0, 512);
   try {
     inFlight = api("frame", JSON.stringify({
       size: [Math.max(1, canvas.clientWidth), Math.max(1, canvas.clientHeight)],
       pixels_per_point: Math.min(4, Math.max(0.5, devicePixelRatio || 1)),
-      focused: document.hasFocus(), events: batch,
+      focused: document.hasFocus(), events: batch, epoch: control.epoch,
     }));
     const response = await inFlight;
     if (!running) return;
     if (response.status !== 204) {
       const frame = await response.json();
-      painter.paint(frame);
-      platform(frame);
+      if (frame.control.epoch >= control.epoch) {
+        painter.paint(frame);
+        platform(frame);
+      }
       // Inputs queued during the request have not been reflected in frame.dirty yet.
       if (events.some(event => event.Text || event.Paste || event.Ime || event.Key?.pressed)) dirty = true;
     }
@@ -243,7 +265,7 @@ async function tick() {
     if (!running) return;
     running = false;
     // Never replay a batch: the host may already have applied its actions.
-    showNotice(`${error.message}\nReconnect within one minute to keep this session.`, true);
+    showNotice(`${error.message}\nReconnect to this editor.`, true);
   }
 }
 
@@ -251,16 +273,9 @@ async function connect() {
   if (running) return;
   reconnect.hidden = true;
   try {
-    if (!token) throw new Error("Open the complete URL printed by focus-editor, including its # fragment.");
+    if (!remote && !token) throw new Error("Open the complete URL printed by focus-editor, including its # fragment.");
     if (!painter) painter = new Painter(canvas);
-    // A reload can arrive just before its previous document's disconnect request.
-    for (let attempt = 0; ; attempt++) {
-      try { await api("connect"); break; }
-      catch (error) {
-        if (attempt >= 20 || !error.message.includes("another tab")) throw error;
-        await new Promise(resolve => setTimeout(resolve, 250));
-      }
-    }
+    setControl(await (await api("connect")).json());
     painter.reset();
     events = [];
     running = true;
@@ -293,7 +308,7 @@ function keyName(key, code) {
 }
 
 function keyboard(event, pressed) {
-  if (!running || (event.target !== input && event.target !== canvas)) return;
+  if (!running || !control.owned || (event.target !== input && event.target !== canvas)) return;
   const mods = modifiers(event);
   queue({ ModifiersChanged: mods });
   if (composing || event.isComposing || event.keyCode === 229) return;
@@ -336,18 +351,19 @@ input.addEventListener("compositionend", event => {
   input.value = "";
 });
 document.addEventListener("paste", event => {
-  if (!running || (event.target !== input && event.target !== canvas)) return;
+  if (!running || !control.owned || (event.target !== input && event.target !== canvas)) return;
   queue({ Paste: event.clipboardData.getData("text/plain") });
   event.preventDefault();
 });
 
 function position(event) {
   const rect = canvas.getBoundingClientRect();
+  // Only the controller sends pointers, together with its own viewport dimensions.
   return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 canvas.addEventListener("pointermove", event => queue({ PointerMoved: position(event) }));
 canvas.addEventListener("pointerdown", event => {
-  if (!running) return;
+  if (!running || !control.owned) return;
   input.focus({ preventScroll: true });
   canvas.setPointerCapture(event.pointerId);
   queue({ PointerMoved: position(event) });
@@ -377,7 +393,7 @@ window.addEventListener("blur", () => {
 });
 window.addEventListener("focus", () => queue({ WindowFocused: true }));
 window.addEventListener("beforeunload", event => {
-  if (dirty) {
+  if (dirty && !remote) {
     void api("close-prompt", "", true).catch(() => {});
     event.preventDefault();
     event.returnValue = "";
@@ -394,6 +410,13 @@ canvas.addEventListener("webglcontextlost", event => {
   running = false;
   clearTimeout(timer);
   showNotice("Browser graphics were interrupted. Reload this tab to reconnect to the editor.");
+});
+claimButton.addEventListener("click", async () => {
+  if (!running) return;
+  try {
+    setControl(await (await api("claim")).json());
+    input.focus({ preventScroll: true });
+  } catch (error) { showNotice(error.message); }
 });
 reconnect.addEventListener("click", () => void connect());
 // Nonfatal clipboard/link notices can be dismissed with Escape or a canvas click.

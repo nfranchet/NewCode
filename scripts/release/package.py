@@ -70,20 +70,22 @@ def copy_addons(binary, destination, addon_source=None):
 
 def package_linux(binary, output, stage, addon_source=None):
     shutil.copy2(binary, stage / "focus-editor")
+    shutil.copy2(binary.with_name("focus-editor-server"), stage / "focus-editor-server")
     shutil.copy2("scripts/release/INSTALL-linux.txt", stage / "INSTALL.txt")
     shutil.copy2("LICENSE", stage / "LICENSE")
     shutil.copy2("THIRD_PARTY_NOTICES.txt", stage / "THIRD_PARTY_NOTICES.txt")
     shutil.copy2("scripts/release/install-addons.py", stage / "install-addons.py")
     copy_addons(binary, stage, addon_source)
-    assets = ("focus-editor", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py") + ADDON_ASSETS
+    assets = ("focus-editor", "focus-editor-server", "INSTALL.txt", "LICENSE", "THIRD_PARTY_NOTICES.txt", "install-addons.py") + ADDON_ASSETS
     with tarfile.open(output, "w:gz") as archive:
         for name in assets:
             archive.add(stage / name, arcname=name)
     with tarfile.open(output) as archive:
         if set(archive.getnames()) != set(assets):
             raise RuntimeError("Unexpected Linux archive contents")
-        if not archive.getmember("focus-editor").mode & 0o111:
-            raise RuntimeError("Packaged executable lost its execute permission")
+        for name in ("focus-editor", "focus-editor-server"):
+            if not archive.getmember(name).mode & 0o111:
+                raise RuntimeError("Packaged executable lost its execute permission")
         for name in ADDON_EXECUTABLES:
             if not archive.getmember(name).mode & 0o111:
                 raise RuntimeError("Packaged addon lost its execute permission")
@@ -98,6 +100,7 @@ def package_macos(binary, output, stage):
     (contents / "Resources").mkdir()
     executable = contents / "MacOS/focus-editor"
     shutil.copy2(binary, executable)
+    shutil.copy2(binary.with_name("focus-editor-server"), contents / "MacOS/focus-editor-server")
     shutil.copy2("LICENSE", contents / "Resources/LICENSE")
     shutil.copy2("THIRD_PARTY_NOTICES.txt", contents / "Resources/THIRD_PARTY_NOTICES.txt")
     copy_addons(binary, contents / "Resources")
@@ -116,6 +119,7 @@ def package_macos(binary, output, stage):
             "NSHighResolutionCapable": True,
         }, stream)
     run("plutil", "-lint", str(contents / "Info.plist"))
+    run("codesign", "--force", "--sign", "-", str(contents / "MacOS/focus-editor-server"))
     for name in ADDON_EXECUTABLES:
         run("codesign", "--force", "--sign", "-", str(contents / "Resources" / name))
     run("codesign", "--force", "--sign", "-", str(app))
@@ -137,6 +141,7 @@ def package_macos(binary, output, stage):
         assert os.readlink(mount / "Applications") == "/Applications"
         run("codesign", "--verify", "--deep", "--strict", str(mount / "Focus Editor.app"))
         assert run(str(mount / "Focus Editor.app/Contents/MacOS/focus-editor"), "--version").startswith("focus-editor ")
+        assert run(str(mount / "Focus Editor.app/Contents/MacOS/focus-editor-server"), "--version").startswith("focus-editor-server ")
     finally:
         run("hdiutil", "detach", str(mount))
 
@@ -148,6 +153,7 @@ def main():
     args = parser.parse_args()
     binary = Path("target", args.target, "release/focus-editor").resolve(strict=True)
     verify_binary(binary, args.target)
+    verify_binary(binary.with_name("focus-editor-server"), args.target, "focus-editor-server")
     for name in ADDON_EXECUTABLES:
         executable = binary.parent / name
         verify_binary(executable, args.target, executable.name)

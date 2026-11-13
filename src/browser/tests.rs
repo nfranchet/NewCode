@@ -1,27 +1,6 @@
 use super::*;
 
 #[test]
-fn only_one_tab_owns_input_and_reload_can_reconnect() {
-    let now = Instant::now();
-    let mut session = Session {
-        client: None,
-        last_seen: now,
-        reset_textures: false,
-        close_prompt: false,
-    };
-    assert!(session.connect("first", now));
-    session.close_prompt = true;
-    assert!(session.reset_textures);
-    assert!(!session.connect("second", now));
-    assert!(session.active("first"));
-    assert!(session.connect("second", now + CLIENT_TIMEOUT));
-    assert!(!session.close_prompt);
-    assert!(!session.active("first"));
-    session.client = None;
-    assert!(session.connect("reload", now + CLIENT_TIMEOUT));
-}
-
-#[test]
 fn api_requires_matching_host_origin_and_secret() {
     let request = |host, origin, token| -> Request {
         tiny_http::TestRequest::new()
@@ -167,8 +146,10 @@ fn host_round_trip(root: &std::path::Path) {
             .status(),
         403
     );
-    assert_eq!(post("connect", "one").send().unwrap().status(), 200);
-    assert_eq!(post("connect", "two").send().unwrap().status(), 409);
+    let control: protocol::Control = post("connect", "one").send().unwrap().json().unwrap();
+    assert!(control.owned);
+    let observer: protocol::Control = post("connect", "two").send().unwrap().json().unwrap();
+    assert!(!observer.owned);
     for url in [
         "file:///etc/passwd",
         "javascript:alert(1)",
@@ -214,7 +195,7 @@ fn host_round_trip(root: &std::path::Path) {
             .status(),
         400
     );
-    let input = serde_json::json!({ "size": [1200, 800], "pixels_per_point": 1, "focused": true, "events": [] });
+    let input = serde_json::json!({ "size": [1200, 800], "pixels_per_point": 1, "focused": true, "events": [], "epoch": control.epoch });
     let frame: serde_json::Value = post("frame", "one")
         .json(&input)
         .send()
@@ -224,6 +205,53 @@ fn host_round_trip(root: &std::path::Path) {
     assert!(!frame["meshes"].as_array().unwrap().is_empty());
     assert!(!frame["textures"].as_array().unwrap().is_empty());
     assert_eq!(frame["title"], "Focus Editor — project");
+    let mut remote_input = input.clone();
+    remote_input["size"] = serde_json::json!([800, 600]);
+    let remote: protocol::Control = post("connect", "remote")
+        .header("X-Focus-Remote", "1")
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert!(!remote.owned);
+    let mirror: serde_json::Value = post("frame", "remote")
+        .json(&remote_input)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(mirror["size"], frame["size"]);
+    assert_eq!(mirror["title"], frame["title"]);
+    assert!(mirror["reset"].as_bool().unwrap());
+    let remote: protocol::Control = post("claim", "remote").send().unwrap().json().unwrap();
+    assert!(remote.owned);
+    assert!(remote.epoch > control.epoch);
+    remote_input["epoch"] = remote.epoch.into();
+    let resized: serde_json::Value = post("frame", "remote")
+        .json(&remote_input)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(resized["size"], serde_json::json!([800.0, 600.0]));
+    let local: serde_json::Value = post("frame", "one")
+        .json(&input)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(local["size"], resized["size"]);
+    assert_eq!(local["control"]["owned"], false);
+    assert_eq!(post("shutdown", "remote").send().unwrap().status(), 404);
+    assert_eq!(
+        post("open-url", "remote")
+            .json(&serde_json::json!({"url":"https://example.invalid"}))
+            .send()
+            .unwrap()
+            .status(),
+        403
+    );
+    assert_eq!(post("disconnect", "remote").send().unwrap().status(), 200);
     assert_eq!(post("disconnect", "one").send().unwrap().status(), 200);
     assert_eq!(post("connect", "two").send().unwrap().status(), 200);
     assert_eq!(post("shutdown", "one").send().unwrap().status(), 409);
@@ -237,6 +265,8 @@ fn host_round_trip(root: &std::path::Path) {
     assert_eq!(replay["title"], "Focus Editor — project");
     assert_eq!(post("shutdown", "two").send().unwrap().status(), 200);
     worker.join().unwrap();
+    assert!(registry::records().unwrap().is_empty());
+    registry_round_trip();
 
     let server = Server::http("127.0.0.1:0").unwrap();
     let host = server.server_addr().to_ip().unwrap().to_string();
@@ -292,4 +322,39 @@ fn host_round_trip(root: &std::path::Path) {
     assert_eq!(post("frame").json(&input).send().unwrap().status(), 200);
     assert_eq!(post("shutdown").send().unwrap().status(), 200);
     worker.join().unwrap();
+}
+
+fn registry_round_trip() {
+    use std::os::unix::fs::PermissionsExt;
+    let registration = registry::Registration::new(
+        "http://127.0.0.1:12345".into(),
+        "private".into(),
+        "native",
+        None,
+    )
+    .unwrap();
+    let records = registry::records().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, registration.record.id);
+    let directory = crate::app_paths::data_root()
+        .unwrap()
+        .join("runtime/instances");
+    assert_eq!(
+        std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    let file = directory.join(format!("{}.json", registration.record.id));
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(registry::records().unwrap().is_empty());
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let mut stale = registration.record.clone();
+    stale.pid = i32::MAX as u32;
+    std::fs::write(&file, serde_json::to_vec(&stale).unwrap()).unwrap();
+    assert!(registry::records().unwrap().is_empty());
+    assert!(!file.exists());
+    drop(registration);
 }

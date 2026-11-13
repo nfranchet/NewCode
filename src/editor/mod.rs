@@ -166,12 +166,41 @@ impl EditorApp {
     }
 
     pub(crate) fn window_title(&self) -> String {
-        crate::launch::window_title(self.settings.workspace.as_deref())
+        let mut title = crate::launch::window_title(self.settings.workspace.as_deref());
+        if self.dev_container.runtime().is_some() {
+            title.push_str(" — Devcontainer");
+        }
+        title
+    }
+    pub(crate) fn workspace(&self) -> Option<std::path::PathBuf> {
+        self.settings.workspace.clone()
+    }
+    pub(crate) fn save_documents(&mut self) -> bool {
+        let paths: Vec<_> = self
+            .open_files
+            .iter()
+            .filter(|path| self.file_is_dirty(path))
+            .cloned()
+            .collect();
+        paths.iter().all(|path| self.save_document(path))
     }
 
     pub(crate) fn render(&mut self, root: &mut egui::Ui) {
         let context = root.ctx().clone();
         let ctx = &context;
+        if let Some((purpose, path)) = crate::file_picker::take(ctx) {
+            match purpose {
+                crate::file_picker::Purpose::Workspace => self.request_workspace(path),
+                crate::file_picker::Purpose::Move(source) => {
+                    if let Err(error) = std::fs::rename(&source, &path) {
+                        self.status = format!("Move failed: {error}");
+                    } else {
+                        self.update_open_path(&source, &path);
+                    }
+                }
+                crate::file_picker::Purpose::Addon => self.addons.install_local(ctx, path),
+            }
+        }
         self.dev_container
             .sync_workspace(self.settings.workspace.as_deref());
         if self.dev_container.tick() {
@@ -219,6 +248,7 @@ impl EditorApp {
         self.addon_dialogs(ctx);
         self.deletion_dialog(ctx);
         self.cancel_unfocused_creation(ctx);
+        crate::file_picker::show(ctx);
     }
 }
 impl eframe::App for EditorApp {

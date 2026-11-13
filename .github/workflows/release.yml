@@ -40,11 +40,11 @@ jobs:
         uses: ./.github/actions/linux-checks
         with:
           target: ${{ matrix.target }}
-      - name: Build optimized executable
+      - name: Build optimized executables
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          cargo build --release --locked --target "$TARGET"
+          cargo build --release --bins --locked --target "$TARGET"
           python3 scripts/addons.py --release --target "$TARGET"
       - name: Package and verify
         env:
